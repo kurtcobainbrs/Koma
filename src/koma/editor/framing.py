@@ -1,0 +1,116 @@
+"""Enquadramento proporcional e arraste em memória; salva somente ao soltar."""
+
+import struct
+from dataclasses import replace
+
+import flet as ft
+
+from koma.ui.design import DRAG_INTERVAL_MS, MUTED, RADIUS
+from koma.editor.geometry import NODE_WIDTH
+from koma.editor.shortcuts import Action
+
+
+def png_size(data):
+    if data and data[:8] == b'\x89PNG\r\n\x1a\n' and len(data) >= 24:
+        return struct.unpack('>II', data[16:24])
+    return 16, 9
+
+
+def placement(source, viewport, fit, x=0, y=0):
+    """Mesma escala nos dois eixos: recorta o excedente sem esticar a imagem."""
+    sw, sh = source
+    vw, vh = viewport
+    if fit == 'contain':
+        x = y = 0
+    scale = (max if fit == 'cover' else min)(vw / max(1, sw), vh / max(1, sh))
+    width, height = sw * scale, sh * scale
+    return width, height, (vw-width)*(x+1)/2, (vh-height)*(y+1)/2
+
+
+class ImageViewport:
+    def __init__(self, view, identifier=None, height=180):
+        self.view, self.identifier = view, identifier
+        self.width, self.height = NODE_WIDTH-18, height
+        self.frame = None
+        self.source = (16, 9)
+        self.drag = None
+        self.image = None
+        self.stack = ft.Stack(expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE)
+        self.gesture = ft.GestureDetector(content=self.stack, drag_interval=DRAG_INTERVAL_MS,
+            on_tap_down=self.select, on_pan_start=self.begin, on_pan_update=self.move,
+            on_pan_end=self.end, on_pan_cancel=self.cancel)
+        self.content = ft.Container(aspect_ratio=16/9, content=self.gesture, border_radius=RADIUS,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW, clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            on_size_change=self.resized)
+
+    def set_frame(self, frame):
+        changed_image = self.frame is None or self.frame.image != frame.image
+        self.frame = frame
+        if changed_image:
+            data = self.view.thumbnails.get(frame.image)
+            self.source = png_size(data)
+            self.image = ft.Image(src=data, fit=ft.BoxFit.FILL, gapless_playback=True) if data else None
+            self.stack.controls = [self.image] if data else [ft.Container(left=0, top=0,
+                width=self.width, height=self.height, alignment=ft.Alignment.CENTER,
+                content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=28, color=MUTED))]
+        self.layout()
+
+    def layout(self):
+        if self.image and self.frame:
+            self.image.width, self.image.height, self.image.left, self.image.top = placement(
+                self.source, (self.width, self.height), self.frame.image_fit, self.frame.crop_x, self.frame.crop_y)
+        self.gesture.mouse_cursor = ft.MouseCursor.MOVE if self.can_adjust() else ft.MouseCursor.CLICK
+        self.gesture.tooltip = self.view.keymap.describe('Arraste para enquadrar; cancelar', Action.CANCEL) if self.can_adjust() else 'Selecionar quadro'
+
+    def can_adjust(self):
+        return bool(self.identifier and self.image and self.frame
+            and self.frame.image_fit == 'cover' and self.view.editable())
+
+    def resized(self, e):
+        if e.width > 0 and e.height > 0:
+            self.width, self.height = e.width, e.height
+            self.layout()
+            if not self.view.closing:
+                self.view.page.update(self.stack)
+
+    def select(self, e):
+        if self.identifier:
+            self.view.workspace.navigation.node_click(self.identifier)
+
+    def begin(self, e):
+        if not self.can_adjust() or self.view.workspace.navigation.effective_mode != 'select':
+            return
+        self.view.workspace.navigation.select_node(self.identifier, focus=True)
+        self.view.properties.adjusting = self.identifier
+        self.drag = self.frame, e.global_position.x, e.global_position.y, self.view.workspace.zoom
+        self.view.workspace.viewer.scale_enabled = False
+        self.view.page.update(self.view.workspace.viewer)
+
+    def move(self, e):
+        if not self.drag:
+            return
+        frame, px, py, zoom = self.drag
+        width, height, _, _ = placement(self.source, (self.width, self.height), 'cover')
+        dx, dy = (e.global_position.x-px)/zoom, (e.global_position.y-py)/zoom
+        x = max(-1, min(1, frame.crop_x-2*dx/(width-self.width))) if width-self.width > .01 else frame.crop_x
+        y = max(-1, min(1, frame.crop_y-2*dy/(height-self.height))) if height-self.height > .01 else frame.crop_y
+        self.frame = replace(frame, crop_x=x, crop_y=y)
+        self.layout()
+        self.view.page.update(self.stack)
+
+    async def end(self, e=None):
+        if not self.drag:
+            return
+        self.drag = None
+        self.view.properties.adjusting = None
+        self.view.workspace.navigation.sync()
+        await self.view.set_frame_properties(self.identifier, crop_x=self.frame.crop_x, crop_y=self.frame.crop_y)
+
+    def cancel(self, e=None):
+        if self.drag:
+            self.view.properties.adjusting = None
+            self.frame = self.drag[0]
+            self.drag = None
+            self.layout()
+            self.view.workspace.navigation.sync()
+            self.view.page.update(self.stack)

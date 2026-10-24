@@ -1,0 +1,10 @@
+{
+  "text": "#FFFFFF",
+  "background": "#000000B8",
+  "font_size_ratio": 0.043,
+  "minimum_size_ratio": 0.025,
+  "safe_width_ratio": 0.86,
+  "bottom_margin_ratio": 0.05,
+  "padding_ratio": 0.012,
+  "max_height_ratio": 0.28
+}

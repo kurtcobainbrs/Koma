@@ -1,0 +1,6 @@
+include README.md Koma.spec
+include requirements-windows.lock.txt
+include VALIDATION.md
+recursive-include scripts *.py *.ps1
+recursive-include tests *.py
+recursive-include docs *.md
