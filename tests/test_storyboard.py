@@ -472,15 +472,18 @@ class StoryboardTests(unittest.TestCase):
         finish(view.edit_frame(b.id, 'action', 'Outra ação'))
         self.assertEqual(view.board.frames[0].action, 'Descrição')
 
-    def test_delete_requires_explicit_confirmation(self):
+    def test_delete_is_immediate_without_confirmation_and_can_be_undone(self):
         view = self.view()
         finish(view.add_frame())
+        before = view.board
+        view.page.show_dialog.reset_mock()
         view.confirm_remove(view.board.frames[0].id)
-        self.assertEqual(len(view.board.frames), 1)
-        confirmation = view.page.show_dialog.call_args.args[0]
-        self.assertFalse(confirmation.modal)
-        finish(confirmation.actions[-1].on_click(None))
+        self.assertEqual(view.board.frames, ())
+        view.page.show_dialog.assert_not_called()
+        finish(view.persist())
         self.assertEqual(view.store.load().frames, ())
+        finish(view.graph.undo())
+        self.assertEqual(view.board, before)
 
     def test_native_picker_callbacks_are_async_and_replace_image(self):
         view = self.view()

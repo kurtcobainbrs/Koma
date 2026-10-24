@@ -21,6 +21,7 @@ from koma.editor.shortcuts import Action
 from koma.editor.links_layer import LinksLayer
 from koma.editor.group_frames import SceneFrames
 from koma.editor.graph import path_links
+from koma.editor.context_menu import CanvasContextMenu
 
 
 @dataclass
@@ -62,6 +63,7 @@ class StoryboardCanvas:
         self.drag = None
         self.grab = GrabMove(self)
         self.camera_revision = 0
+        self.focusing_region = False
         self.camera_memory = CameraMemory(self)
         self.z_order = []
         self.node_heights = {}
@@ -90,7 +92,8 @@ class StoryboardCanvas:
         self.box_selection.bind(self.background_hit)
         self.box_zoom = BoxZoom(self)
         self.navigation = CanvasNavigation(self)
-        self.content = CanvasViewport(self, content=self.navigation.keyboard, expand=True, border_radius=RADIUS,
+        self.context_menu = CanvasContextMenu(self)
+        self.content = CanvasViewport(self, content=self.context_menu.content, expand=True, border_radius=RADIUS,
             clip_behavior=ft.ClipBehavior.HARD_EDGE, bgcolor=ft.Colors.SURFACE_CONTAINER_LOW)
         self.zoom_label = ft.TextButton('100%', height=COMPACT_CONTROL_HEIGHT,
             tooltip='100% e centralizar os quadros', on_click=self.reset)
@@ -156,11 +159,13 @@ class StoryboardCanvas:
                 self.page.update(*self.update_groups())
 
     def interaction_start(self, e):
+        if self.focusing_region or self.box_zoom.active:
+            return
         self.cancel_camera_transition()
         self.gesture_zoom = self.zoom
 
     def interaction_update(self, e):
-        if self.view.closing or not math.isfinite(e.scale) or e.scale <= 0:
+        if self.focusing_region or self.box_zoom.active or self.view.closing or not math.isfinite(e.scale) or e.scale <= 0:
             return
         value = max(MIN_ZOOM, min(MAX_ZOOM, self.gesture_zoom * e.scale))
         focal = getattr(e, 'local_focal_point', None)
@@ -210,12 +215,16 @@ class StoryboardCanvas:
         await self.navigation.background_click(e)
 
     def hover(self, e):
+        self.context_menu.pointer = (e.local_position.x, e.local_position.y)
         self.grab.hover(e)
         if not self.grab.active:
             self.links.hover(e)
 
     async def scene_secondary_click(self, e):
-        await self.navigation.secondary_click(e)
+        if self.navigation.effective_mode == 'zoom':
+            await self.navigation.secondary_click(e)
+        else:
+            await self.context_menu.open(e)
 
     async def zoom_in(self, e):
         await self.set_zoom(self.zoom * ZOOM_STEP)
@@ -258,7 +267,9 @@ class StoryboardCanvas:
 
     async def focus_region(self, bounds):
         """A caixa já usa coordenadas do canvas, incluindo sua origem expandida."""
-        if self.view.closing or self.view.busy or self.drag or self.box_selection.active or self.box_zoom.active:
+        if self.focusing_region or self.view.closing or self.view.busy or self.drag or self.box_selection.active or self.box_zoom.active:
+            return
+        if not all(math.isfinite(value) for value in bounds):
             return
         left, top, right, bottom = bounds
         if right <= left or bottom <= top:
@@ -270,27 +281,27 @@ class StoryboardCanvas:
         target_x = self.viewport_width / 2 - (left + right) / 2 * target
         target_y = self.viewport_height / 2 - (top + bottom) / 2 * target
         self.cancel_camera_transition()
-        revision = self.camera_revision
-        start_zoom, start_x, start_y = self.zoom, self.translation_x, self.translation_y
-        # Curva suave de aproximadamente 200 ms; publica só a câmera e o percentual.
-        for step in range(1, 13):
-            if revision != self.camera_revision or self.view.closing or self.view.busy:
-                return
-            t = step / 12
-            eased = t * t * (3 - 2 * t)
-            value = start_zoom + (target - start_zoom) * eased
-            x = start_x + (target_x - start_x) * eased
-            y = start_y + (target_y - start_y) * eased
-            await self.viewer.zoom(value / self.zoom)
-            self.zoom = self.gesture_zoom = value
-            await self.pan_by((x - self.translation_x) / value, (y - self.translation_y) / value)
+        # Uma transformação absoluta evita acumular erros entre zoom/pan e
+        # elimina a disputa de doze etapas animadas com eventos nativos atrasados.
+        self.focusing_region = True
+        self.viewer.scale_enabled = self.viewer.pan_enabled = False
+        self.page.update(self.viewer)
+        try:
+            await self.viewer.reset()
+            self.zoom = self.gesture_zoom = 1.0
+            self.translation_x = self.translation_y = 0.0
+            await self.viewer.zoom(target)
+            self.zoom = self.gesture_zoom = target
+            await self.pan_by(target_x / target, target_y / target)
+            self.initial_view_done = True
+            self.pending_shift = 0, 0
             self.update_label()
             self.camera_memory.remember()
-            if step < 12:
-                await asyncio.sleep(.016)
-        self.initial_view_done = True
-        self.pending_shift = 0, 0
-        self.camera_memory.remember()
+        finally:
+            self.focusing_region = False
+            self.navigation.sync(update=False)
+            if not self.view.closing and self.view.active:
+                self.page.update(self.viewer)
 
     async def restore_camera(self):
         state = self.camera_memory.state
@@ -388,11 +399,14 @@ class StoryboardCanvas:
             return
         dx, dy = group_delta(drag.positions, (e.global_position.x - drag.pointer_x) / drag.zoom,
                             (e.global_position.y - drag.pointer_y) / drag.zoom, anchor=(drag.x, drag.y))
+        positions = {key: (x + dx, y + dy) for key, (x, y) in drag.positions.items()}
         nodes = []
-        for key, (x, y) in drag.positions.items():
+        for key, (x, y) in positions.items():
             node = self.view.cards[key].content
-            node.left, node.top = self.extent.origin_x + x + dx, self.extent.origin_y + y + dy
-            nodes.append(node)
+            left, top = self.extent.origin_x + x, self.extent.origin_y + y
+            if (node.left, node.top) != (left, top):
+                node.left, node.top = left, top
+                nodes.append(node)
         drag.detach_flow = drag.detach_flow or self.navigation.modifier(Action.DETACH)
         self.links.candidate = self.links.drop_candidate(identifier) if len(drag.positions) == 1 and not drag.detach_flow else None
         self.links.refresh(update=True)
@@ -419,9 +433,9 @@ class StoryboardCanvas:
         drag, self.drag = self.drag, None
         self.grab.active = False
         self.navigation.sync(update=False)
-        for key, (x, y) in drag.positions.items():
-            node = self.view.cards[key].content
-            node.left, node.top = x + self.extent.origin_x, y + self.extent.origin_y
+        for frame in self.view.board.frames:
+            node = self.view.cards[frame.id].content
+            node.left, node.top = frame.x + self.extent.origin_x, frame.y + self.extent.origin_y
         self.links.candidate = None
         self.links.refresh()
         self.update_groups()

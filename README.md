@@ -18,8 +18,11 @@ Depois da instalação, também é possível usar `koma` ou `python -m koma cami
 
 - **Novo**, **Abrir**, **Salvar** e **Salvar como** ficam no menu Arquivo.
 - Atalhos: Ctrl+N, Ctrl+O, Ctrl+S e Ctrl+Shift+S, com foco no canvas. Campos de texto mantêm seus atalhos de edição.
-- O asterisco no título indica alterações ainda não salvas no arquivo `.koma`.
-- Abrir outro documento reinicia o histórico. O arquivo atual só é abandonado após Salvar, Descartar ou Cancelar.
+- Os projetos ficam em abas no topo, logo abaixo dos menus. Use **+** ou **Arquivo → Novo** para criar outra aba; **Abrir** também abre em uma nova aba.
+- Cada aba mantém documento, histórico, seleção, câmera e imagens próprios. O asterisco na aba indica alterações ainda não salvas no `.koma`.
+- Clique no nome para alternar; dê dois cliques para renomear ou use **Arquivo → Renomear**. O **×** fecha a aba, com Salvar/Descartar/Cancelar quando necessário.
+- Abrir um arquivo já presente seleciona sua aba, preservando as alterações em memória. Salvar como não pode sobrescrever um arquivo aberto em outra aba.
+- Ao fechar a janela, todos os projetos com alterações são verificados antes de descartar qualquer sessão. Fechar a última aba cria um projeto vazio.
 - Salvar mantém uma cópia da versão anterior em `<nome>.koma.bak`. Para abrir esse backup, copie-o para um nome terminado em `.koma`.
 - Se outro programa ou outra janela modificar o arquivo, o salvamento é recusado. Use Salvar como para preservar ambas as versões.
 - Um documento novo permanece sem caminho até o primeiro salvamento.
@@ -27,6 +30,12 @@ Depois da instalação, também é possível usar `koma` ou `python -m koma cami
 O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 1) e `images/<uuid>.png`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições e enquadramento. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas de até 640 × 640 são regeneráveis e não entram no pacote.
 
 Não há compatibilidade com `.akira-storyboard`.
+
+## Canvas e mute
+
+Botão direito no canvas abre opções de inserção no ponto clicado, importação e enquadramento. Sobre um node, também oferece mutar/desmutar, duplicar e excluir. No modo Zoom, o botão direito continua reduzindo o zoom; Ctrl + arraste direito continua cortando conexões.
+
+Use **M** para mutar/desmutar os nodes selecionados ou a opção no menu do node. Nodes mutados ficam esmaecidos e são pulados no animatic e no MP4, sem remover suas conexões. Mutar um início de cena desativa os quadros dessa cena na reprodução. A duração dos nodes mutados não entra na timeline. O estado é salvo no `.koma` e participa do desfazer/refazer. O PDF mantém os quadros do documento.
 
 ## Recuperação e preferências
 

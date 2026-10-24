@@ -32,19 +32,42 @@ class FlowInteractionTests(unittest.TestCase):
         finish(self.view.activate())
         self.workspace, self.nav = self.view.workspace, self.view.workspace.navigation
 
-    def test_click_and_drag_sockets_connect_and_reject_other_canvas_sources(self):
+    def test_click_sockets_connect(self):
         output = self.view.cards[self.a.id].sockets.controls[-1]
         target = self.view.cards[self.b.id].sockets.controls[0]
-        finish(target.on_accept(Data(src=Data(group='other', data=self.a.id))))
-        self.assertFalse(self.view.board.links)
-        finish(output.content.on_tap_down(None))
-        finish(target.content.on_tap_down(None))
+        output.on_tap_down(None)
+        finish(target.on_tap_down(None))
         self.assertEqual(self.view.board.links, (StoryLink(self.a.id, self.b.id),))
         self.assertIsNone(self.workspace.links.pending)
         self.assertEqual(self.view.store.load(), self.view.board)
+
+    def test_drag_draws_curve_and_connects_on_node_body_at_any_zoom(self):
+        links = self.workspace.links
+        self.workspace.zoom = .5
+        source = links.port(self.a.id, True)
+        left, top, right, bottom = links.bounds(self.b.id)
+        endpoint = ((left + right) / 2, (top + bottom) / 2)
+        links.drag_begin(self.a.id, Data(global_position=Data(x=100, y=100), local_position=Data(x=6, y=6)))
+        links.drag_update(Data(global_position=Data(
+            x=100 + (endpoint[0] - source[0]) * .5,
+            y=100 + (endpoint[1] - source[1]) * .5)))
+        self.assertIsNotNone(links.preview_shape)
+        self.assertIn(links.preview_shape, links.canvas.shapes)
+        self.assertFalse(self.view.board.links)
+        finish(links.drag_end())
+        self.assertEqual(self.view.board.links, (StoryLink(self.a.id, self.b.id),))
+        self.assertIsNone(links.preview_shape)
         finish(self.view.graph.undo())
-        finish(target.on_accept(Data(src=output)))
-        self.assertEqual(len(self.view.board.links), 1)
+        self.assertFalse(self.view.board.links)
+
+    def test_drop_on_empty_canvas_cancels_connection(self):
+        links = self.workspace.links
+        links.drag_begin(self.a.id, Data(global_position=Data(x=0, y=0), local_position=Data(x=6, y=6)))
+        links.drag_update(Data(global_position=Data(x=-2000, y=-2000)))
+        finish(links.drag_end())
+        self.assertFalse(self.view.board.links)
+        self.assertIsNone(links.pending)
+        self.assertIsNone(links.preview_shape)
 
     def test_cut_is_committed_only_on_release_and_undo_restores_it(self):
         finish(self.view.graph.connect(self.a.id, self.b.id))
@@ -68,6 +91,38 @@ class FlowInteractionTests(unittest.TestCase):
         self.assertEqual(self.workspace.links.candidate, StoryLink(self.a.id, self.b.id))
         finish(self.workspace.end_drag(self.c.id))
         self.assertEqual([frame.id for frame in self.view.board.frames], [self.a.id, self.c.id, self.b.id])
+        finish(self.view.graph.undo())
+        self.assertEqual(self.view.board, before)
+
+    def test_connected_node_does_not_attach_to_crossed_line(self):
+        finish(self.view.graph.connect(self.a.id, self.b.id))
+        finish(self.view.graph.connect(self.b.id, self.c.id))
+        before = self.view.board.links
+        edge = StoryLink(self.a.id, self.b.id)
+        self.assertIsNone(self.workspace.links.drop_candidate(self.c.id))
+        self.workspace.links.candidate = edge
+        finish(self.view.position_frames({self.c.id: (480, 0)}, insert_flow=True))
+        self.assertEqual(self.view.board.links, before)
+        self.assertEqual(next(f for f in self.view.board.frames if f.id == self.b.id).x, self.b.x)
+
+    def test_insertion_shifts_only_downstream_nodes_and_undo_restores_all(self):
+        from koma.editor.geometry import NODE_WIDTH, GRID_STEP
+        finish(self.view.position_frames({self.b.id: (600, 0)}))
+        finish(self.view.add_node('frame', position=(984, 0)))
+        tail = self.view.board.frames[-1]
+        finish(self.view.graph.connect(self.a.id, self.b.id))
+        finish(self.view.graph.connect(self.b.id, tail.id))
+        before = self.view.board
+        edits = len(self.view.history.past)
+        self.workspace.links.candidate = StoryLink(self.a.id, self.b.id)
+        finish(self.view.position_frames({self.c.id: (480, 0)}, insert_flow=True))
+        positions = {f.id: (f.x, f.y) for f in self.view.board.frames}
+        expected = 480 + NODE_WIDTH + GRID_STEP
+        self.assertEqual(positions[self.b.id], (expected, 0))
+        self.assertEqual(positions[tail.id], (expected + 384, 0))
+        self.assertEqual(positions[self.a.id], (0, 0))
+        self.assertEqual(positions[self.c.id], (480, 0))
+        self.assertEqual(len(self.view.history.past), edits + 1)
         finish(self.view.graph.undo())
         self.assertEqual(self.view.board, before)
 

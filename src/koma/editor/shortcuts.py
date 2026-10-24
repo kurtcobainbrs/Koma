@@ -15,6 +15,8 @@ class Action(StrEnum):
     CUT = 'storyboard.tool.cut'
     TEMP_PAN = 'storyboard.pan.temporary'
     MOVE = 'storyboard.node.move'
+    MUTE = 'storyboard.node.mute'
+    INSERT = 'storyboard.insert.menu'
     DUPLICATE = 'storyboard.node.duplicate'
     DELETE = 'storyboard.node.delete'
     GROUP = 'storyboard.node.group'
@@ -45,7 +47,9 @@ ACTIONS = (
     ShortcutAction(Action.CUT, 'Cortar ligações', ('K',)),
     ShortcutAction(Action.TEMP_PAN, 'Pan temporário', ('Space',), trigger='hold'),
     ShortcutAction(Action.MOVE, 'Mover', ('G',)),
-    ShortcutAction(Action.DUPLICATE, 'Duplicar', ('Shift+D',)),
+    ShortcutAction(Action.MUTE, 'Mutar/desmutar nodes', ('M',)),
+    ShortcutAction(Action.INSERT, 'Inserir', ('Shift+A',)),
+    ShortcutAction(Action.DUPLICATE, 'Duplicar', ('Ctrl+D', 'Shift+D')),
     ShortcutAction(Action.DELETE, 'Excluir', ('Delete', 'Backspace')),
     ShortcutAction(Action.GROUP, 'Criar moldura', ('Ctrl+G',)),
     ShortcutAction(Action.PASTE, 'Colar imagem', ('Ctrl+V',)),

@@ -15,6 +15,8 @@ class StoryCard:
         self.number = ft.Text(size=TEXT_BODY, font_family=FONT_HEADING)
         self.active_marker = ft.Icon(ft.Icons.RADIO_BUTTON_CHECKED, size=11,
             color=ft.Colors.SECONDARY, visible=False, tooltip='Quadro ativo no painel de propriedades')
+        self.mute_marker = ft.Icon(ft.Icons.VISIBILITY_OFF, size=14, visible=False,
+            tooltip='Mutado: ignorado no animatic')
         self.handle = ft.GestureDetector(expand=True, mouse_cursor=ft.MouseCursor.MOVE, drag_interval=DRAG_INTERVAL_MS,
             tooltip='Arraste o cabeçalho para mover o quadro',
             on_tap_down=lambda e: view.workspace.navigation.node_click(frame.id),
@@ -23,7 +25,7 @@ class StoryCard:
             on_pan_end=self.end_drag, on_pan_cancel=lambda e: view.workspace.cancel_drag(frame.id, e),
             content=ft.Container(height=COMPACT_CONTROL_HEIGHT,
                 content=ft.Row([ft.Icon(ft.Icons.DRAG_INDICATOR, size=18, color=MUTED), self.number,
-                    self.active_marker], spacing=6)))
+                    self.active_marker, self.mute_marker], spacing=6)))
         self.sequence = ft.PopupMenuButton(icon=ft.Icons.MORE_HORIZ, tooltip='Opções do quadro e conexões',
             items=[ft.PopupMenuItem('Anterior na sequência', icon=ft.Icons.ARROW_BACK,
                 on_click=self.shift(-1)),
@@ -33,6 +35,9 @@ class StoryCard:
                 ft.PopupMenuItem('Desconectar saída', on_click=view.graph.disconnect_port(frame.id, True)),
                 ft.PopupMenuItem('Remover preservando fluxo',
                     on_click=lambda e: view.confirm_remove_frames({frame.id}, preserve_flow=True))])
+        self.mute_item = ft.PopupMenuItem('Mutar', icon=ft.Icons.VISIBILITY_OFF,
+            on_click=self.toggle_muted)
+        self.sequence.items.append(self.mute_item)
         self.title = ft.Text(frame.title or 'Sem título', size=TEXT_SMALL, expand=True, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.duration = ft.Text(f'{frame.duration:g} s', size=TEXT_SMALL, color=MUTED)
@@ -75,6 +80,9 @@ class StoryCard:
     async def duplicate(self, e):
         await self.view.duplicate(self.identifier)
 
+    async def toggle_muted(self, e=None):
+        await self.view.toggle_muted({self.identifier})
+
     def set_image(self, name):
         self.image_name = name
         frame = next(frame for frame in self.view.board.frames if frame.id == self.identifier)
@@ -88,6 +96,9 @@ class StoryCard:
     def sync(self, frame):
         self.refresh_shortcuts()
         self.frame = frame
+        self.mute_item.content = self.view.keymap.describe('Desmutar' if frame.muted else 'Mutar', Action.MUTE)
+        self.mute_marker.visible = frame.muted
+        self.box.opacity = .5 if frame.muted else 1
         self.title.value = 'Saída da cena' if frame.node_type.starts_scene else frame.title or 'Sem título'
         self.sockets.controls[0].visible = frame.node_type.accepts_input
         self.duration.visible = frame.node_type.timed

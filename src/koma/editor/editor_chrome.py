@@ -76,10 +76,6 @@ class StoryboardChrome:
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
         self.menus = EditorMenuBar([(files, True),
             *[(source, False) for source in self.toolbar.controls]])
-        self.name = ft.Text(view.board.title, size=TEXT_BODY, weight=ft.FontWeight.W_600, max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS)
-        self.name_box = ft.Container(width=200, padding=ft.Padding.symmetric(horizontal=8), content=self.name,
-            tooltip='Renomear storyboard', on_click=self.rename)
         self.play = ft.IconButton(icon=ft.Icons.PLAY_ARROW, icon_size=20,
             tooltip='Abrir animatic da cena ativa', width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
             on_click=view.player.open)
@@ -87,8 +83,6 @@ class StoryboardChrome:
         self.content = ft.Container(bgcolor=SURFACE, border=ft.Border.all(1, BORDER), border_radius=RADIUS,
             padding=ft.Padding.symmetric(horizontal=4, vertical=2), on_size_change=self.resized,
             content=ft.Row([
-                self.name_box,
-                ft.VerticalDivider(width=1, color=BORDER),
                 ft.Row([self.menus.content], expand=True, scroll=ft.ScrollMode.AUTO, spacing=0),
                 self.play, view.properties.toggle_button,
             ], spacing=4, height=COMPACT_CONTROL_HEIGHT))
@@ -133,14 +127,8 @@ class StoryboardChrome:
         self.view.properties.toggle_button.tooltip = self.view.keymap.describe('Propriedades', Action.PROPERTIES)
 
     def sync(self):
-        self.name.value = (self.view.board.title or 'Sem título') + (' *' if self.view.dirty else '')
-        filename = self.view.session.path.name if self.view.session.path else 'Sem arquivo'
-        self.page.title = f'{self.name.value} · {filename} — Koma App'
-        if self.view.loaded and not self.view.closing and getattr(self, 'published_title', None) != self.page.title:
-            self.published_title = self.page.title
-            # Atualizar apenas o controle do editor não publica atributos da Page.
-            self.page.update()
-        self.name.tooltip = self.view.board.title
+        if self.view.loaded and not self.view.closing and self.view.on_state:
+            self.view.on_state(self.view)
         self.edit_items[0].disabled = self.view.graph.undo_button.disabled
         self.edit_items[1].disabled = self.view.graph.redo_button.disabled
         selected = bool(self.nav.selection.ids)
@@ -164,7 +152,7 @@ class StoryboardChrome:
 
     def lock(self, busy):
         locked = busy or bool(self.view.load_error)
-        self.toolbar.disabled = self.right_tools.disabled = self.name_box.disabled = locked
+        self.toolbar.disabled = self.right_tools.disabled = locked
         self.play.disabled = locked or not self.view.board.frames
         self.view.properties.toggle_button.disabled = locked
         self.view.files.menu.disabled = busy
@@ -177,7 +165,6 @@ class StoryboardChrome:
         if wide != self.wide or compact != self.compact:
             self.wide = wide
             self.compact = compact
-            self.name_box.width = 130 if compact else 200
             self.nav.selection_bar.width = 110 if compact else 145
             self.nav.focus_button.visible = not compact
             for button in (self.workspace.zoom_out_button, self.workspace.zoom_in_button, self.workspace.fit_button):
@@ -188,13 +175,13 @@ class StoryboardChrome:
     def rename(self, e=None):
         if not self.view.editable():
             return
-        field = ft.TextField(value=self.view.board.title, label='Nome do storyboard', max_length=200,
+        field = ft.TextField(value=self.view.board.title, label='Nome do projeto', max_length=200,
             counter=ft.Container(width=0, height=0), **input_style())
         async def save(e):
             self.page.pop_dialog()
             self.view.title.value = field.value or ''
             await self.view.edit_title(None)
-        self.page.show_dialog(dialog(title=ft.Text('Renomear storyboard'), content=ft.Container(width=380, content=field),
+        self.page.show_dialog(dialog(title=ft.Text('Renomear projeto'), content=ft.Container(width=380, content=field),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()), ft.FilledButton('Salvar', on_click=save)]))
 
     def toggle_tools(self, e=None):

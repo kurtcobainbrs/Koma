@@ -1,7 +1,5 @@
 """Sockets, curvas com cache e gestos de corte. Não executa operações em .blends."""
 
-from uuid import uuid4
-
 import flet as ft
 import flet.canvas as cv
 
@@ -24,8 +22,9 @@ class LinksLayer:
         self.workspace, self.view, self.page = workspace, workspace.view, workspace.page
         self.canvas = cv.Canvas()
         self.content = ft.Container(content=self.canvas, ignore_interactions=True)
-        self.drag_group = f'story-links-{uuid4().hex}'
         self.pending = None
+        self.drag_pointer = None
+        self.drag_endpoint = None
         self.preview_shape = None
         self.cut_points = []
         self.cache = {}
@@ -85,6 +84,7 @@ class LinksLayer:
 
     def cancel(self):
         self.pending, self.preview_shape = None, None
+        self.drag_pointer, self.drag_endpoint = None, None
         self.refresh(update=True)
 
     async def accept(self, source, target):
@@ -99,25 +99,54 @@ class LinksLayer:
                 (e.local_position.x, e.local_position.y)),), ft.Colors.SECONDARY)
             self.refresh(update=True)
 
+    def drag_begin(self, identifier, e):
+        self.begin(identifier)
+        if self.pending != identifier:
+            return
+        self.drag_pointer = (e.global_position.x, e.global_position.y)
+        x, y = self.port(identifier, True)
+        self.drag_origin = (x + e.local_position.x - 6, y + e.local_position.y - 6)
+        self.drag_endpoint = self.drag_origin
+        self.preview_shape = path_shape((curve((x, y), self.drag_endpoint),), ft.Colors.SECONDARY)
+        self.refresh(update=True)
+
+    def drag_update(self, e):
+        if self.drag_pointer is None or self.pending not in self.view.cards:
+            return
+        zoom = self.workspace.zoom
+        self.drag_endpoint = (
+            self.drag_origin[0] + (e.global_position.x - self.drag_pointer[0]) / zoom,
+            self.drag_origin[1] + (e.global_position.y - self.drag_pointer[1]) / zoom)
+        self.preview_shape = path_shape((curve(self.port(self.pending, True), self.drag_endpoint),), ft.Colors.SECONDARY)
+        self.refresh(update=True)
+
+    async def drag_end(self, e=None):
+        source, point = self.pending, self.drag_endpoint
+        if source and point:
+            for identifier in reversed(self.workspace.z_order):
+                if identifier == source:
+                    continue
+                left, top, right, bottom = self.bounds(identifier)
+                if left <= point[0] <= right and top <= point[1] <= bottom:
+                    if self.view.cards[identifier].viewport.frame.node_type.accepts_input:
+                        await self.accept(source, identifier)
+                    break
+        self.cancel()
+
     def socket(self, identifier, output):
         circle = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.SECONDARY)
         if output:
-            async def clicked(e):
-                self.begin(identifier)
-            return ft.Draggable(group=self.drag_group, data=identifier,
-                on_drag_start=lambda e: self.begin(identifier), on_drag_complete=lambda e: self.cancel(),
-                content=ft.GestureDetector(content=circle, on_tap_down=clicked,
-                    mouse_cursor=ft.MouseCursor.CLICK, tooltip='Saída: arraste ou clique para conectar'),
-                content_feedback=ft.Icon(ft.Icons.CIRCLE, size=14, color=ft.Colors.SECONDARY))
+            return ft.GestureDetector(content=circle, mouse_cursor=ft.MouseCursor.CLICK,
+                drag_interval=DRAG_INTERVAL_MS,
+                on_tap_down=lambda e: self.begin(identifier),
+                on_pan_start=lambda e: self.drag_begin(identifier, e),
+                on_pan_update=self.drag_update, on_pan_end=self.drag_end,
+                on_pan_cancel=lambda e: self.cancel(),
+                tooltip='Saída: arraste até outro quadro para conectar')
         async def clicked(e):
             await self.accept(self.pending, identifier)
-        async def accepted(e):
-            source = getattr(e, 'src', None)
-            if source is not None and source.group == self.drag_group:
-                await self.accept(source.data, identifier)
-        return ft.DragTarget(group=self.drag_group, on_accept=accepted,
-            content=ft.GestureDetector(content=circle, on_tap_down=clicked,
-                mouse_cursor=ft.MouseCursor.CLICK, tooltip='Entrada: receba a saída de outro quadro'))
+        return ft.GestureDetector(content=circle, on_tap_down=clicked,
+            mouse_cursor=ft.MouseCursor.CLICK, tooltip='Entrada: receba a saída de outro quadro')
 
     def cut_begin(self, e):
         nav = self.workspace.navigation
@@ -154,7 +183,8 @@ class LinksLayer:
             self.page.update(self.workspace.viewer)
 
     def drop_candidate(self, identifier):
-        if not self.view.cards[identifier].viewport.frame.node_type.accepts_input:
+        if (not self.view.cards[identifier].viewport.frame.node_type.accepts_input
+                or any(identifier in (edge.source, edge.target) for edge in self.view.board.links)):
             return None
         node = self.view.cards[identifier].content
         rect = node.left + 24, node.top + 32, node.left + NODE_WIDTH - 24, node.top + NODE_HEIGHT - 4

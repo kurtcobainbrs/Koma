@@ -38,7 +38,7 @@ class BoxZoomTests(TestCase):
             self.assertTrue(ws.viewer.scale_enabled)
             self.assertEqual(self.nav.selection.ids, {self.frames[0].id})
         self.assertEqual(self.view.store.path.read_bytes(), original)
-        ws.viewer.reset.assert_not_awaited()
+        self.assertEqual(ws.viewer.reset.await_count, 2)
 
     def test_small_drag_does_not_zoom_and_press_does_not_change_camera(self):
         box = self.camera()
@@ -64,21 +64,27 @@ class BoxZoomTests(TestCase):
             fixtures.finish(box.end())
             self.workspace.viewer.zoom.assert_not_awaited()
 
-    def test_transition_is_progressive_and_can_be_interrupted_by_new_navigation(self):
+    def test_focus_is_one_stable_transform_after_previous_pan_and_zoom(self):
         self.camera()
         ws = self.workspace
-        scales = []
-        async def next_tick(_):
-            scales.append(ws.zoom)
-            if len(scales) == 4:
-                ws.cancel_camera_transition()
-        with patch('koma.editor.canvas.asyncio.sleep', side_effect=next_tick):
-            fixtures.finish(ws.focus_region((800, 600, 1000, 750)))
-        self.assertEqual(len(scales), 4)
-        self.assertEqual(scales, sorted(scales))
-        self.assertGreater(ws.zoom, 1)
-        self.assertLess(ws.zoom, 2.5)
-        self.assertEqual(ws.viewer.zoom.await_count, 4)
+        ws.zoom = .5
+        ws.translation_x, ws.translation_y = 180, -240
+        async def reset():
+            self.assertTrue(ws.focusing_region)
+            self.assertFalse(ws.viewer.scale_enabled)
+            # Um callback atrasado do gesto anterior não pode alterar a câmera.
+            ws.interaction_update(fixtures.Data(scale=3))
+            self.assertEqual(ws.zoom, .5)
+        ws.viewer.reset.side_effect = reset
+        fixtures.finish(ws.focus_region((800, 600, 1200, 900)))
+        expected = min((ws.viewport_width - 48) / 400, (ws.viewport_height - 48) / 300, 2.5)
+        ws.viewer.reset.assert_awaited_once()
+        ws.viewer.zoom.assert_awaited_once_with(expected)
+        self.assertAlmostEqual(ws.translation_x + 1000 * ws.zoom, ws.viewport_width / 2)
+        self.assertAlmostEqual(ws.translation_y + 750 * ws.zoom, ws.viewport_height / 2)
+        self.assertFalse(ws.focusing_region)
+        self.assertTrue(ws.viewer.scale_enabled)
+        self.assertEqual(self.nav.definitions['zoom'].cursor.value, 'precise')
 
     def test_busy_editor_ignores_box_and_camera_requests(self):
         box = self.camera()

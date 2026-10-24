@@ -33,7 +33,7 @@ def canvas_tools(workspace):
             edit_nodes=True, cancel=workspace.box_selection.cancel),
         CanvasTool('pan', Action.PAN, 'Pan', ft.Icons.PAN_TOOL_OUTLINED, ft.MouseCursor.GRAB,
             'Pan: arraste em qualquer área do canvas para navegar, sem mover os quadros.', pan=True),
-        CanvasTool('zoom', Action.ZOOM, 'Zoom por caixa', ft.Icons.ZOOM_IN, ft.MouseCursor.ZOOM_IN,
+        CanvasTool('zoom', Action.ZOOM, 'Zoom por caixa', ft.Icons.CROP_FREE, ft.MouseCursor.PRECISE,
             'Zoom: arraste uma caixa para enquadrar a área. Use Cancelar para interromper; botão direito reduz. A roda continua disponível.',
             press=zoom.press, begin=zoom.begin, update=zoom.update, end=zoom.end,
             cancel=zoom.cancel, secondary=workspace.scene_secondary_click),

@@ -68,7 +68,7 @@ class ChromeTests(TestCase):
         popup = view.page.show_dialog.call_args.args[0]
         popup.content.content.value = 'Estudo de câmera'
         finish(popup.actions[-1].on_click(None))
-        self.assertEqual(view.chrome.name.value, 'Estudo de câmera *')
+        self.assertEqual(view.document_label, 'Estudo de câmera *')
         self.assertEqual(view.store.load().title, 'Estudo de câmera')
 
     def test_narrow_windows_keep_one_header_row_and_access_to_view_commands(self):
@@ -76,14 +76,13 @@ class ChromeTests(TestCase):
         chrome = view.chrome
         chrome.resized(Data(width=480))
         self.assertTrue(chrome.compact)
-        self.assertTrue(chrome.name_box.visible)
-        self.assertEqual(chrome.name_box.width, 130)
+        self.assertFalse(hasattr(chrome, "name_box"))
         self.assertFalse(view.count.visible)
         self.assertFalse(view.workspace.navigation.focus_button.visible)
         self.assertEqual(chrome.content.content.height, 28)
         self.assertEqual(len(chrome.view_menu.items), 6)
         chrome.resized(Data(width=1200))
-        self.assertTrue(chrome.name_box.visible)
+        self.assertFalse(hasattr(chrome, "name_box"))
         self.assertTrue(view.workspace.navigation.focus_button.visible)
         self.assertFalse(chrome.compact)
 

@@ -73,7 +73,7 @@ class StoryboardFiles:
         if not self.view.dirty:
             return True
         decision = await self.choose('Alterações não salvas',
-            'Salve as alterações antes de sair deste documento.',
+            f'Projeto: {self.view.board.title or "Sem título"}. Salve as alterações antes de fechá-lo.',
             [('cancel', 'Cancelar'), ('discard', 'Descartar'), ('save', 'Salvar')])
         if decision == 'save':
             return await self._save_document()
@@ -100,6 +100,8 @@ class StoryboardFiles:
                     [('cancel', 'Cancelar'), ('replace', 'Substituir')]) != 'replace':
                     return False
         board = view.board
+        if view.can_save_to is not None and not view.can_save_to(target):
+            raise ValueError('Este arquivo já está aberto em outra aba. Escolha outro destino.')
         async with view.save_lock:
             saved = await asyncio.to_thread(view.session.save, board, target, expected_stamp=expected)
         view.session.board = view.board
@@ -151,9 +153,7 @@ class StoryboardFiles:
                 candidate = await asyncio.to_thread(DocumentSession.open, selected[0].path, view.settings.directory)
             else:
                 candidate = DocumentSession(view.settings.directory)
-            if not await self.guard_changes():
-                return
-            # O aplicativo ativa a candidata antes de encerrar a sessão anterior.
+            # Novo/Abrir adicionam uma aba; os outros documentos continuam abertos.
             await view.switch_session(candidate)
             candidate = None
         except (OSError, ValueError, RuntimeError) as exc:

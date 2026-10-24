@@ -20,7 +20,8 @@ class Timeline:
         self.root = principal(board, active)
         has_scenes = any(frame.node_type.starts_scene for frame in board.frames)
         sequence = scene_frames(board, self.root) if self.root else () if has_scenes else board.frames
-        self.frames = tuple(frame for frame in sequence if frame.node_type.timed)
+        self.frames = tuple(frame for frame in sequence if frame.node_type.timed and not frame.muted
+                            and not (self.root and self.root.muted))
         self.starts = []
         self.total = 0.0
         for frame in self.frames:
@@ -73,7 +74,7 @@ class AnimaticPlayer:
             return
         self.timeline = Timeline(self.view.board, self.view.workspace.navigation.selected)
         if not self.timeline.frames:
-            self.view.notify('Conecte quadros à saída deste Node Principal para reproduzir a cena.' if self.timeline.root
+            self.view.notify('Esta cena não tem quadros ativos. Conecte quadros ou desmute os nodes para reproduzir.' if self.timeline.root
                 else 'Selecione um Node Principal ou um quadro conectado a ele para reproduzir a cena.', 'warning')
             return
         self.popup.title = ft.Text(f'Animatic · {self.timeline.root.title or "Cena"}' if self.timeline.root else 'Animatic · Storyboard')

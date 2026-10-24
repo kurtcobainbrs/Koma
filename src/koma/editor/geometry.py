@@ -120,3 +120,30 @@ def content_bounds(frames):
     return (max((frame.x + NODE_WIDTH for frame in frames if frame.x is not None), default=NODE_WIDTH) + GRID_STEP,
             max((frame.y + NODE_EXPANDED_HEIGHT for frame in frames if frame.y is not None),
                 default=NODE_HEIGHT) + GRID_STEP)
+
+
+def make_insertion_space(board, identifier, link, heights=None):
+    """Abre espaço apenas na sequência seguinte ao encaixe, preservando seu layout."""
+    heights = heights or {}
+    frames = {frame.id: frame for frame in board.frames}
+    source, target, inserted = (frames[key] for key in (link.source, link.target, identifier))
+    horizontal = abs(target.x - source.x) >= abs(target.y - source.y)
+    axis = 'x' if horizontal else 'y'
+    sign = 1 if getattr(target, axis) >= getattr(source, axis) else -1
+    def size(frame):
+        return NODE_WIDTH if horizontal else max(NODE_HEIGHT, heights.get(frame.id, NODE_HEIGHT))
+    required = (getattr(inserted, axis) + size(inserted) + GRID_STEP - getattr(target, axis)
+                if sign > 0 else getattr(target, axis) + size(target) + GRID_STEP - getattr(inserted, axis))
+    shift = sign * max(0, required)
+    if not shift:
+        return board
+    outgoing = {edge.source: edge.target for edge in board.links}
+    following, current = set(), link.target
+    while current and current not in following:
+        following.add(current)
+        current = outgoing.get(current)
+    if any(abs(getattr(frames[key], axis) + shift) > MAX_POSITION for key in following):
+        raise ValueError('Não há espaço para encaixar o quadro no limite do canvas.')
+    return replace(board, frames=tuple(
+        replace(frame, **{axis: getattr(frame, axis) + shift}) if frame.id in following else frame
+        for frame in board.frames))

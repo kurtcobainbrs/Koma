@@ -18,10 +18,19 @@ class DocumentActionsTests(unittest.IsolatedAsyncioTestCase):
         self.page = Mock()
         self.page.window.destroy = AsyncMock()
         self.app = KomaApplication(self.page, self.root / 'data')
-        self.addCleanup(lambda: self.app.view.session.close())
+        self.addAsyncCleanup(self.cleanup_views)
+        resume = patch("koma.editor.canvas.StoryboardCanvas.resume", new_callable=AsyncMock)
+        resume.start()
+        self.addCleanup(resume.stop)
         await self.app.start()
         self.view = self.app.view
         self.target = self.root / 'documento.koma'
+
+    async def cleanup_views(self):
+        for view in self.app.views:
+            view.closing = True
+            await view.shutdown()
+            view.session.close()
 
     async def add(self):
         await self.view.add_frame()
@@ -51,7 +60,7 @@ class DocumentActionsTests(unittest.IsolatedAsyncioTestCase):
         with self.picker(self.target):
             self.assertTrue(await self.view.files.save_document())
         self.assertFalse(self.view.dirty)
-        self.assertNotIn(' *', self.view.chrome.name.value)
+        self.assertNotIn(' *', self.view.document_label)
         await self.view.edit_frame(self.view.board.frames[0].id, 'notes', 'Alteração')
         self.assertTrue(self.view.dirty)
         await self.view.graph.undo()
@@ -85,19 +94,22 @@ class DocumentActionsTests(unittest.IsolatedAsyncioTestCase):
         self.page.window.destroy.assert_awaited_once()
         self.assertFalse(directory.exists())
 
-    async def test_new_cancel_and_discard_have_distinct_outcomes(self):
+    async def test_new_adds_tab_without_discarding_unsaved_project(self):
         await self.add()
         old = self.view
-        old.files.choose = AsyncMock(return_value='cancel')
-        await old.files.new_document()
-        self.assertIs(self.app.view, old)
-        old.files.choose.return_value = 'discard'
+        before = old.board
+        old.files.choose = AsyncMock(return_value='discard')
         await old.files.new_document()
         self.assertIsNot(self.app.view, old)
+        self.assertEqual(len(self.app.views), 2)
+        self.assertEqual(old.board, before)
+        self.assertTrue(old.dirty)
+        self.assertTrue(old.history.past)
+        self.assertFalse(old.closing)
+        self.assertFalse(old.active)
+        old.files.choose.assert_not_awaited()
         self.assertFalse(self.app.view.board.frames)
-        self.assertFalse(self.app.view.history.past)
         self.assertFalse(self.app.view.dirty)
-        self.assertTrue(old.closing)
 
     async def test_invalid_open_preserves_document_and_history_without_prompt(self):
         await self.add()
@@ -111,26 +123,30 @@ class DocumentActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.view.history.past)
         self.assertTrue(self.view.editable())
 
-    async def test_open_valid_document_starts_fresh_history(self):
+    async def test_open_same_file_keeps_unsaved_state_and_history_in_existing_tab(self):
         await self.add()
         with self.picker(self.target):
             await self.view.files.save_document()
-        saved = self.view.board
         await self.view.add_frame()
-        self.view.files.choose = AsyncMock(return_value='discard')
+        before, history = self.view.board, tuple(self.view.history.past)
+        self.view.files.choose = AsyncMock()
         with self.picker(self.target):
             await self.view.files.open_document()
-        self.assertEqual(self.app.view.board, saved)
-        self.assertFalse(self.app.view.history.past)
-        self.assertFalse(self.app.view.dirty)
+        self.assertIs(self.app.view, self.view)
+        self.assertEqual(len(self.app.views), 1)
+        self.assertEqual(self.view.board, before)
+        self.assertEqual(tuple(self.view.history.past), history)
+        self.view.files.choose.assert_not_awaited()
 
-    async def test_switch_publishes_candidate_caption_after_old_gestures_shutdown(self):
+    async def test_open_another_file_keeps_original_tab_and_updates_bottom_label(self):
         session = DocumentSession(self.root / 'data')
         session.board = replace(session.board, title='Outro documento')
         session.save(session.board, self.target)
         await self.app.switch_session(session)
-        self.assertTrue(self.page.title.startswith('Outro documento · documento.koma'))
-        self.page.update.assert_called_with()
+        self.assertEqual(self.page.title, 'Koma App')
+        self.assertEqual(len(self.app.views), 2)
+        self.assertEqual(self.app.tabs.entries[self.app.view][1].value, 'Outro documento')
+        self.assertFalse(self.view.closing)
 
     async def test_existing_save_as_requires_explicit_replacement(self):
         await self.add()

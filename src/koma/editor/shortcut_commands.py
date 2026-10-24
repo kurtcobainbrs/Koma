@@ -18,6 +18,8 @@ class ShortcutCommands:
             Action.NEW: view.files.new_document, Action.OPEN: view.files.open_document,
             Action.SAVE: view.files.save_document, Action.SAVE_AS: view.files.save_as,
             Action.MOVE: ws.grab.start, Action.PASTE: view.image_input.paste,
+            Action.MUTE: view.toggle_muted,
+            Action.INSERT: ws.context_menu.open_insert,
             Action.PROPERTIES: view.properties.toggle,
             Action.UNDO: view.graph.undo, Action.REDO: view.graph.redo,
             Action.GROUP: view.graph.group_dialog,
@@ -36,7 +38,9 @@ class ShortcutCommands:
     def cancel(self):
         nav, ws, view = self.nav, self.nav.workspace, self.nav.view
         ws.cancel_camera_transition()
-        if ws.grab.active:
+        if ws.context_menu.layer.visible:
+            ws.context_menu.dismiss()
+        elif ws.grab.active:
             ws.grab.cancel()
         elif ws.box_zoom.active:
             ws.box_zoom.cancel()

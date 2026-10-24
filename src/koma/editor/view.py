@@ -14,7 +14,7 @@ from koma.ui.typography import TEXT_BODY, TEXT_SMALL
 from koma.ui.components import list_surface
 from koma.editor.card import StoryCard
 from koma.editor.canvas import StoryboardCanvas
-from koma.editor.geometry import GRID_STEP, group_delta, next_position, place_missing
+from koma.editor.geometry import GRID_STEP, group_delta, next_position, place_missing, make_insertion_space
 from koma.documents.images import IMAGE_EXTENSIONS, import_image, load_thumbnails
 from koma.editor.models import MAX_CARDS, Storyboard, StoryFrame
 from koma.exports.pdf_export import export_pdf
@@ -33,9 +33,12 @@ from koma.editor.shortcuts import default_keymap
 
 
 class StoryboardView:
-    def __init__(self, page, session, settings, *, on_session=None):
+    def __init__(self, page, session, settings, *, on_session=None, on_state=None):
         self.page, self.session, self.settings = page, session, settings
         self.on_session = on_session
+        self.on_state = on_state
+        self.can_save_to = None
+        self.active = True
         self.keymap = settings.shortcuts
         self.store = session.store
         self.preferences = StoryboardPreferences(self)
@@ -100,7 +103,7 @@ class StoryboardView:
         self.feedback.set(text, state)
         if hasattr(self, 'chrome'):
             self.chrome.sync_status()
-        if not self.closing:
+        if not self.closing and self.active:
             self.page.update(self.feedback.content)
 
     def lock(self, busy):
@@ -119,7 +122,7 @@ class StoryboardView:
         self.graph.sync_history()
         self.chrome.sync()
         self.chrome.lock(busy)
-        if not self.closing:
+        if not self.closing and self.active:
             self.page.update(self.content)
 
     async def activate(self):
@@ -172,11 +175,11 @@ class StoryboardView:
         self.export_button.disabled = not number
         self.play_button.disabled = not self.board.frames
         self.chrome.sync()
-        if self.loaded and self.board.frames and not self.workspace.initial_view_done:
+        if self.active and self.loaded and self.board.frames and not self.workspace.initial_view_done:
             self.page.run_task(self.workspace.ensure_initial_view)
 
     def editable(self):
-        return self.loaded and not self.busy and not self.closing and not self.load_error
+        return self.active and self.loaded and not self.busy and not self.closing and not self.load_error
 
     async def retry_persist(self, e):
         await self.persist()
@@ -197,6 +200,10 @@ class StoryboardView:
             self.page.update(self.chrome.content)
 
     @property
+    def document_label(self):
+        return (self.board.title or 'Sem título') + (' *' if self.dirty else '')
+
+    @property
     def dirty(self):
         return self.session.saved_board is None or self.board != self.session.saved_board
 
@@ -211,7 +218,7 @@ class StoryboardView:
                 await asyncio.to_thread(self.session.recover, board)
                 self.retry_save.visible = False
                 self.chrome.sync()
-                if not self.closing:
+                if not self.closing and self.active:
                     self.page.update(self.chrome.content)
                 return True
             except (OSError, ValueError) as exc:
@@ -258,14 +265,14 @@ class StoryboardView:
     async def add_principal(self, e=None):
         await self.add_node('main')
 
-    async def add_node(self, kind):
+    async def add_node(self, kind, *, position=None):
         if not self.editable():
             return
         spec = node_type(kind)
         if len(self.board.frames) >= MAX_CARDS:
             self.notify(f'O storyboard aceita até {MAX_CARDS} nodes.', 'warning')
             return
-        x, y = next_position(self.board.frames)
+        x, y = next_position(self.board.frames) if position is None else position
         number = sum(frame.kind == kind for frame in self.board.frames) + 1
         title = f'{spec.title_prefix} {number:02d}' if spec.title_prefix else ''
         frame = StoryFrame(kind=kind, title=title, x=x, y=y)
@@ -276,22 +283,21 @@ class StoryboardView:
         self.page.update(self.content)
         await self.persist()
 
-    async def duplicate(self, identifier):
+    async def toggle_muted(self, identifiers=None):
         if not self.editable():
             return
-        if len(self.board.frames) >= MAX_CARDS:
-            self.notify(f'O storyboard aceita até {MAX_CARDS} quadros.', 'warning')
+        identifiers = self.workspace.navigation.selection.ids if identifiers is None else identifiers
+        targets = [frame for frame in self.board.frames if frame.id in identifiers]
+        if not targets:
             return
-        frames = list(self.board.frames)
-        index = next((i for i, frame in enumerate(frames) if frame.id == identifier), None)
-        if index is None:
-            return
-        x, y = next_position(frames)
-        frames.insert(index + 1, replace(frames[index], id=uuid4().hex, x=x, y=y))
-        self.changed(replace(self.board, frames=tuple(frames)))
-        self.refresh()
-        self.page.update(self.content)
-        await self.persist()
+        muted = not all(frame.muted for frame in targets)
+        await self.graph.commit(replace(self.board, frames=tuple(
+            replace(frame, muted=muted) if frame.id in identifiers else frame for frame in self.board.frames)))
+
+    async def duplicate(self, identifier):
+        # Botão e atalho usam a mesma cópia próxima da origem, sem procurar um
+        # slot vazio na grade global do canvas.
+        await self.duplicate_frames({identifier})
 
     def confirm_remove(self, identifier):
         self.confirm_remove_frames({identifier})
@@ -322,6 +328,7 @@ class StoryboardView:
         self.refresh()
         self.workspace.navigation.apply_selection({frame.id for frame in copies}, copies[0].id)
         self.page.update(self.content)
+        self.workspace.navigation.focus_keyboard()
         await self.persist()
 
     def confirm_remove_frames(self, identifiers, preserve_flow=False):
@@ -330,22 +337,11 @@ class StoryboardView:
         targets = frozenset(frame.id for frame in self.board.frames if frame.id in identifiers)
         if not targets:
             return
-        async def remove(e):
-            self.page.pop_dialog()
-            if not self.editable():
-                return
-            self.changed(graph.remove_frames(self.board, targets, reconnect=preserve_flow))
-            self.refresh()
-            self.page.update(self.content)
-            await self.persist()
-        label = 'Excluir quadro' if len(targets) == 1 else f'Excluir {len(targets)} quadros'
-        self.page.show_dialog(dialog(title=ft.Text(label + '?'),
-            content=ft.Text('Os quadros selecionados serão removidos do storyboard. '
-                + ('As ligações dos vizinhos serão reconectadas. ' if preserve_flow else '')
-                + 'As imagens originais serão preservadas. Use Desfazer para restaurar a exclusão.'),
-            actions=[ft.TextButton('Cancelar', height=CONTROL_HEIGHT, on_click=lambda e: self.page.pop_dialog()),
-                ft.FilledButton(label, height=CONTROL_HEIGHT, on_click=remove,
-                    style=ft.ButtonStyle(bgcolor=ft.Colors.ERROR, color=ft.Colors.ON_ERROR))]))
+        self.workspace.links.cancel()
+        self.changed(graph.remove_frames(self.board, targets, reconnect=preserve_flow))
+        self.refresh()
+        self.page.update(self.content)
+        self.page.run_task(self.persist)
 
     async def move(self, source, target=None):
         if not self.editable():
@@ -370,14 +366,18 @@ class StoryboardView:
     async def position_frames(self, positions, insert_flow=False, detach_flow=False):
         if not self.editable():
             return
-        updated = replace(self.board, frames=tuple(replace(frame, x=positions[frame.id][0], y=positions[frame.id][1])
-            if frame.id in positions else frame for frame in self.board.frames))
+        placed = positions
+        updated = replace(self.board, frames=tuple(replace(frame, x=placed[frame.id][0], y=placed[frame.id][1])
+            if frame.id in placed else frame for frame in self.board.frames))
         candidate = self.workspace.links.candidate
         if detach_flow:
             updated = graph.detach(updated, positions)
-        elif insert_flow and len(positions) == 1 and candidate:
+        elif (insert_flow and len(positions) == 1 and candidate
+                and not any(key in (edge.source, edge.target) for key in positions for edge in self.board.links)):
             try:
-                updated = graph.insert(updated, next(iter(positions)), candidate)
+                identifier = next(iter(positions))
+                inserted = graph.insert(updated, identifier, candidate)
+                updated = make_insertion_space(inserted, identifier, candidate, self.workspace.node_heights)
             except ValueError as exc:
                 self.notify(str(exc), 'warning')
         self.workspace.links.candidate = None
@@ -479,6 +479,32 @@ class StoryboardView:
             self.notify(f'Não foi possível exportar: {exc}', 'error')
         finally:
             self.lock(False)
+
+    async def deactivate(self):
+        """Suspende gestos/player ao sair da aba, preservando documento e histórico."""
+        self.workspace.context_menu.dismiss(refocus=False)
+        self.workspace.camera_memory.remember()
+        self.workspace.grab.cancel(update=False)
+        if self.workspace.drag:
+            self.workspace.cancel_drag(self.workspace.drag.identifier, update=False)
+        self.workspace.box_selection.cancel()
+        self.workspace.box_zoom.cancel()
+        self.workspace.links.cancel()
+        self.workspace.links.cancel_cut()
+        self.properties.end_adjust()
+        if self.player.opened:
+            self.player.close()
+        else:
+            self.player.dismissed()
+        self.workspace.cancel_camera_transition()
+        nav = self.workspace.navigation
+        for keys in (nav.shift_keys, nav.control_keys, nav.alt_keys, nav.meta_keys):
+            keys.clear()
+        nav.held_key, nav.temporary_pan = None, False
+        nav.editing_fields.clear()
+        await self.preferences.flush()
+        await self.workspace.camera_memory.flush()
+        self.active = False
 
     async def shutdown(self):
         if self.shortcuts_changed in self.keymap.listeners:

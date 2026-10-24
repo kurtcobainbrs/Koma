@@ -42,6 +42,7 @@ class StoryFrame:
     kind: str = 'frame'
     scene_color: str = ''
     subtitle: str = ''
+    muted: bool = False
 
     @property
     def node_type(self):
@@ -49,6 +50,8 @@ class StoryFrame:
 
     def validate(self):
         node_type(self.kind)
+        if type(self.muted) is not bool:
+            raise ValueError('Estado de mute inválido.')
         if not isinstance(self.subtitle, str) or len(self.subtitle) > SUBTITLE_LIMIT:
             raise ValueError(f'A legenda aceita até {SUBTITLE_LIMIT} caracteres.')
         if not isinstance(self.scene_color, str) or (self.scene_color and not re.fullmatch(r'#[a-fA-F0-9]{6}', self.scene_color)):

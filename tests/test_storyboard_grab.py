@@ -17,12 +17,12 @@ class GrabTests(TestCase):
     def test_remapped_move_updates_execution_and_menu_labels(self):
         a = self.frames[0]
         self.nav.apply_selection({a.id})
-        self.view.keymap.rebind(Action.MOVE, ['M'])
+        self.view.keymap.rebind(Action.MOVE, ['L'])
         fixtures.finish(self.nav.key_down(fixtures.Data(key='g')))
         self.assertFalse(self.workspace.grab.active)
-        fixtures.finish(self.nav.key_down(fixtures.Data(key='m')))
+        fixtures.finish(self.nav.key_down(fixtures.Data(key='l')))
         self.assertTrue(self.workspace.grab.active)
-        self.assertEqual(self.view.chrome.edit_items[5].content, 'Mover · M')
+        self.assertEqual(self.view.chrome.edit_items[5].content, 'Mover · L')
         self.workspace.grab.cancel()
 
     def test_alt_drag_detaches_and_bridges_neighbors_as_one_undo(self):

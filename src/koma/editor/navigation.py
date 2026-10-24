@@ -87,7 +87,7 @@ class CanvasNavigation:
         self.workspace.scene.ignore_interactions = not tool.edit_nodes
         surface = self.workspace.pointer_surface
         surface.on_tap_down = None
-        surface.on_secondary_tap_down = tool.secondary
+        surface.on_secondary_tap_down = tool.secondary or self.workspace.scene_secondary_click
         surface.on_pan_down = tool.press
         surface.on_pan_start = tool.begin
         surface.on_pan_update = tool.update
@@ -98,9 +98,9 @@ class CanvasNavigation:
             surface.on_tap_down = self.workspace.grab.confirm
             surface.on_secondary_tap_down = self.workspace.grab.cancel
             surface.on_pan_down = surface.on_pan_start = surface.on_pan_update = surface.on_pan_end = surface.on_pan_cancel = None
-        self.workspace.viewer.pan_enabled = tool.pan and self.workspace.drag is None
+        self.workspace.viewer.pan_enabled = tool.pan and self.workspace.drag is None and not self.workspace.focusing_region
         self.workspace.viewer.scale_enabled = (self.workspace.drag is None and not self.workspace.box_selection.active
-            and not self.workspace.box_zoom.active and not self.workspace.links.cut_points)
+            and not self.workspace.box_zoom.active and not self.workspace.links.cut_points and not self.workspace.focusing_region)
         surface.mouse_cursor = ft.MouseCursor.MOVE if self.workspace.grab.active else tool.cursor
         for key, button in self.buttons.items():
             button.style = ft.ButtonStyle(bgcolor=SELECTION if key == mode else None,

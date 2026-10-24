@@ -19,17 +19,18 @@ class BoxZoom:
         return self.start is not None
 
     def press(self, e):
-        if self.workspace.navigation.effective_mode == 'zoom' and self.workspace.view.editable():
+        if self.workspace.navigation.effective_mode == 'zoom' and self.workspace.view.editable() and not self.workspace.focusing_region:
             self.workspace.cancel_camera_transition()
             self.pending = e.local_position.x, e.local_position.y
 
     def begin(self, e):
-        if self.workspace.navigation.effective_mode != 'zoom' or not self.workspace.view.editable():
+        if self.workspace.navigation.effective_mode != 'zoom' or not self.workspace.view.editable() or self.workspace.focusing_region:
             return
         self.start = self.pending or (e.local_position.x, e.local_position.y)
         self.pending = None
         self.workspace.navigation.focus_keyboard()
         self.workspace.viewer.scale_enabled = False
+        self.workspace.page.update(self.workspace.viewer)
         self.update(e)
 
     def update(self, e):
@@ -40,7 +41,7 @@ class BoxZoom:
         self.overlay.left, self.overlay.top = left, top
         self.overlay.width, self.overlay.height = right - left, bottom - top
         self.overlay.visible = True
-        self.workspace.page.update(self.overlay, self.workspace.viewer)
+        self.workspace.page.update(self.overlay)
 
     async def end(self, e=None):
         bounds = self.bounds if self.active else None
