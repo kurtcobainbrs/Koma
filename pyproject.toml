@@ -20,4 +20,4 @@ koma = "koma.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-koma = ["assets/*.json", "assets/fonts/*.ttf", "assets/fonts/OFL.txt", "themes/*.json"]
+koma = ["assets/*.json", "assets/*.ico", "assets/fonts/*.ttf", "assets/fonts/OFL.txt", "themes/*.json"]

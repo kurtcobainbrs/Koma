@@ -1,7 +1,7 @@
 name: koma_flet
 description: Flet desktop client with Koma's widget-scoped image drop extension.
 publish_to: none
-version: 1.0.0+1
+version: 0.1.0+1
 environment:
   sdk: '>=3.5.0 <4.0.0'
 dependencies:

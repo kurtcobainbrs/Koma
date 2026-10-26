@@ -4,8 +4,12 @@ Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     & $Python -m unittest discover -s tests -q
     if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
+    & $Python scripts\prepare_release_resources.py
+    if ($LASTEXITCODE -ne 0) { throw 'Os recursos da release não foram preparados.' }
     & $Python scripts\build_flet_client.py
     if ($LASTEXITCODE -ne 0) { throw 'O cliente Flet com drop nativo não foi validado.' }
+    & $Python -c "from pathlib import Path; from scripts.prepare_release_resources import third_party_notices; from koma.ui.drop_runtime import development_client; root=Path.cwd(); third_party_notices(root, root/'build/release/licenses', development_client(root))"
+    if ($LASTEXITCODE -ne 0) { throw 'Os avisos de terceiros não foram preparados.' }
     New-Item -ItemType Directory -Path build -Force | Out-Null
     $stage = Join-Path $PWD ('build\windows-stage-' + [guid]::NewGuid().ToString('N'))
     $package = Join-Path $stage 'Koma'
