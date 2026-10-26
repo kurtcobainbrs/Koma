@@ -13,7 +13,7 @@ from koma.exports.encoding import QUALITY_OPTIONS, SIZE_OPTIONS
 
 class VideoRunner(BlenderProcess):
     async def run(self, blender, images, destination, fps, quality, max_size, notify, *, expected_destination_stamp=Ellipsis,
-                  frame_durations=None):
+                  frame_durations=None, audio_tracks=None):
         if self.running:
             raise ValueError('Uma compilação já está em andamento.')
         if not blender.is_file() or not os.access(blender, os.X_OK):
@@ -23,16 +23,26 @@ class VideoRunner(BlenderProcess):
         if frame_durations is not None and (len(frame_durations) != len(images)
                 or any(type(value) is not int or value < 1 for value in frame_durations)):
             raise ValueError('Durações de vídeo inválidas.')
+        audio_tracks = tuple(audio_tracks or ())
+        from koma.documents.audio import validate_audio
+        for track in audio_tracks:
+            if (set(track) != {'path', 'start', 'volume'} or type(track['start']) not in (int, float)
+                    or not math.isfinite(track['start']) or track['start'] < 0
+                    or type(track['volume']) not in (int, float) or not math.isfinite(track['volume']) or not 0 <= track['volume'] <= 2):
+                raise ValueError('Trilha de áudio de exportação inválida.')
+            validate_audio(Path(track['path']))
         destination = destination.expanduser().resolve()
         if destination.suffix.lower() != '.mp4':
             raise ValueError('O destino deve terminar com .mp4.')
         if not destination.parent.is_dir():
             raise ValueError('A pasta de destino não existe.')
-        if destination in {path.resolve() for path in images}:
+        audio_paths = {Path(track['path']).resolve() for track in audio_tracks}
+        if destination in {path.resolve() for path in images} | audio_paths:
             raise ValueError('O destino não pode substituir uma imagem de origem.')
         if quality not in QUALITY_OPTIONS or max_size not in SIZE_OPTIONS:
             raise ValueError('Configurações de vídeo inválidas.')
         source_stamps = {path: (path.stat().st_size, path.stat().st_mtime_ns) for path in images}
+        source_stamps.update({path: (path.stat().st_size, path.stat().st_mtime_ns) for path in audio_paths})
         def destination_stamp():
             return (destination.stat().st_size, destination.stat().st_mtime_ns) if destination.exists() else None
         initial_destination = destination_stamp()
@@ -50,6 +60,8 @@ class VideoRunner(BlenderProcess):
                 output=str(output), fps=fps, quality=quality, max_size=max_size)
             if frame_durations is not None:
                 payload['durations'] = list(frame_durations)
+            if audio_tracks:
+                payload['audio_tracks'] = list(audio_tracks)
             request.write_text(json.dumps(payload), encoding='utf-8')
             self.log = self.logs / f'video-{work.name}.log'
             with self.log.open('w', encoding='utf-8') as log:

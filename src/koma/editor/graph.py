@@ -47,7 +47,9 @@ def remove_frames(board, identifiers, reconnect=False):
     groups = tuple(replace(group, members=tuple(key for key in group.members if key not in identifiers))
                    for group in board.groups if set(group.members) - identifiers)
     return ordered(replace(board, frames=tuple(frame for frame in board.frames if frame.id not in identifiers),
-                           links=tuple(links), groups=groups))
+                           links=tuple(links), groups=groups,
+                           audio_tracks=tuple(track for track in board.audio_tracks if track.scene_id not in identifiers),
+                           markers=tuple(marker for marker in board.markers if marker.scene_id not in identifiers)))
 
 
 def detach(board, identifiers):

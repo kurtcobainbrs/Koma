@@ -7,3 +7,9 @@ dist/
 .pytest_cache/
 .dev-test-temp/
 .koma-data/
+flutter/**/.dart_tool/
+flutter/**/build/
+flutter/**/coverage/
+flutter/**/.flutter-plugins-dependencies
+flutter/**/.idea/
+flutter/**/*.iml

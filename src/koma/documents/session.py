@@ -10,6 +10,7 @@ from koma.documents.bundle import destination_stamp, export_bundle, restore_bund
 from koma.documents.store import StoryboardStore
 from koma.editor.models import Storyboard
 from koma.paths import atomic_json
+from koma.documents.audio import validate_audio
 
 
 class DocumentSession:
@@ -116,6 +117,8 @@ class DocumentSession:
             stamp = raw.get('stamp')
             session.stamp = tuple(stamp) if stamp is not None else None
             session.recovered_from = metadata.parent
+            for track in session.board.audio_tracks:
+                validate_audio(session.store.audio / track.asset, track.duration)
             for name in {frame.image for frame in session.board.frames if frame.image}:
                 validate_image(session.store.images / name)
                 session.store.thumbnails.mkdir(exist_ok=True)

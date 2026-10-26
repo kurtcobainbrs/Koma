@@ -34,6 +34,18 @@ class Action(StrEnum):
     ADD_SELECTION = 'storyboard.selection.add'
     SUBTRACT_SELECTION = 'storyboard.selection.subtract'
     CUT_DRAG = 'storyboard.wire.cut_drag'
+    PLAY = 'timeline.play'
+    ADD_MARKER = 'timeline.marker.add'
+    SNAP = 'timeline.marker.snap'
+    PREVIOUS_STOP = 'timeline.previous_stop'
+    NEXT_STOP = 'timeline.next_stop'
+    PREVIOUS_FRAME = 'timeline.previous_frame'
+    NEXT_FRAME = 'timeline.next_frame'
+    START = 'timeline.start'
+    END = 'timeline.end'
+    RENAME_MARKER = 'timeline.marker.rename'
+    DELETE_MARKER = 'timeline.marker.delete'
+    IMPORT_AUDIO = 'timeline.audio.import'
 
 
 ACTIONS = (
@@ -53,19 +65,31 @@ ACTIONS = (
     ShortcutAction(Action.DELETE, 'Excluir', ('Delete', 'Backspace')),
     ShortcutAction(Action.GROUP, 'Criar moldura', ('Ctrl+G',)),
     ShortcutAction(Action.PASTE, 'Colar imagem', ('Ctrl+V',)),
-    ShortcutAction(Action.UNDO, 'Desfazer', ('Ctrl+Z',)),
-    ShortcutAction(Action.REDO, 'Refazer', ('Ctrl+Shift+Z', 'Ctrl+Y')),
+    ShortcutAction(Action.UNDO, 'Desfazer', ('Ctrl+Z',), contexts=('canvas', 'timeline')),
+    ShortcutAction(Action.REDO, 'Refazer', ('Ctrl+Shift+Z', 'Ctrl+Y'), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.PROPERTIES, 'Propriedades', ('N',)),
-    ShortcutAction(Action.FOCUS, 'Enquadrar seleção', ('F',)),
+    ShortcutAction(Action.FOCUS, 'Enquadrar seleção / timeline', ('F',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.FIT, 'Enquadrar tudo', ('Home',)),
     ShortcutAction(Action.ALL, 'Selecionar todos', ('A',)),
     ShortcutAction(Action.NONE, 'Limpar seleção', ('Alt+A',)),
-    ShortcutAction(Action.CANCEL, 'Cancelar', ('Esc',), contexts=('canvas', 'move')),
+    ShortcutAction(Action.CANCEL, 'Cancelar', ('Esc',), contexts=('canvas', 'move', 'timeline')),
     ShortcutAction(Action.CONFIRM, 'Confirmar movimento', ('Enter',), contexts=('move',)),
     ShortcutAction(Action.DETACH, 'Soltar do fluxo ao mover', ('Alt',), contexts=('node_drag',), trigger='modifier'),
     ShortcutAction(Action.ADD_SELECTION, 'Adicionar à seleção', ('Shift',), contexts=('selection',), trigger='modifier'),
     ShortcutAction(Action.SUBTRACT_SELECTION, 'Remover da seleção', ('Ctrl',), contexts=('selection',), trigger='modifier'),
     ShortcutAction(Action.CUT_DRAG, 'Cortar com botão direito', ('Ctrl',), contexts=('wire_drag',), trigger='modifier'),
+    ShortcutAction(Action.PLAY, 'Reproduzir / pausar', ('Space',), contexts=('timeline',)),
+    ShortcutAction(Action.ADD_MARKER, 'Criar marcador na agulha', ('M',), contexts=('timeline',)),
+    ShortcutAction(Action.SNAP, 'Snap de marcadores', ('S',), contexts=('timeline',)),
+    ShortcutAction(Action.PREVIOUS_STOP, 'Quadro ou marcador anterior', ('Arrow Up', 'Shift+Arrow Left'), contexts=('timeline',)),
+    ShortcutAction(Action.NEXT_STOP, 'Próximo quadro ou marcador', ('Arrow Down', 'Shift+Arrow Right'), contexts=('timeline',)),
+    ShortcutAction(Action.PREVIOUS_FRAME, 'Recuar um frame', ('Arrow Left',), contexts=('timeline',)),
+    ShortcutAction(Action.NEXT_FRAME, 'Avançar um frame', ('Arrow Right',), contexts=('timeline',)),
+    ShortcutAction(Action.START, 'Ir ao início', ('Home',), contexts=('timeline',)),
+    ShortcutAction(Action.END, 'Ir ao fim', ('End',), contexts=('timeline',)),
+    ShortcutAction(Action.RENAME_MARKER, 'Renomear marcador', ('F2',), contexts=('timeline',)),
+    ShortcutAction(Action.DELETE_MARKER, 'Excluir marcador selecionado', ('Delete',), contexts=('timeline',)),
+    ShortcutAction(Action.IMPORT_AUDIO, 'Importar áudio', ('Ctrl+I',), contexts=('timeline',)),
 )
 
 

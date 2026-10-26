@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 if getattr(sys, 'frozen', False):
-    os.environ['FLET_VIEW_PATH'] = str(Path(sys._MEIPASS) / 'desktop' / 'flet')
+    os.environ['KOMA_FLET_CLIENT'] = str(Path(sys._MEIPASS) / 'desktop' / 'flet')
 
 from koma.app import main
 

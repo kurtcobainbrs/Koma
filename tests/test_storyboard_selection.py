@@ -159,16 +159,16 @@ class StoryboardSelectionTests(unittest.TestCase):
         self.assertEqual(self.view.board.frames[0], a)
         self.assertEqual(self.view.board.frames[-1], c)
 
-    def test_group_delete_uses_confirmation_snapshot_and_leaves_other_frames(self):
+    def test_group_delete_removes_selection_preserves_others_and_can_undo(self):
         a, b, c = self.frames
+        before = self.view.board
         self.nav.apply_selection({a.id, b.id})
         self.nav.delete_selected()
-        self.assertEqual(len(self.view.board.frames), 3)
-        confirmation = self.view.page.show_dialog.call_args.args[0]
-        self.nav.apply_selection({c.id})
-        finish(confirmation.actions[-1].on_click(None))
         self.assertEqual(self.view.board.frames, (c,))
+        finish(self.view.persist())
         self.assertEqual(self.view.store.load().frames, (c,))
+        finish(self.view.graph.undo())
+        self.assertEqual(self.view.board, before)
 
     def test_selection_colors_and_active_border_come_from_theme(self):
         a, b, c = self.frames

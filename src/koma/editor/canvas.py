@@ -76,7 +76,7 @@ class StoryboardCanvas:
             clip_behavior=ft.ClipBehavior.NONE)
         self.links = LinksLayer(self)
         self.scene_frames = SceneFrames(self)
-        self.scene = ft.Container(content=self.stack)
+        self.scene = ft.Container(content=view.external_drop.scene(self.stack))
         self.pointer_surface = ft.GestureDetector(content=ft.Container(content=self.scene, bgcolor=ft.Colors.TRANSPARENT),
             on_tap_down=self.scene_click, on_secondary_tap_down=self.scene_secondary_click,
             on_hover=self.hover, hover_interval=DRAG_INTERVAL_MS, drag_interval=DRAG_INTERVAL_MS,
@@ -93,7 +93,7 @@ class StoryboardCanvas:
         self.box_zoom = BoxZoom(self)
         self.navigation = CanvasNavigation(self)
         self.context_menu = CanvasContextMenu(self)
-        self.content = CanvasViewport(self, content=self.context_menu.content, expand=True, border_radius=RADIUS,
+        self.content = CanvasViewport(self, content=view.external_drop.surface(self.context_menu.content), expand=True, border_radius=RADIUS,
             clip_behavior=ft.ClipBehavior.HARD_EDGE, bgcolor=ft.Colors.SURFACE_CONTAINER_LOW)
         self.zoom_label = ft.TextButton('100%', height=COMPACT_CONTROL_HEIGHT,
             tooltip='100% e centralizar os quadros', on_click=self.reset)
@@ -165,15 +165,18 @@ class StoryboardCanvas:
         self.gesture_zoom = self.zoom
 
     def interaction_update(self, e):
-        if self.focusing_region or self.box_zoom.active or self.view.closing or not math.isfinite(e.scale) or e.scale <= 0:
+        if self.focusing_region or self.box_zoom.active or self.drag or self.box_selection.active or self.view.closing or not math.isfinite(e.scale) or e.scale <= 0:
             return
         value = max(MIN_ZOOM, min(MAX_ZOOM, self.gesture_zoom * e.scale))
         focal = getattr(e, 'local_focal_point', None)
         delta = getattr(e, 'focal_point_delta', None)
         if focal is not None and delta is not None:
             ratio = value / self.zoom
-            self.translation_x = focal.x - (focal.x - delta.x - self.translation_x) * ratio
-            self.translation_y = focal.y - (focal.y - delta.y - self.translation_y) * ratio
+            # O Flutter também informa o deslocamento do ponteiro quando pan
+            # está desativado. Esse deslocamento não move a câmera real.
+            dx, dy = (delta.x, delta.y) if self.viewer.pan_enabled else (0, 0)
+            self.translation_x = focal.x - (focal.x - dx - self.translation_x) * ratio
+            self.translation_y = focal.y - (focal.y - dy - self.translation_y) * ratio
         if abs(value - self.zoom) > 0.001:
             self.zoom = value
             self.update_label()
@@ -378,7 +381,10 @@ class StoryboardCanvas:
             self.navigation.select_node(identifier, focus=True)
         positions = {f.id: (f.x, f.y) for f in self.view.board.frames if f.id in self.navigation.selection.ids}
         self.drag = NodeDrag(identifier, frame.x, frame.y, e.global_position.x, e.global_position.y, self.zoom, positions)
-        self.drag.detach_flow = self.navigation.modifier(Action.DETACH)
+        self.drag.detach_flow = self.navigation.drag_detach_active()
+        if self.drag.detach_flow:
+            self.links.candidate = None
+            self.links.refresh(update=True)
         self.viewer.pan_enabled = self.viewer.scale_enabled = False
         self.z_order = [key for key in self.z_order if key not in positions] + [key for key in self.z_order if key in positions]
         self.raise_node(identifier)
@@ -407,7 +413,7 @@ class StoryboardCanvas:
             if (node.left, node.top) != (left, top):
                 node.left, node.top = left, top
                 nodes.append(node)
-        drag.detach_flow = drag.detach_flow or self.navigation.modifier(Action.DETACH)
+        drag.detach_flow = self.navigation.drag_detach_active()
         self.links.candidate = self.links.drop_candidate(identifier) if len(drag.positions) == 1 and not drag.detach_flow else None
         self.links.refresh(update=True)
         self.page.update(*nodes, *self.update_groups())
@@ -424,7 +430,7 @@ class StoryboardCanvas:
         dx, dy = group_delta(drag.positions, node.left - self.extent.origin_x - drag.x,
             node.top - self.extent.origin_y - drag.y, anchor=(drag.x, drag.y), snap=self.snap_enabled)
         await self.view.position_frames({key: (x + dx, y + dy) for key, (x, y) in drag.positions.items()}, insert_flow=True,
-            detach_flow=drag.detach_flow or self.navigation.modifier(Action.DETACH))
+            detach_flow=drag.detach_flow and self.navigation.drag_detach_active())
         self.page.update(self.viewer)
 
     def cancel_drag(self, identifier, e=None, *, update=True):

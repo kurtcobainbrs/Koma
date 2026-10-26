@@ -13,7 +13,7 @@ Não confunda este roteiro com uma validação já realizada em máquina limpa. 
 - `Koma/`: distribuição completa; não separe o executável de `_internal`.
 - `SHA256.json`: integridade de todos os arquivos do kit, exceto o próprio manifesto.
 - `windows-native-audit.json`: arquitetura e resolução de imports/delay-imports dos binários finais.
-- `flet-native-policy.json`: motivo técnico e hashes das duas DLLs órfãs excluídas do cliente fixado.
+- `koma-client.json`: versão, protocolo e hashes do cliente Flet próprio, incluindo o plugin de arraste e Material Icons.
 - `validate_clean_windows.ps1`: verifica hashes, copia o aplicativo para uma pasta nova, registra o ambiente, executa o diagnóstico e abre o documento de teste.
 - `new_validation_sandbox.ps1`: gera uma configuração Windows Sandbox opcional; não habilita recursos nem altera configurações do host.
 

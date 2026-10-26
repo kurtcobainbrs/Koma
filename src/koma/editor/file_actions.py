@@ -13,7 +13,7 @@ from koma.paths import initial_directory, open_file
 from koma.documents.session import DocumentSession
 from koma.documents.bundle import destination_stamp as document_stamp
 from koma.editor.animatic import Timeline
-from koma.exports.video_export import frame_counts, prepare_frames
+from koma.exports.video_export import frame_counts, timeline_frame_counts, prepare_frames
 from koma.exports.encoding import video_progress
 from koma.exports.video_runner import VideoRunner, destination_stamp
 
@@ -135,7 +135,7 @@ class StoryboardFiles:
     async def open_document(self, e=None):
         await self.change_document(pick=True)
 
-    async def change_document(self, *, pick=False, recovery=None):
+    async def change_document(self, *, pick=False, recovery=None, path=None):
         view = self.view
         if view.busy or view.closing:
             return
@@ -144,6 +144,8 @@ class StoryboardFiles:
         try:
             if recovery:
                 candidate = await asyncio.to_thread(DocumentSession.from_recovery, recovery, view.settings.directory)
+            elif path is not None:
+                candidate = await asyncio.to_thread(DocumentSession.open, path, view.settings.directory)
             elif pick:
                 selected = await ft.FilePicker().pick_files(dialog_title='Abrir documento Koma',
                     allow_multiple=False, initial_directory=await self.initial(),
@@ -247,7 +249,8 @@ class StoryboardFiles:
             view.notify('Selecione uma cena com quadros para exportar o animatic.', 'warning')
             return
         name = timeline.root.title if timeline.root else view.board.title
-        fps = ft.Dropdown(label='FPS', value='24', options=[ft.DropdownOption(str(n)) for n in (24, 25, 30, 60)], **input_style())
+        fps = ft.Text(f'{view.board.fps} FPS · definido nas propriedades do projeto')
+        project_fps = view.board.fps
         size = ft.Dropdown(label='Resolução', value='1920', options=[
             ft.DropdownOption('1920', '1920 × 1080'), ft.DropdownOption('1280', '1280 × 720')], **input_style())
         subtitles = ft.Checkbox(label='Incluir legendas no MP4', value=self.include_subtitles)
@@ -258,11 +261,11 @@ class StoryboardFiles:
         async def export(e):
             self.page.pop_dialog()
             choose_subtitles()
-            await self.pick_video(timeline, name, int(fps.value), (int(size.value), 1080 if size.value == '1920' else 720),
+            await self.pick_video(timeline, name, project_fps, (int(size.value), 1080 if size.value == '1920' else 720),
                 include_subtitles=self.include_subtitles)
         self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), content=ft.Column([
             ft.Text(f'{name} · {len(timeline.frames)} quadros · {timeline.total:g} s'), fps, size, subtitles,
-            ft.Text('Usa o Blender configurado no Koma. Cortes diretos, sem áudio; mantém os enquadramentos.', color=MUTED),
+            ft.Text('Usa o Blender configurado no Koma. Inclui a trilha ativa da cena e mantém os enquadramentos.', color=MUTED),
         ], width=390, tight=True, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
             ft.FilledButton('Escolher destino', on_click=export)]))
@@ -302,7 +305,7 @@ class StoryboardFiles:
         self.actions.visible = True
         self.track_task()
         try:
-            counts = frame_counts(timeline.frames, fps)
+            counts = timeline_frame_counts(timeline, fps)
             blender = Path(view.settings.blender).expanduser().resolve()
             if not blender.is_file():
                 raise ValueError('Configure um Blender válido nas preferências do Koma para gerar o MP4.')
@@ -319,8 +322,12 @@ class StoryboardFiles:
                     view.feedback.progress.value = value
                     text = f"{event.get('phase', 'Exportando')} · {event.get('done', 0)}/{event.get('total', 1)}"
                     view.notify(text, 'working')
-                result = await self.runner.run(blender, paths, destination, fps, 'HIGH', size[0], progress,
-                    expected_destination_stamp=expected_stamp, frame_durations=counts)
+                audio_tracks = [dict(path=str((view.store.audio / track.asset).resolve()), start=track.start, volume=track.volume)
+                    for track in timeline.audio_tracks if not track.muted and track.volume > 0]
+                options = dict(expected_destination_stamp=expected_stamp, frame_durations=counts)
+                if audio_tracks:
+                    options['audio_tracks'] = audio_tracks
+                result = await self.runner.run(blender, paths, destination, fps, 'HIGH', size[0], progress, **options)
             if result:
                 self.last_video = result
                 self.directory = str(result.parent)

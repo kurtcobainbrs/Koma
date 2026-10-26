@@ -5,11 +5,15 @@ import math
 from dataclasses import dataclass, field, replace
 from uuid import uuid4
 from koma.editor.node_types import node_type
+from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
 
 MAX_CARDS = 500
 TEXT_LIMIT = 20000
 MAX_POSITION = 100000
 SUBTITLE_LIMIT = 500
+SUPPORTED_FPS = (24, 25, 30, 60)
+MIN_DURATION = 1 / 60
+MAX_DURATION = 3600
 
 
 @dataclass(frozen=True)
@@ -56,8 +60,8 @@ class StoryFrame:
             raise ValueError(f'A legenda aceita até {SUBTITLE_LIMIT} caracteres.')
         if not isinstance(self.scene_color, str) or (self.scene_color and not re.fullmatch(r'#[a-fA-F0-9]{6}', self.scene_color)):
             raise ValueError('Cor de cena inválida.')
-        if type(self.duration) not in (int, float) or not math.isfinite(self.duration) or not .1 <= self.duration <= 3600:
-            raise ValueError('Informe uma duração entre 0,1 e 3600 segundos.')
+        if type(self.duration) not in (int, float) or not math.isfinite(self.duration) or not MIN_DURATION <= self.duration <= MAX_DURATION:
+            raise ValueError('Informe uma duração entre 1/60 e 3600 segundos.')
         if self.image_fit not in ('cover', 'contain'):
             raise ValueError('Enquadramento de imagem inválido.')
         for value in (self.crop_x, self.crop_y):
@@ -85,8 +89,13 @@ class Storyboard:
     frames: tuple[StoryFrame, ...] = ()
     links: tuple[StoryLink, ...] = ()
     groups: tuple[StoryGroup, ...] = ()
+    fps: int = 24
+    audio_tracks: tuple[AudioTrack, ...] = ()
+    markers: tuple[TimelineMarker, ...] = ()
 
     def validate(self):
+        if type(self.fps) is not int or self.fps not in SUPPORTED_FPS:
+            raise ValueError('Escolha 24, 25, 30 ou 60 FPS.')
         if not isinstance(self.title, str) or len(self.title) > 200:
             raise ValueError('Título do storyboard inválido.')
         if len(self.frames) > MAX_CARDS:
@@ -95,6 +104,14 @@ class Storyboard:
             frame.validate()
         if len({frame.id for frame in self.frames}) != len(self.frames):
             raise ValueError('Há identificadores de quadros repetidos.')
+        scenes = {frame.id for frame in self.frames if frame.node_type.starts_scene}
+        for collection, limit in ((self.audio_tracks, MAX_AUDIO_TRACKS), (self.markers, MAX_MARKERS)):
+            if len(collection) > limit or len({item.id for item in collection}) != len(collection):
+                raise ValueError('Trilhas ou marcadores repetidos ou em excesso.')
+            for item in collection:
+                item.validate(scenes, MAX_CARDS * MAX_DURATION)
+        if len({track.scene_id for track in self.audio_tracks}) != len(self.audio_tracks):
+            raise ValueError('Cada cena aceita uma trilha de áudio. Substitua a trilha existente.')
         identifiers = {frame.id for frame in self.frames}
         outgoing, incoming = {}, set()
         if len(self.links) > len(self.frames):

@@ -21,6 +21,15 @@ def frame_counts(frames, fps):
     return counts
 
 
+def timeline_frame_counts(timeline, fps):
+    """Mantém o último quadro até o fim do áudio, sem editar o documento."""
+    counts = frame_counts(timeline.frames, fps)
+    if counts:
+        end = int((Decimal(str(timeline.total)) * fps).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        counts[-1] += max(0, end - sum(counts))
+    return counts
+
+
 def prepare_frames(frames, store, directory, size, cancelled=lambda: False, *, include_subtitles=True):
     if size not in ((1920, 1080), (1280, 720)):
         raise ValueError('Resolução de animatic inválida.')

@@ -16,6 +16,19 @@ class ChromeTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_card_properties_command_opens_inspector_for_target_in_pan_mode(self):
+        view = self.view()
+        finish(view.add_frame())
+        first = view.board.frames[0].id
+        finish(view.add_frame())
+        view.properties.toggle()
+        view.workspace.navigation.set_mode('pan')
+        view.cards[first].sequence.items[-1].on_click(None)
+        self.assertEqual(view.workspace.navigation.mode, 'select')
+        self.assertEqual(view.properties.active, first)
+        self.assertTrue(view.properties.opened)
+        self.assertTrue(view.properties.content.visible)
+
     def test_add_menu_creates_the_existing_node_types_and_history_menu_undoes(self):
         view = self.view()
         chrome = view.chrome

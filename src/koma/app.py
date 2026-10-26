@@ -12,9 +12,10 @@ from koma.editor.view import StoryboardView
 from koma.editor.models import Storyboard
 from koma.paths import data_directory
 from koma.preferences import AppPreferences
-from koma.ui.design import BACKGROUND, app_theme
+from koma.ui.design import APP_PADDING, BACKGROUND, app_theme
 from koma.ui.typography import register_fonts
 from koma.ui.project_tabs import ProjectTabs
+from koma.ui.project_drop import ProjectDrop
 
 
 class KomaApplication:
@@ -32,6 +33,8 @@ class KomaApplication:
         self.tabs = ProjectTabs(self)
         self.host = ft.Column([self.menu_host, self.tabs.content, self.editor_host], expand=True, spacing=0,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+        self.project_drop = ProjectDrop(self)
+        self.surface = self.project_drop.surface(self.host)
         self.document = document
 
     def make_view(self, session):
@@ -42,10 +45,28 @@ class KomaApplication:
             on_session=self.switch_session, on_state=self.editor_changed)
         view.content.controls.remove(view.chrome.content)
         view.can_save_to = lambda path: self.can_save_to(view, path)
+        view.can_accept_drop = lambda: self.view is view and not self.transitioning and not self.closing_attempt
+        view.open_project_path = self.open_project
         return view
 
+    async def open_project(self, path):
+        if self.transitioning or self.closing_attempt or any(view.busy for view in self.views):
+            return
+        path = Path(path).expanduser().resolve()
+        if path.suffix.lower() != '.koma':
+            raise ValueError('Escolha um arquivo .koma.')
+        existing = next((view for view in self.views if view.session.path is not None
+            and view.session.path.resolve() == path), None)
+        if existing is not None:
+            await self.select_view(existing)
+        else:
+            await self.view.files.change_document(path=path)
+
     def editor_changed(self, view):
+        drop_changed = hasattr(self, 'project_drop') and self.project_drop.sync()
         if hasattr(self, 'tabs') and view in self.views:
+            if drop_changed:
+                self.page.update(self.project_drop.control)
             self.tabs.sync()
             if not self.closing_attempt:
                 if view is self.view:
@@ -61,7 +82,8 @@ class KomaApplication:
         self.transitioning = value
         self.editor_host.disabled = self.menu_host.disabled = value
         self.tabs.sync()
-        self.page.update(self.host)
+        self.project_drop.sync()
+        self.page.update(self.surface)
 
     def move_tab(self, source, target=None):
         if (self.transitioning or self.closing_attempt or any(v.busy for v in self.views)
@@ -85,6 +107,10 @@ class KomaApplication:
                 self.view.notify(f'Não foi possível abrir: {exc}', 'error')
         if await asyncio.to_thread(DocumentSession.recoveries, self.settings.directory):
             self.view.notify('Há sessões anteriores disponíveis em Arquivo → Recuperar sessão.', 'warning')
+        else:
+            from koma.ui import drop_runtime
+            if not drop_runtime.enabled():
+                self.view.notify(drop_runtime.unavailable_reason(), 'warning')
 
     async def select_view(self, target):
         if target not in self.views or self.transitioning or self.closing_attempt or any(v.busy for v in self.views):
@@ -105,6 +131,7 @@ class KomaApplication:
         old = self.view
         await old.deactivate()
         self.view = target
+        self.project_drop.sync()
         target.active = True
         self.menu_host.content = target.chrome.content
         self.editor_host.content = target.content
@@ -241,7 +268,7 @@ def mount(page, document=None):
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = app_theme()
     page.bgcolor = BACKGROUND
-    page.padding = 4
+    page.padding = APP_PADDING
     page.window.width, page.window.height = 1180, 800
     page.window.min_width, page.window.min_height = 600, 600
     page.window.prevent_close = True
@@ -249,8 +276,23 @@ def mount(page, document=None):
     async def on_window_event(e):
         if e.type == ft.WindowEventType.CLOSE:
             await application.close()
+        elif e.type == ft.WindowEventType.BLUR:
+            for view in application.views:
+                view.player.duration_editor.cancel()
+                view.player.marker_editor.cancel()
+                view.player.strip.navigator.end()
+                nav = view.workspace.navigation
+                nav.reset_keys()
+                if view.workspace.drag:
+                    view.workspace.cancel_drag(view.workspace.drag.identifier)
+                nav.sync(update=view.active)
     page.window.on_event = on_window_event
-    page.add(application.host)
+    async def on_keyboard_event(e):
+        player = application.view.player
+        if player.opened:
+            await player.key_down(e)
+    page.on_keyboard_event = on_keyboard_event
+    page.add(application.surface)
     page.run_task(application.start)
     return application
 
@@ -264,4 +306,6 @@ def main():
     if args.diagnostics:
         from koma.diagnostics import run
         return run(args.diagnostics, args.blender)
+    from koma.ui import drop_runtime
+    drop_runtime.configure()
     ft.run(lambda page: mount(page, args.document))

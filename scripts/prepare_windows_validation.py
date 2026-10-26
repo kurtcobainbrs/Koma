@@ -4,11 +4,15 @@ import hashlib
 import json
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
+from uuid import uuid4
+
+from koma.ui.drop_runtime import validate_client
 
 
 def prepare(root):
     root = Path(root).resolve()
     distribution = root / 'dist/Koma'
+    client = validate_client(distribution / '_internal/desktop/flet')
     audit = json.loads((root / 'build/windows-native-audit.json').read_text(encoding='utf-8'))
     if audit['errors']:
         raise ValueError('Não é possível empacotar uma distribuição reprovada.')
@@ -23,8 +27,8 @@ def prepare(root):
         ('scripts/new_validation_sandbox.ps1', 'new_validation_sandbox.ps1'),
         ('docs/CLEAN_WINDOWS.md', 'LEIA-ME.md'),
         ('build/windows-native-audit.json', 'windows-native-audit.json'),
-        ('build/flet-native-policy.json', 'flet-native-policy.json'),
     )]
+    entries.append((client / 'koma-client.json', 'koma-client.json'))
     destination = root / 'dist/Koma-windows-x64-validation.zip'
     temporary = destination.with_suffix('.zip.tmp')
     manifest = [{'path': name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -34,6 +38,14 @@ def prepare(root):
             for path, name in entries:
                 archive.write(path, name)
             archive.writestr('SHA256.json', json.dumps(manifest, indent=2))
+        # Preserva o kit anterior só depois de terminar o novo ZIP.
+        if destination.exists():
+            backup = destination.parent / 'previous' / uuid4().hex
+            backup.mkdir(parents=True, exist_ok=False)
+            destination.rename(backup / destination.name)
+            previous_hash = destination.with_suffix('.zip.sha256')
+            if previous_hash.exists():
+                previous_hash.rename(backup / previous_hash.name)
         temporary.replace(destination)
         digest = hashlib.sha256(destination.read_bytes()).hexdigest()
         destination.with_suffix('.zip.sha256').write_text(f'{digest}  {destination.name}\n', encoding='ascii')

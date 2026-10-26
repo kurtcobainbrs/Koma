@@ -1,5 +1,18 @@
 # Validação da extração
 
+## Atualização do pacote com ícones e arraste — 26/10/2026
+
+- Pacote atualizado em `dist/Koma/Koma.exe`, com cliente Flet próprio e Material Icons completos (1.645.184 bytes), sem remoção de ícones dinâmicos.
+- 197 testes Python e 7 testes Flutter aprovados.
+- Auditoria do pacote: 108 binários x64 sem dependências ausentes ou runtimes de depuração.
+- Diagnóstico do executável aprovado para recursos, documento/histórico/imagens, PDF e legendas. MP4 não foi solicitado nesta atualização.
+- Usuário confirmou na versão empacotada: ícones corretos, arrastar e soltar funcionando e Ctrl+Z desfazendo normalmente.
+- ZIP `dist/Koma-windows-x64-validation.zip` validado: 481 arquivos com hashes internos e checksum externo conferidos. Cliente empacotado idêntico ao cliente corrigido validado.
+- Publicação usa preparação separada, verifica a auditoria antes da promoção e preserva a versão anterior, com rollback em falha. ZIPs anteriores também são preservados. Nenhum projeto ou imagem original do usuário foi sobrescrito pelo processo de atualização.
+- Homologação em uma máquina Windows limpa continua pendente antes de publicação geral.
+
+## Registro anterior — 24/10/2026
+
 Data: 24/10/2026. Ambiente: Windows 11, Python 3.12.14, Flet 1.0.5, Pillow 13.0.0, ReportLab 4.5.1, Blender 5.0.1.
 
 - 128 testes automatizados aprovados: núcleo, gestos, serialização Flet, documentos, recuperação, conflitos, fechamento, runner de vídeo, política nativa e diagnóstico da distribuição.

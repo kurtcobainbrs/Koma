@@ -46,9 +46,13 @@ class LinksLayer:
 
     def refresh(self, update=False):
         self.canvas.width, self.canvas.height = self.workspace.stack.width, self.workspace.stack.height
-        edges = set(self.view.board.links)
+        board = self.view.board
+        drag = self.workspace.drag
+        if drag and drag.detach_flow:
+            board = graph.detach(board, drag.positions)
+        edges = set(board.links)
         self.cache = {edge: value for edge, value in self.cache.items() if edge in edges}
-        for edge in self.view.board.links:
+        for edge in board.links:
             start, end = self.port(edge.source, True), self.port(edge.target, False)
             color = ft.Colors.SECONDARY if edge in self.highlighted or edge == self.candidate else ft.Colors.OUTLINE
             source, target = self.bounds(edge.source), self.bounds(edge.target)
@@ -58,7 +62,7 @@ class LinksLayer:
             if cached is None or cached[0] != signature:
                 segments = route(start, end, source, target)
                 self.cache[edge] = signature, path_shape(segments, color, width), sample_route(segments)
-        self.canvas.shapes = [self.cache[edge][1] for edge in self.view.board.links]
+        self.canvas.shapes = [self.cache[edge][1] for edge in board.links]
         if self.preview_shape:
             self.canvas.shapes.append(self.preview_shape)
         if self.cut_points:

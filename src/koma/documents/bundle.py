@@ -13,6 +13,8 @@ from PIL import Image, ImageOps
 from koma.documents.images import IMAGE_LIMIT
 from koma.documents.store import document, parse_document
 from koma.editor.models import MAX_CARDS
+from koma.editor.media_models import MAX_AUDIO_TRACKS
+from koma.documents.audio import validate_audio, MAX_AUDIO_BYTES
 
 EXTENSION = '.koma'
 MAX_IMAGE_BYTES = 80_000_000
@@ -59,8 +61,12 @@ def export_bundle(board, store, destination, *, expected_stamp=Ellipsis):
     images = {frame.image for frame in board.frames if frame.image}
     for name in images:
         validate_image(store.images / name)
+    audio = {track.asset for track in board.audio_tracks}
+    for track in board.audio_tracks:
+        validate_audio(store.audio / track.asset, track.duration)
     manifest = json.dumps(document(board, store.document_id), ensure_ascii=False).encode('utf-8')
-    if len(manifest) > MAX_MANIFEST_BYTES or sum((store.images / name).stat().st_size for name in images) + len(manifest) > MAX_BUNDLE_BYTES:
+    if len(manifest) > MAX_MANIFEST_BYTES or (sum((store.images / name).stat().st_size for name in images)
+            + sum((store.audio / name).stat().st_size for name in audio) + len(manifest)) > MAX_BUNDLE_BYTES:
         raise ValueError('O documento ultrapassa os limites do formato Koma (2 GB).')
     temporary = destination.with_name(f'.{uuid4().hex}.tmp')
     backup_tmp = destination.with_name(f'.{uuid4().hex}.bak.tmp')
@@ -70,6 +76,8 @@ def export_bundle(board, store, destination, *, expected_stamp=Ellipsis):
                 archive.writestr('manifest.json', manifest)
                 for name in sorted(images):
                     archive.write(store.images / name, f'images/{name}')
+                for name in sorted(audio):
+                    archive.write(store.audio / name, f'audio/{name}')
             if output.tell() > MAX_BUNDLE_BYTES:
                 raise ValueError('O pacote Koma ultrapassa 2 GB.')
             output.flush()
@@ -95,11 +103,12 @@ def restore_bundle(source, store):
     """O chamador fornece um store novo; nunca escreve na sessão ativa."""
     store.images.mkdir(parents=True, exist_ok=True)
     store.thumbnails.mkdir(exist_ok=True)
+    store.audio.mkdir(exist_ok=True)
     try:
         with ZipFile(source) as archive:
             entries = archive.infolist()
             names = [entry.filename for entry in entries]
-            if len(names) != len(set(names)) or len(names) > MAX_CARDS + 1:
+            if len(names) != len(set(names)) or len(names) > MAX_CARDS + MAX_AUDIO_TRACKS + 1:
                 raise ValueError('Arquivos duplicados ou em excesso no documento.')
             if sum(entry.file_size for entry in entries) > MAX_BUNDLE_BYTES:
                 raise ValueError('O documento ultrapassa 2 GB.')
@@ -108,7 +117,8 @@ def restore_bundle(source, store):
                 raise ValueError('Manifesto Koma muito grande.')
             board, identifier = parse_document(json.loads(archive.read(manifest)))
             images = {frame.image for frame in board.frames if frame.image}
-            if set(names) != {'manifest.json', *(f'images/{name}' for name in images)}:
+            audio = {track.asset for track in board.audio_tracks}
+            if set(names) != {'manifest.json', *(f'images/{name}' for name in images), *(f'audio/{name}' for name in audio)}:
                 raise ValueError('O documento contém arquivos inesperados ou imagens ausentes.')
             for name in images:
                 info = archive.getinfo(f'images/{name}')
@@ -119,6 +129,16 @@ def restore_bundle(source, store):
                     shutil.copyfileobj(incoming, output)
                 validate_image(target)
                 thumbnail(target, store.thumbnails / name)
+            for name in audio:
+                info = archive.getinfo(f'audio/{name}')
+                if not 0 < info.file_size <= MAX_AUDIO_BYTES:
+                    raise ValueError('Áudio vazio ou muito grande no documento.')
+                target = store.audio / name
+                with archive.open(info) as incoming, target.open('xb') as output:
+                    shutil.copyfileobj(incoming, output)
+                for track in board.audio_tracks:
+                    if track.asset == name:
+                        validate_audio(target, track.duration)
         store.document_id = identifier
         store.save(board)
         return board

@@ -38,6 +38,9 @@ class StoryboardView:
         self.on_session = on_session
         self.on_state = on_state
         self.can_save_to = None
+        self.can_accept_drop = lambda: True
+        from koma.editor.external_drop import ExternalImageDrop
+        self.external_drop = ExternalImageDrop(self)
         self.active = True
         self.keymap = settings.shortcuts
         self.store = session.store
@@ -68,10 +71,14 @@ class StoryboardView:
         self.workspace = StoryboardCanvas(self)
         self.image_input = StoryboardImageInput(self)
         self.properties = FrameProperties(self)
-        self.empty = ft.Container(left=64, top=24, width=460, padding=24, ignore_interactions=True, content=ft.Column([
+        self.empty = ft.Container(left=64, right=56, top=24, padding=16, content=ft.Column([
             ft.Icon(ft.Icons.VIEW_MODULE_OUTLINED, size=36, color=MUTED),
             ft.Text('Comece com um quadro vazio ou importe imagens.', size=TEXT_BODY, color=MUTED),
             ft.Text('Mova os quadros e conecte Saída → Entrada para definir a sequência.', size=TEXT_SMALL, color=MUTED),
+            ft.Row([self.add, self.import_button], wrap=True,
+                alignment=ft.MainAxisAlignment.CENTER, spacing=8, run_spacing=8),
+            ft.Text('Selecione um quadro para editar título, duração e textos no painel de propriedades.',
+                size=TEXT_SMALL, color=MUTED),
         ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8))
         self.canvas = self.workspace.content
         self.board_area = ft.Stack([self.canvas, self.empty, self.workspace.navigation.tools],
@@ -98,6 +105,7 @@ class StoryboardView:
         self.workspace.navigation.refresh_shortcuts()
         self.chrome.refresh_shortcuts()
         self.chrome.sync()
+        self.external_drop.sync()
 
     def notify(self, text, state='info'):
         self.feedback.set(text, state)
@@ -122,6 +130,7 @@ class StoryboardView:
         self.graph.sync_history()
         self.chrome.sync()
         self.chrome.lock(busy)
+        self.external_drop.sync()
         if not self.closing and self.active:
             self.page.update(self.content)
 
@@ -172,6 +181,7 @@ class StoryboardView:
         scenes = sum(frame.node_type.starts_scene for frame in self.board.frames)
         self.count.value = f'{number} quadros · {scenes} cenas · {len(self.board.links)} ligações'
         self.empty.visible = not self.board.frames
+        self.external_drop.sync()
         self.export_button.disabled = not number
         self.play_button.disabled = not self.board.frames
         self.chrome.sync()
@@ -498,9 +508,7 @@ class StoryboardView:
             self.player.dismissed()
         self.workspace.cancel_camera_transition()
         nav = self.workspace.navigation
-        for keys in (nav.shift_keys, nav.control_keys, nav.alt_keys, nav.meta_keys):
-            keys.clear()
-        nav.held_key, nav.temporary_pan = None, False
+        nav.reset_keys()
         nav.editing_fields.clear()
         await self.preferences.flush()
         await self.workspace.camera_memory.flush()
@@ -522,6 +530,8 @@ class StoryboardView:
         await self.preferences.flush()
         await self.workspace.camera_memory.flush()
         await self.files.shutdown()
+        await self.player.media.shutdown()
+        await asyncio.to_thread(self.player.audio_transport.close)
         # Aguarda qualquer gravação de recuperação antes de limpar a sessão.
         async with self.save_lock:
             self.closing = True

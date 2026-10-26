@@ -8,8 +8,9 @@ from uuid import uuid4
 
 from koma.editor.models import MAX_CARDS, Storyboard, StoryFrame, StoryLink, StoryGroup
 from koma.paths import atomic_json
+from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
 
-DOCUMENT_VERSION = 1
+DOCUMENT_VERSION = 2
 
 
 def document(board, document_id):
@@ -19,7 +20,7 @@ def document(board, document_id):
 
 def parse_document(raw):
     try:
-        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] != DOCUMENT_VERSION:
+        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, DOCUMENT_VERSION):
             raise ValueError('Formato ou versão Koma não reconhecidos.')
         identifier = raw['document_id']
         if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
@@ -30,9 +31,15 @@ def parse_document(raw):
         if any(not isinstance(group, dict) or not isinstance(group.get('members'), list)
                or len(group['members']) > MAX_CARDS for group in groups):
             raise ValueError('Membros de grupo inválidos.')
+        tracks, markers = raw.get('audio_tracks', []), raw.get('markers', [])
+        if any(not isinstance(items, list) or len(items) > limit for items, limit in
+                ((tracks, MAX_AUDIO_TRACKS), (markers, MAX_MARKERS))):
+            raise ValueError('Lista de trilhas ou marcadores inválida.')
         board = Storyboard(raw['title'], tuple(StoryFrame(**frame) for frame in frames),
             tuple(StoryLink(**link) for link in links),
-            tuple(StoryGroup(group['id'], group['title'], tuple(group['members'])) for group in groups))
+            tuple(StoryGroup(group['id'], group['title'], tuple(group['members'])) for group in groups),
+            fps=raw.get('fps', 24), audio_tracks=tuple(AudioTrack(**track) for track in tracks),
+            markers=tuple(TimelineMarker(**marker) for marker in markers))
         board.validate()
         return board, identifier
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
@@ -45,6 +52,8 @@ class StoryboardStore:
         self.path = self.directory / 'manifest.json'
         self.images = self.directory / 'images'
         self.thumbnails = self.directory / 'thumbnails'
+        self.audio = self.directory / 'audio'
+        self.waveforms = self.directory / 'waveforms'
         self.document_id = uuid4().hex
 
     def load(self):

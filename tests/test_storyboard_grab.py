@@ -9,7 +9,11 @@ from koma.editor.models import StoryLink
 
 
 class GrabTests(TestCase):
-    setUp = fixtures.StoryboardSelectionTests.setUp
+    def setUp(self):
+        fixtures.StoryboardSelectionTests.setUp(self)
+        state = patch('koma.editor.navigation.pressed_modifiers', return_value=None)
+        self.physical_modifiers = state.start()
+        self.addCleanup(state.stop)
 
     def pointer(self, x, y):
         return fixtures.Data(global_position=fixtures.Data(x=x, y=y), local_position=fixtures.Data(x=x, y=y))
@@ -34,15 +38,102 @@ class GrabTests(TestCase):
         nav.apply_selection({b.id})
         fixtures.finish(nav.key_down(fixtures.Data(key='Alt Left')))
         ws.begin_drag(b.id, self.pointer(100, 100))
+        self.assertEqual(set(ws.links.cache), {StoryLink(a.id, c.id)})
         ws.update_drag(b.id, self.pointer(172, 148))
+        self.assertEqual(set(ws.links.cache), {StoryLink(a.id, c.id)})
         self.assertEqual(self.view.board, before)
-        nav.key_up(fixtures.Data(key='Alt Left'))
         fixtures.finish(ws.end_drag(b.id))
+        nav.key_up(fixtures.Data(key='Alt Left'))
         self.assertEqual(self.view.board.links, (StoryLink(a.id, c.id),))
         self.assertIn(b.id, {frame.id for frame in self.view.board.frames})
         self.assertEqual(nav.selection.ids, {b.id})
         fixtures.finish(self.view.graph.undo())
         self.assertEqual(self.view.board, before)
+
+    def test_stale_alt_event_does_not_detach_normal_drag(self):
+        ws, nav = self.workspace, self.nav
+        a, b, c = self.frames
+        fixtures.finish(self.view.graph.connect(a.id, b.id))
+        fixtures.finish(self.view.graph.connect(b.id, c.id))
+        links = self.view.board.links
+        fixtures.finish(nav.key_down(fixtures.Data(key='Alt Left')))
+        self.physical_modifiers.return_value = set()
+        ws.begin_drag(b.id, self.pointer(100, 100))
+        ws.update_drag(b.id, self.pointer(172, 148))
+        self.assertFalse(ws.drag.detach_flow)
+        self.assertEqual(set(ws.links.cache), set(links))
+        fixtures.finish(ws.end_drag(b.id))
+        self.assertEqual(self.view.board.links, links)
+
+    def test_releasing_physical_alt_restores_links_during_same_drag(self):
+        ws, nav = self.workspace, self.nav
+        a, b, c = self.frames
+        fixtures.finish(self.view.graph.connect(a.id, b.id))
+        fixtures.finish(self.view.graph.connect(b.id, c.id))
+        links = self.view.board.links
+        self.physical_modifiers.return_value = {'Alt'}
+        ws.begin_drag(b.id, self.pointer(100, 100))
+        self.assertTrue(ws.drag.detach_flow)
+        self.physical_modifiers.return_value = set()
+        ws.update_drag(b.id, self.pointer(172, 148))
+        self.assertFalse(ws.drag.detach_flow)
+        self.assertEqual(set(ws.links.cache), set(links))
+        fixtures.finish(ws.end_drag(b.id))
+        self.assertEqual(self.view.board.links, links)
+
+    def test_alt_released_before_mouse_up_does_not_commit_detach(self):
+        ws = self.workspace
+        a, b, c = self.frames
+        fixtures.finish(self.view.graph.connect(a.id, b.id))
+        fixtures.finish(self.view.graph.connect(b.id, c.id))
+        links = self.view.board.links
+        self.physical_modifiers.return_value = {'Alt'}
+        ws.begin_drag(b.id, self.pointer(100, 100))
+        ws.update_drag(b.id, self.pointer(172, 148))
+        self.physical_modifiers.return_value = set()
+        fixtures.finish(ws.end_drag(b.id))
+        self.assertEqual(self.view.board.links, links)
+
+    def test_physical_alt_detaches_but_next_normal_drag_preserves_links(self):
+        ws = self.workspace
+        a, b, c = self.frames
+        fixtures.finish(self.view.graph.connect(a.id, b.id))
+        fixtures.finish(self.view.graph.connect(b.id, c.id))
+        self.physical_modifiers.return_value = {'Alt'}
+        ws.begin_drag(b.id, self.pointer(100, 100))
+        ws.update_drag(b.id, self.pointer(172, 148))
+        fixtures.finish(ws.end_drag(b.id))
+        self.assertEqual(self.view.board.links, (StoryLink(a.id, c.id),))
+        self.physical_modifiers.return_value = set()
+        ws.begin_drag(a.id, self.pointer(100, 100))
+        ws.update_drag(a.id, self.pointer(172, 148))
+        fixtures.finish(ws.end_drag(a.id))
+        self.assertEqual(self.view.board.links, (StoryLink(a.id, c.id),))
+
+    def test_reset_keys_clears_alt_and_temporary_pan(self):
+        self.nav.alt_keys.add('alt left')
+        self.nav.shift_keys.add('shift left')
+        self.nav.temporary_pan = True
+        self.nav.held_key = 'space'
+        self.nav.reset_keys()
+        self.assertEqual(self.nav.modifiers, set())
+        self.assertFalse(self.nav.temporary_pan)
+        self.assertIsNone(self.nav.held_key)
+
+    def test_detach_preview_updates_during_drag_and_cancel_restores_wires(self):
+        ws, nav = self.workspace, self.nav
+        a, b, c = self.frames
+        fixtures.finish(self.view.graph.connect(a.id, b.id))
+        fixtures.finish(self.view.graph.connect(b.id, c.id))
+        before = self.view.board
+        nav.apply_selection({b.id})
+        ws.begin_drag(b.id, self.pointer(100, 100))
+        fixtures.finish(nav.key_down(fixtures.Data(key='Alt Left')))
+        ws.update_drag(b.id, self.pointer(172, 148))
+        self.assertEqual(set(ws.links.cache), {StoryLink(a.id, c.id)})
+        ws.cancel_drag(b.id)
+        self.assertEqual(self.view.board, before)
+        self.assertEqual(set(ws.links.cache), set(before.links))
 
     def test_detach_modifier_can_change_and_cancel_preserves_connections(self):
         ws, nav = self.workspace, self.nav

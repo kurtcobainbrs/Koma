@@ -1,0 +1,14 @@
+name: koma_drop
+description: Widget-scoped file drops for the Koma storyboard editor.
+version: 1.0.0
+publish_to: none
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flet: 1.0.5
+  desktop_drop: 0.7.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

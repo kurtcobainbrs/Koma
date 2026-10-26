@@ -170,7 +170,7 @@ class DocumentTests(unittest.TestCase):
         self.session.save(self.board, self.target)
         with ZipFile(self.target) as archive:
             raw = json.loads(archive.read('manifest.json'))
-        raw['version'] = 2
+        raw['version'] = 3
         with ZipFile(self.target, 'w') as archive:
             archive.writestr('manifest.json', json.dumps(raw))
         with self.assertRaises(ValueError):

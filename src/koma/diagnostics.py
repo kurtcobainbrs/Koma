@@ -5,6 +5,7 @@ import json
 import platform
 import sys
 import traceback
+import wave
 from dataclasses import replace
 from importlib.resources import files
 from pathlib import Path
@@ -13,6 +14,7 @@ from uuid import uuid4
 from PIL import Image, ImageDraw
 
 from koma.documents.images import import_image
+from koma.documents.audio import import_audio, SAMPLE_RATE, CHANNELS, SAMPLE_WIDTH
 from koma.documents.session import DocumentSession
 from koma.editor import graph
 from koma.editor.history import StoryHistory
@@ -41,9 +43,19 @@ async def check(report_path, blender=None):
             client = Path(sys._MEIPASS) / 'desktop/flet/flet.exe'
             if not client.is_file():
                 raise ValueError('Cliente Flet ausente do pacote.')
+            from koma.ui.drop_runtime import validate_client
+            validate_client(client.parent)
             report['client'] = str(client)
         report['checks']['resources'] = 'passed'
         session = DocumentSession(work / 'data')
+        audio_source = work / 'audio.wav'
+        with wave.open(str(audio_source), 'wb') as audio:
+            audio.setparams((CHANNELS, SAMPLE_WIDTH, SAMPLE_RATE, 0, 'NONE', 'not compressed'))
+            audio.writeframes(bytes(CHANNELS * SAMPLE_WIDTH * SAMPLE_RATE // 10))
+        _, _, waveform = import_audio(audio_source, session.store)
+        if not waveform.levels or not waveform.frames:
+            raise ValueError('O backend de áudio não gerou a waveform.')
+        report['checks']['audio_decode_waveform'] = 'passed'
         source = work / 'importar.png'
         image = Image.new('RGB', (1280, 720), '#304E67')
         ImageDraw.Draw(image).rectangle((300, 180, 980, 540), outline='white', width=12)

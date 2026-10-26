@@ -4,3 +4,10 @@ include VALIDATION.md
 recursive-include scripts *.py *.ps1
 recursive-include tests *.py
 recursive-include docs *.md
+recursive-include flutter *.dart *.yaml *.lock *.cpp *.cc *.h *.txt *.rc *.manifest *.ico
+prune flutter/client/build
+prune flutter/client/.dart_tool
+prune flutter/client/.idea
+prune flutter/client/windows/flutter/ephemeral
+prune flutter/koma_drop/build
+prune flutter/koma_drop/.dart_tool

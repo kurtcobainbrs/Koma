@@ -11,7 +11,9 @@ def key_name(key):
     aliases = {'': 'Space', 'space': 'Space', 'spacebar': 'Space', 'escape': 'Esc', 'esc': 'Esc',
         'return': 'Enter', 'enter': 'Enter', 'numpad enter': 'Enter', 'delete': 'Delete',
         'backspace': 'Backspace', 'home': 'Home', 'control': 'Ctrl', 'ctrl': 'Ctrl',
-        'alt': 'Alt', 'shift': 'Shift', 'meta': 'Meta', 'command': 'Meta', 'super': 'Meta', '+': 'Plus', 'plus': 'Plus'}
+        'alt': 'Alt', 'shift': 'Shift', 'meta': 'Meta', 'command': 'Meta', 'super': 'Meta', '+': 'Plus', 'plus': 'Plus',
+        'arrowleft': 'Arrow Left', 'arrowright': 'Arrow Right', 'arrowup': 'Arrow Up', 'arrowdown': 'Arrow Down',
+        'left': 'Arrow Left', 'right': 'Arrow Right', 'up': 'Arrow Up', 'down': 'Arrow Down'}
     for prefix, name in (('control ', 'Ctrl'), ('ctrl ', 'Ctrl'), ('shift ', 'Shift'),
                          ('alt ', 'Alt'), ('meta ', 'Meta'), ('command ', 'Meta'), ('super ', 'Meta')):
         if raw.startswith(prefix):

@@ -38,6 +38,8 @@ class StoryCard:
         self.mute_item = ft.PopupMenuItem('Mutar', icon=ft.Icons.VISIBILITY_OFF,
             on_click=self.toggle_muted)
         self.sequence.items.append(self.mute_item)
+        self.sequence.items.append(ft.PopupMenuItem('Editar propriedades', icon=ft.Icons.TUNE,
+            on_click=self.edit_properties))
         self.title = ft.Text(frame.title or 'Sem título', size=TEXT_SMALL, expand=True, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.duration = ft.Text(f'{frame.duration:g} s', size=TEXT_SMALL, color=MUTED)
@@ -64,7 +66,8 @@ class StoryCard:
                         on_click=lambda e: view.confirm_remove(frame.id))], spacing=2, height=28),
                 self.image if frame.node_type.image else self.main_body, self.sockets,
             ], tight=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH))
-        self.content = ft.Container(content=self.box, left=frame.x or 0, top=frame.y or 0, width=NODE_WIDTH)
+        self.content = ft.Container(content=view.external_drop.node(self.box, frame.id),
+            left=frame.x or 0, top=frame.y or 0, width=NODE_WIDTH)
 
     async def end_drag(self, e):
         await self.view.workspace.end_drag(self.identifier, e)
@@ -76,6 +79,16 @@ class StoryCard:
 
     async def pick_image(self, e):
         await self.view.pick_image(self.identifier)
+
+    def edit_properties(self, e=None):
+        if not self.view.editable():
+            return
+        navigation = self.view.workspace.navigation
+        if navigation.effective_mode != 'select':
+            navigation.set_mode('select')
+        navigation.select_node(self.identifier, focus=True)
+        if not self.view.properties.opened:
+            self.view.properties.toggle()
 
     async def duplicate(self, e):
         await self.view.duplicate(self.identifier)
@@ -104,7 +117,8 @@ class StoryCard:
         self.duration.visible = frame.node_type.timed
         self.main_body.content.controls[0].controls[1].value = frame.title or 'Cena'
         self.box.content.controls[1] = self.image if frame.node_type.image else self.main_body
-        self.duration.value = f'{frame.duration:g} s'
+        self.duration.value = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
+        self.duration.tooltip = f'Duração a {self.view.board.fps} FPS'
         self.image_name = frame.image
         self.viewport.set_frame(frame)
         for item in self.sequence.items[:2]:

@@ -77,7 +77,14 @@ def main():
     scene.render.ffmpeg.codec = 'H264'
     scene.render.ffmpeg.constant_rate_factor = request['quality']
     scene.render.ffmpeg.ffmpeg_preset = 'GOOD'
-    scene.render.ffmpeg.audio_codec = 'NONE'
+    audio_tracks = request.get('audio_tracks', [])
+    for index, track in enumerate(audio_tracks):
+        sound = strips.new_sound(name=f'Áudio {index + 1}', filepath=track['path'], channel=index + 2,
+            frame_start=1 + round(track['start'] * request['fps']))
+        sound.volume = track['volume']
+    scene.render.ffmpeg.audio_codec = 'AAC' if audio_tracks else 'NONE'
+    if audio_tracks:
+        scene.render.ffmpeg.audio_mixrate = 48000
     scene.render.filepath = request['output']
     scene.render.use_file_extension = True
     bpy.app.handlers.render_post.append(lambda s, *args: emit('Codificando MP4', s.frame_current, total_frames))

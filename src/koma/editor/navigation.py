@@ -9,6 +9,7 @@ from koma.editor.canvas_tools import canvas_tools
 from koma.editor.shortcuts import Action
 from koma.editor.shortcut_commands import ShortcutCommands
 from koma.keymap import key_name
+from koma.editor.modifier_state import pressed_modifiers
 from koma.ui.typography import TEXT_SMALL
 
 
@@ -217,6 +218,16 @@ class CanvasNavigation:
 
     def modifier(self, action):
         return self.keymap.modifier_active(action, self.modifiers)
+
+    def drag_detach_active(self):
+        physical = pressed_modifiers()
+        return self.keymap.modifier_active(Action.DETACH,
+            self.modifiers if physical is None else physical)
+
+    def reset_keys(self):
+        for keys in (self.shift_keys, self.control_keys, self.alt_keys, self.meta_keys):
+            keys.clear()
+        self.held_key, self.temporary_pan = None, False
 
     def refresh_shortcuts(self):
         for tool in self.definitions.values():

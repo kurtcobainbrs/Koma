@@ -2,17 +2,70 @@
 
 import asyncio
 from pathlib import Path
+from dataclasses import replace
 
 import flet as ft
 from koma.editor.shortcuts import Action
 from flet.controls.exceptions import FletException, FletUnsupportedPlatformException
 
 from koma.documents.images import IMAGE_EXTENSIONS, import_image, import_image_bytes
+from koma.editor.models import MAX_CARDS, StoryFrame
+from koma.editor.geometry import coordinate
 
 
 class StoryboardImageInput:
     def __init__(self, view):
         self.view = view
+
+    async def drop(self, paths, position, identifier=None):
+        """Destino capturado no drop, validado antes de qualquer alteração."""
+        view = self.view
+        if not view.editable():
+            return
+        if len(paths) != 1:
+            view.notify('Solte uma imagem por vez sobre um quadro ou no canvas.', 'warning')
+            return
+        frame = next((item for item in view.board.frames if item.id == identifier), None)
+        if identifier is not None and (frame is None or not frame.node_type.image):
+            view.notify('Este node não aceita imagens. Solte sobre um quadro ou no espaço vazio.', 'warning')
+            return
+        if identifier is None and len(view.board.frames) >= MAX_CARDS:
+            view.notify(f'Limite de {MAX_CARDS} quadros atingido.', 'warning')
+            return
+        source = Path(paths[0])
+        session, revision = view.session, view.revision
+        view.properties.end_adjust()
+        view.workspace.context_menu.dismiss(refocus=False)
+        if view.workspace.drag:
+            view.workspace.cancel_drag(view.workspace.drag.identifier)
+        view.lock(True)
+        try:
+            if not source.is_file() or source.suffix.lower().lstrip('.') not in IMAGE_EXTENSIONS:
+                raise ValueError('Escolha uma imagem PNG, JPEG, WebP, BMP ou TIFF.')
+            view.notify(f'Importando {source.name}…', 'working')
+            name, data = await asyncio.to_thread(import_image, source, view.store)
+            if view.closing or not view.active or view.session is not session or view.revision != revision:
+                return
+            if identifier is not None:
+                updated = view.board.change(identifier, image=name, crop_x=0, crop_y=0)
+            else:
+                x, y = (coordinate(n, snap=view.workspace.snap_enabled) for n in position)
+                frame = StoryFrame(title=source.stem, image=name, x=x, y=y)
+                updated = replace(view.board, frames=(*view.board.frames, frame))
+                updated.validate()
+                identifier = frame.id
+            view.thumbnails[name] = data
+            view.changed(updated)
+            view.refresh()
+            view.workspace.navigation.apply_selection({identifier}, identifier)
+            view.page.update(view.content)
+            if await view.persist():
+                view.notify('Imagem importada. Use Desfazer para reverter.', 'success')
+        except (OSError, ValueError, RuntimeError, SyntaxError, OverflowError, MemoryError, FletException) as exc:
+            if not view.closing:
+                view.notify(f'Não foi possível importar a imagem: {exc}', 'warning')
+        finally:
+            view.lock(False)
 
     async def clipboard_source(self):
         clipboard = ft.Clipboard()

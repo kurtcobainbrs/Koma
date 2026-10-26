@@ -12,11 +12,12 @@ python -m venv .venv
 .venv\Scripts\python.exe -m koma
 ```
 
-Depois da instalação, também é possível usar `koma` ou `python -m koma caminho\documento.koma`. O cliente desktop do Flet é baixado na primeira execução com Python. A distribuição Windows inclui esse cliente.
+Depois da instalação, também é possível usar `koma` ou `python -m koma caminho\documento.koma`. O arraste externo usa o cliente Flet com a extensão local do Koma. Compile-o com `python scripts/build_flet_client.py` antes de iniciar. Sem esse cliente, a interface mantém Importar imagens e colagem, com aviso de indisponibilidade do arraste. A distribuição Windows inclui o cliente compilado.
 
 ## Documentos
 
 - **Novo**, **Abrir**, **Salvar** e **Salvar como** ficam no menu Arquivo.
+- Arraste um arquivo **.koma** do Explorador para a janela para abri-lo em uma aba. Se já estiver aberto, a aba existente é selecionada. Solte um projeto por vez; arquivos inválidos são recusados sem substituir o projeto atual.
 - Atalhos: Ctrl+N, Ctrl+O, Ctrl+S e Ctrl+Shift+S, com foco no canvas. Campos de texto mantêm seus atalhos de edição.
 - Os projetos ficam em abas no topo, logo abaixo dos menus. Use **+** ou **Arquivo → Novo** para criar outra aba; **Abrir** também abre em uma nova aba.
 - Cada aba mantém documento, histórico, seleção, câmera e imagens próprios. O asterisco na aba indica alterações ainda não salvas no `.koma`.
@@ -27,11 +28,15 @@ Depois da instalação, também é possível usar `koma` ou `python -m koma cami
 - Se outro programa ou outra janela modificar o arquivo, o salvamento é recusado. Use Salvar como para preservar ambas as versões.
 - Um documento novo permanece sem caminho até o primeiro salvamento.
 
-O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 1) e `images/<uuid>.png`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições e enquadramento. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas de até 640 × 640 são regeneráveis e não entram no pacote.
+O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 2), `images/<uuid>.png` e áudio em `audio/<uuid>.wav`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições, enquadramento, trilhas e marcadores. Projetos da versão 1 continuam abrindo; clientes antigos rejeitam a versão 2 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote.
 
 Não há compatibilidade com `.akira-storyboard`.
 
 ## Canvas e mute
+
+O arraste externo é integrado aos widgets Flutter do próprio Flet; veja a [arquitetura e validação](docs/EXTERNAL_IMAGE_DROP.md). `KOMA_EXTERNAL_DROP=0` desativa o recurso nesta instância, mantendo importação pelo botão e colagem.
+
+No Windows, arraste uma imagem do Explorador para o canvas: sobre um quadro, substitui apenas a imagem e reinicia o enquadramento; no espaço vazio, cria um quadro no ponto da soltura, respeitando zoom e grade. Inícios de cena não aceitam imagens. Solte uma imagem por vez (PNG, JPEG, WebP, BMP ou TIFF). O arquivo precisa ser decodificado e respeitar o limite de 40 megapixels antes de alterar o documento; arquivos inválidos são recusados com uma mensagem. A operação participa de Desfazer/Refazer, preserva os originais e não muda as conexões. O destino é escolhido pelo hit-test real do Flutter, inclusive com zoom, pan, sobreposição e redimensionamento. Não depende da seleção ativa, do foco do Windows nem de áreas invisíveis sobrepostas à janela.
 
 Botão direito no canvas abre opções de inserção no ponto clicado, importação e enquadramento. Sobre um node, também oferece mutar/desmutar, duplicar e excluir. No modo Zoom, o botão direito continua reduzindo o zoom; Ctrl + arraste direito continua cortando conexões.
 
@@ -47,11 +52,15 @@ Seleção e câmera não alteram o documento. Imagens antigas são mantidas dura
 
 ## Exportações
 
+Nas propriedades, **FPS do projeto** define a taxa de 24, 25, 30 ou 60 FPS, salva no `.koma` e usada pelo MP4. Documentos antigos usam 24 FPS. A duração de cada quadro pode ser editada em **segundos** ou **frames**; o outro valor é atualizado automaticamente, inclusive com vírgula decimal. Por exemplo, a 24 FPS, 48 frames equivalem a 2 segundos. Alterar o FPS mantém os segundos e recalcula os frames. Frações de frame são permitidas; a exportação arredonda os limites acumulados para frames inteiros, com pelo menos um frame por quadro. Durações de um frame a 60 FPS são aceitas. Desfazer/refazer inclui durações e FPS.
+
 **PDF:** ReportLab, fontes Archivo incluídas, folhas de seis quadros e continuação de textos longos. Funciona sem Blender.
 
-**MP4:** configure o executável em **Arquivo → Preferências do Blender**. O Blender é instalado separadamente. Selecione uma cena ou um quadro pertencente a ela antes de exportar. O resultado usa cortes diretos, sem áudio, com legendas opcionais; suporta 24/25/30/60 FPS e 1920 × 1080 ou 1280 × 720.
+**Timeline e áudio:** a prévia permite importar WAV, MP3, FLAC ou OGG por cena, visualizar a waveform, ajustar o início em frames, mutar e substituir/remover áudio. Marcadores têm nome e posição; clique para navegar e duplo clique para editar. Zoom, régua e agulha são compartilhados. Veja [arquitetura, limites e validação](docs/TIMELINE_AUDIO.md).
 
-Validado nesta implementação com **Blender 5.0.1 no Windows**. Outras versões precisam de validação. Não instala `bpy` no Python do aplicativo e não abre arquivos `.blend`.
+**MP4:** configure o executável em **Arquivo → Preferências do Blender**. O Blender é instalado separadamente. Selecione uma cena ou um quadro pertencente a ela antes de exportar. O resultado usa cortes diretos, inclui a trilha ativa da cena e legendas opcionais; suporta 24/25/30/60 FPS e 1920 × 1080 ou 1280 × 720.
+
+A exportação com áudio foi validada com **Blender 5.2 no Windows**; a exportação anterior sem áudio também foi validada com Blender 5.0.1. Outras versões precisam de validação. Não instala `bpy` no Python do aplicativo e não abre arquivos `.blend`.
 
 O runner usa um processo cancelável e um arquivo temporário. Falhas e cancelamento preservam o MP4 anterior. A preparação das imagens e o PDF trabalham fora do loop da interface.
 
@@ -74,9 +83,9 @@ Os testes verificam grafo, gestos, controles Flet, histórico, documentos, falha
 
 O build produz o wheel/sdist Python e `dist/Koma/Koma.exe`. Distribua **a pasta `dist/Koma` inteira**: ela inclui Python, bibliotecas, fontes, estilos, script de exportação e cliente Flet. O Blender continua externo. Não é necessário instalar Python na máquina de destino.
 
-O build pode baixar o cliente Flet durante sua preparação. A distribuição resultante inclui esse cliente para inicialização offline. O executável portátil ainda requer uma conferência em uma máquina Windows limpa antes de publicação; não há instalador assinado nem associação automática de extensão nesta etapa.
+A compilação requer Flutter 3.44.8 e Visual Studio Build Tools 2022 com ferramentas C++ para desktop. `scripts/build_flet_client.py` executa análise, testes Flutter e build Release, usando as versões dos arquivos `pubspec.lock`. O build Windows inclui esse cliente para inicialização offline. O executável portátil ainda requer uma conferência em uma máquina Windows limpa antes de publicação; não há instalador assinado nem associação automática de extensão nesta etapa.
 
-O build verifica arquitetura x64, imports e delay-imports de cada binário. Ele falha se houver DLL ausente, runtime de depuração ou dependência do runtime Visual C++ que só exista no host. O cliente Flet 1.0.5 é empacotado sem duas DLLs órfãs (`dartjni.dll` e `zlib.dll`); hashes e referências são conferidos antes da exclusão. O cache Flet instalado não é modificado.
+O build verifica arquitetura x64, imports e delay-imports de cada binário. Ele falha se houver DLL ausente, runtime de depuração ou dependência do runtime Visual C++ que só exista no host. O cliente próprio usa Flet 1.0.5 e desktop_drop 0.7.1, com manifesto de protocolo e hashes de seus arquivos. Um hook local do PyInstaller impede a inclusão automática do cliente Flet padrão. O cache Flet instalado não é modificado.
 
 O arquivo `dist/Koma-windows-x64-validation.zip` contém a distribuição, hashes, auditorias e o [roteiro Windows limpo](docs/CLEAN_WINDOWS.md). O diagnóstico funciona sem Python:
 

@@ -4,24 +4,30 @@ Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     & $Python -m unittest discover -s tests -q
     if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
+    & $Python scripts\build_flet_client.py
+    if ($LASTEXITCODE -ne 0) { throw 'O cliente Flet com drop nativo não foi validado.' }
     New-Item -ItemType Directory -Path build -Force | Out-Null
-    & $Python -m PyInstaller --noconfirm Koma.spec 2>&1 | Tee-Object -FilePath build\pyinstaller.log
+    $stage = Join-Path $PWD ('build\windows-stage-' + [guid]::NewGuid().ToString('N'))
+    $package = Join-Path $stage 'Koma'
+    & $Python -m PyInstaller --noconfirm --distpath $stage Koma.spec 2>&1 | Tee-Object -FilePath build\pyinstaller.log
     if ($LASTEXITCODE -ne 0) { throw 'O build Windows falhou.' }
     if (Select-String -Path build\pyinstaller.log -SimpleMatch 'Library not found:') {
         throw 'O PyInstaller encontrou dependências nativas ausentes.'
     }
     foreach ($resource in @(
-        'dist\Koma\_internal\koma\exports\blender_probe.py',
-        'dist\Koma\_internal\koma\assets\fonts\Archivo-Regular.ttf',
-        'dist\Koma\_internal\koma\assets\storyboard-subtitles.json',
-        'dist\Koma\_internal\desktop\flet\flet.exe'
+        '_internal\koma\exports\blender_probe.py',
+        '_internal\koma\assets\fonts\Archivo-Regular.ttf',
+        '_internal\koma\assets\storyboard-subtitles.json',
+        '_internal\desktop\flet\flet.exe',
+        '_internal\desktop\flet\koma-client.json',
+        '_internal\desktop\flet\data\flutter_assets\fonts\MaterialIcons-Regular.otf'
     )) {
-        if (-not (Test-Path -LiteralPath $resource -PathType Leaf)) { throw "Recurso ausente: $resource" }
+        if (-not (Test-Path -LiteralPath (Join-Path $package $resource) -PathType Leaf)) { throw "Recurso ausente: $resource" }
     }
-    & $Python scripts\windows_native.py
+    & $Python scripts\windows_native.py --directory $package
     if ($LASTEXITCODE -ne 0) { throw 'A auditoria das DLLs falhou.' }
     $diagnosticsReport = Join-Path $PWD 'build\packaged-diagnostics.json'
-    $diagnosticsProcess = Start-Process -FilePath (Join-Path $PWD 'dist\Koma\Koma.exe') -ArgumentList @('--diagnostics', ('"' + $diagnosticsReport + '"')) -WorkingDirectory (Join-Path $PWD 'dist\Koma') -WindowStyle Hidden -PassThru
+    $diagnosticsProcess = Start-Process -FilePath (Join-Path $package 'Koma.exe') -ArgumentList @('--diagnostics', ('"' + $diagnosticsReport + '"')) -WorkingDirectory $package -WindowStyle Hidden -PassThru
     if (-not $diagnosticsProcess.WaitForExit(60000)) {
         Stop-Process -Id $diagnosticsProcess.Id
         throw 'O diagnóstico do executável excedeu 60 segundos.'
@@ -29,6 +35,8 @@ try {
     if ($diagnosticsProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $diagnosticsReport)) { throw 'O diagnóstico do executável falhou.' }
     $diagnostics = Get-Content -LiteralPath $diagnosticsReport -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $diagnostics.ok -or -not $diagnostics.frozen) { throw 'O pacote falhou no diagnóstico offline.' }
+    & $Python scripts\publish_windows_package.py $package
+    if ($LASTEXITCODE -ne 0) { throw 'Não foi possível publicar o pacote; a versão anterior foi preservada.' }
     & $Python -m build --no-isolation
     if ($LASTEXITCODE -ne 0) { throw 'O build Python falhou.' }
     & $Python scripts\prepare_windows_validation.py
