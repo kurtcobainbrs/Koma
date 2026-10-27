@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tomllib
 
@@ -48,7 +49,7 @@ def main():
             raise ValueError('Essa release já foi publicada; ela não será sobrescrita.')
     directory = ROOT / f'dist/releases/{tag}'
     if not directory.exists():
-        command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        command = [shutil.which('pwsh') or 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
             str(ROOT / 'scripts/build_windows.ps1'), '-Python', sys.executable]
         if args.full_tests:
             command.append('-FullTests')

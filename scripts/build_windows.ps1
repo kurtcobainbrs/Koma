@@ -22,8 +22,17 @@ try {
     New-Item -ItemType Directory -Path build -Force | Out-Null
     $stage = Join-Path $PWD ('build\windows-stage-' + [guid]::NewGuid().ToString('N'))
     $package = Join-Path $stage 'Koma'
-    & $Python -m PyInstaller --noconfirm --distpath $stage Koma.spec 2>&1 | Tee-Object -FilePath build\pyinstaller.log
-    if ($LASTEXITCODE -ne 0) { throw 'O build Windows falhou.' }
+    $buildPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5 treats native stderr as an error record. PyInstaller
+        # writes progress there too; its exit code determines whether it failed.
+        $ErrorActionPreference = 'Continue'
+        & $Python -m PyInstaller --noconfirm --distpath $stage Koma.spec 2>&1 | Tee-Object -FilePath build\pyinstaller.log
+        $buildExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $buildPreference
+    }
+    if ($buildExitCode -ne 0) { throw 'O build Windows falhou.' }
     if (Select-String -Path build\pyinstaller.log -SimpleMatch 'Library not found:') {
         throw 'O PyInstaller encontrou dependências nativas ausentes.'
     }
