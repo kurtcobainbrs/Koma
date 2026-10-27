@@ -1,7 +1,7 @@
 """Limites responsivos do player; a prévia ocupa o espaço restante por flex."""
 
 from dataclasses import dataclass
-from koma.ui.design import APP_PADDING, CONTROL_HEIGHT, PAGE_PADDING
+from koma.ui.design import APP_PADDING, COMPACT_CONTROL_HEIGHT, PAGE_PADDING
 
 
 @dataclass(frozen=True)
@@ -11,7 +11,7 @@ class PlayerLayout:
     vertical_fraction: float = .88
     dialog_inset: float = PAGE_PADDING * 2
     content_padding: float = PAGE_PADDING
-    chrome_height: float = CONTROL_HEIGHT * 2 + APP_PADDING * 2
+    chrome_height: float = COMPACT_CONTROL_HEIGHT + APP_PADDING * 4
 
     def apply(self, page, content, preview_slot):
         width, height = getattr(page, 'width', None), getattr(page, 'height', None)

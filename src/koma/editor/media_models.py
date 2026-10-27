@@ -8,6 +8,17 @@ from uuid import uuid4
 MAX_AUDIO_TRACKS = 32
 MAX_MARKERS = 2000
 MAX_AUDIO_SECONDS = 3600
+MARKER_PREFIX = 'M'
+
+
+def next_marker_title(markers):
+    """Continue the numbered names in this scene, including renamed entries."""
+    numbers = [len(markers)]
+    for marker in markers:
+        match = re.fullmatch(rf'{re.escape(MARKER_PREFIX)}([0-9]+)', marker.title)
+        if match:
+            numbers.append(int(match[1]))
+    return f'{MARKER_PREFIX}{max(numbers) + 1}'
 
 
 def valid_id(value):
@@ -45,7 +56,7 @@ class AudioTrack:
 @dataclass(frozen=True)
 class TimelineMarker:
     id: str = field(default_factory=lambda: uuid4().hex)
-    title: str = 'Marcador'
+    title: str = f'{MARKER_PREFIX}1'
     position: float = 0
     scene_id: str = ''
 

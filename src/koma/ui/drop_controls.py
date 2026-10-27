@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import flet as ft
+from koma.documents.audio import AUDIO_EXTENSIONS
 from flet.controls.base_control import control
 from flet.controls.control_event import Event, EventHandler
 
@@ -27,6 +28,7 @@ class ImageDropSurface(ft.LayoutControl):
     origin_x: float = 0.0
     origin_y: float = 0.0
     documents_only: bool = False
+    audio_extensions: list[str] = field(default_factory=lambda: list(AUDIO_EXTENSIONS))
     on_dropped: Optional[EventHandler[ImageDropEvent]] = None
 
 

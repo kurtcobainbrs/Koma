@@ -33,6 +33,17 @@ class MarkerInteractionTests(TestCase):
         self.key(player, 'm')
         return next(marker for marker in player.timeline.markers if marker.position == position)
 
+    def test_marker_names_increment_after_renaming_and_skip_existing_numbers(self):
+        view, player = self.editor()
+        first = self.marker(player, 0.5)
+        second = self.marker(player, 1)
+        self.assertEqual((first.title, second.title), ('M1', 'M2'))
+        fixtures.finish(player.media.rename_marker(second.id, 'Corte', view.board, view.session))
+        third = self.marker(player, 1.5)
+        self.assertEqual(third.title, 'M3')
+        fixtures.finish(player.media.rename_marker(third.id, 'M10', view.board, view.session))
+        self.assertEqual(self.marker(player, 2).title, 'M11')
+
     def test_m_creates_directly_and_same_position_selects_without_duplicates_or_dialog(self):
         view, player = self.editor()
         calls = view.page.show_dialog.call_count
@@ -132,6 +143,8 @@ class MarkerInteractionTests(TestCase):
         fixtures.finish(lane.save_name())
         self.assertEqual(player.timeline.markers[0].title, 'Corte principal')
         self.assertIsNone(lane.renaming)
+        self.assertFalse(lane.saving)
+        self.assertEqual(view.page.run_task.call_args.args[0], player.keyboard.focus)
         self.assertEqual(view.page.show_dialog.call_count, calls)
         self.key(player, 'Delete')
         self.assertEqual(player.timeline.markers, ())

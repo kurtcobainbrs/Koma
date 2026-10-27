@@ -2,6 +2,8 @@
 
 import flet as ft
 
+from koma.ui.menus import menu_item, popup_menu
+
 from koma.ui.design import BORDER, DRAG_INTERVAL_MS, MUTED, RADIUS, SURFACE
 from koma.ui.typography import FONT_HEADING, TEXT_BODY
 from koma.editor.geometry import GRID_STEP, NODE_HEIGHT, NODE_WIDTH
@@ -21,9 +23,9 @@ class SceneFrames:
                 self.boxes[group.id] = ft.Container(ignore_interactions=True,
                     border=ft.Border.all(1, BORDER), border_radius=RADIUS,
                     bgcolor=ft.Colors.with_opacity(.045, ft.Colors.SECONDARY))
-                menu = ft.PopupMenuButton(icon=ft.Icons.MORE_HORIZ, padding=0, items=[
-                    ft.PopupMenuItem('Renomear moldura', on_click=self.rename(group.id)),
-                    ft.PopupMenuItem('Desagrupar', on_click=self.ungroup(group.id))])
+                menu = popup_menu(icon=ft.Icons.MORE_HORIZ, padding=0, items=[
+                    menu_item('Renomear moldura', on_click=self.rename(group.id)),
+                    menu_item('Desagrupar', on_click=self.ungroup(group.id))])
                 title = ft.GestureDetector(expand=True, mouse_cursor=ft.MouseCursor.MOVE,
                     drag_interval=DRAG_INTERVAL_MS, on_tap_down=self.select(group.id),
                     on_pan_start=self.start(group.id), on_pan_update=self.drag(group.id),

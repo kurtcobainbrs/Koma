@@ -7,6 +7,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Flowable, Paragraph
 
 from koma.editor.framing import placement
+from koma.editor.frame_format import FrameFormat
 
 
 def paragraph(value, style):
@@ -103,18 +104,20 @@ class StoryboardSheet(Flowable):
         c.setFillColor(p['paper'])
         c.rect(x, top - height, width, height, stroke=0, fill=1)
         ix, iw = x + 8, width - 16
-        ih = iw * 9 / 16
+        ih = iw / FrameFormat().aspect_ratio
         iy = top - 8 - ih
         c.setFillColor(p['placeholder'])
-        c.rect(ix, iy, iw, ih, stroke=0, fill=1)
+        vw, vh = self.board.frame_format.fit(iw, ih)
+        vx, vy = ix + (iw - vw) / 2, iy + (ih - vh) / 2
+        c.rect(vx, vy, vw, vh, stroke=0, fill=1)
         if frame.image:
             reader = ImageReader(str(self.store.images / frame.image))
-            dw, dh, dx, dy = placement(reader.getSize(), (iw, ih), frame.image_fit, frame.crop_x, frame.crop_y)
+            dw, dh, dx, dy = placement(reader.getSize(), (vw, vh), frame.image_fit, frame.crop_x, frame.crop_y)
             c.saveState()
             path = c.beginPath()
-            path.rect(ix, iy, iw, ih)
+            path.rect(vx, vy, vw, vh)
             c.clipPath(path, stroke=0)
-            c.drawImage(reader, ix + dx, iy + ih - dh - dy, dw, dh, mask='auto')
+            c.drawImage(reader, vx + dx, vy + vh - dh - dy, dw, dh, mask='auto')
             c.restoreState()
         else:
             c.setFillColor(p['muted'])

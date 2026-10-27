@@ -23,6 +23,7 @@ from koma.editor.graph_actions import GraphActions
 from koma.editor.history import StoryHistory
 from koma.editor.models import StoryLink, StoryGroup
 from koma.editor.properties import FrameProperties
+from koma.editor.project_properties import ProjectProperties
 from koma.editor.animatic import AnimaticPlayer
 from koma.editor.image_input import StoryboardImageInput
 from koma.editor.file_actions import StoryboardFiles
@@ -30,6 +31,7 @@ from koma.editor.editor_chrome import StoryboardChrome
 from koma.editor.node_types import node_type
 from koma.preferences import StoryboardPreferences
 from koma.editor.shortcuts import default_keymap
+from koma.ui.splitter import Splitter
 
 
 class StoryboardView:
@@ -70,7 +72,9 @@ class StoryboardView:
         self.count = ft.Text(size=TEXT_SMALL, color=MUTED)
         self.workspace = StoryboardCanvas(self)
         self.image_input = StoryboardImageInput(self)
+        self.project_properties = ProjectProperties(self)
         self.properties = FrameProperties(self)
+        self.properties_splitter = Splitter(page, self.properties.content, minimum=240, maximum=600, reverse=True)
         self.empty = ft.Container(left=64, right=56, top=24, padding=16, content=ft.Column([
             ft.Icon(ft.Icons.VIEW_MODULE_OUTLINED, size=36, color=MUTED),
             ft.Text('Comece com um quadro vazio ou importe imagens.', size=TEXT_BODY, color=MUTED),
@@ -95,7 +99,8 @@ class StoryboardView:
         self.toolbar = self.chrome.toolbar
         self.content = ft.Column([
             self.chrome.content,
-            ft.Row([list_surface([self.board_area]), self.properties.content], expand=True, spacing=6,
+            ft.Row([list_surface([self.board_area]), self.properties_splitter.content,
+                self.properties.content, self.properties.reopen_rail], expand=True, spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.STRETCH), self.chrome.status,
         ], expand=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.refresh()
@@ -131,6 +136,7 @@ class StoryboardView:
         self.chrome.sync()
         self.chrome.lock(busy)
         self.external_drop.sync()
+        self.workspace.secondary_pointer.sync()
         if not self.closing and self.active:
             self.page.update(self.content)
 
@@ -144,7 +150,7 @@ class StoryboardView:
         self.lock(True)
         try:
             await self.preferences.load()
-            self.player.show_subtitles.value = self.preferences.options.show_subtitles
+            self.player.show_subtitles.selected = self.preferences.options.show_subtitles
             self.files.include_subtitles = self.preferences.options.include_subtitles
             board = self.session.board
             await self.workspace.camera_memory.load()
@@ -178,6 +184,7 @@ class StoryboardView:
         self.graph.sync_history()
         self.workspace.refresh()
         self.properties.sync()
+        self.project_properties.sync()
         scenes = sum(frame.node_type.starts_scene for frame in self.board.frames)
         self.count.value = f'{number} quadros · {scenes} cenas · {len(self.board.links)} ligações'
         self.empty.visible = not self.board.frames
@@ -197,11 +204,12 @@ class StoryboardView:
     async def pick_images(self, e):
         await self.pick_image()
 
-    def changed(self, board, coalesce_key=None):
+    def changed(self, board, coalesce_key=None, *, label=None):
         board = graph.ordered(board)
         if board == self.board:
             return
-        self.history.record(self.board, coalesce_key)
+        from koma.editor.history_labels import change_label
+        self.history.record(self.board, coalesce_key, label or change_label(self.board, board))
         self.board = board
         self.revision += 1
         self.graph.sync_history()

@@ -8,7 +8,12 @@ from tests import test_storyboard as fixtures
 
 
 class CanvasBasicsTests(TestCase):
-    setUp = fixtures.StoryboardTests.setUp
+    def setUp(self):
+        fixtures.StoryboardTests.setUp(self)
+        from unittest.mock import patch
+        native = patch('koma.editor.context_menu.ft.ContextMenu.open', new_callable=AsyncMock)
+        self.native_open = native.start()
+        self.addCleanup(native.stop)
     view = fixtures.StoryboardTests.view
 
     def test_duplicate_button_places_copy_near_original_and_selects_it(self):
@@ -97,13 +102,26 @@ class CanvasBasicsTests(TestCase):
         nav.shift_keys.add('shift')
         fixtures.finish(nav.key_down(Data(key='a')))
         menu = ws.context_menu
-        self.assertTrue(menu.layer.visible)
+        self.assertTrue(menu.is_open)
         self.assertEqual([item.content.value for item in menu.items],
             ['Início de cena', 'Quadro', 'Importar imagens…'])
-        self.assertEqual(menu.popup.width, 208)
-        self.assertTrue(all(item.style.animation_duration == 0 for item in menu.items))
+        self.assertEqual(self.native_open.await_args.kwargs['local_position'].x, 400)
         fixtures.finish(nav.key_down(Data(key='Escape')))
-        self.assertFalse(menu.layer.visible)
+        self.assertFalse(menu.is_open)
+
+    def test_context_menu_uses_actual_pointer_even_when_camera_snapshot_is_stale(self):
+        view = self.view()
+        ws = view.workspace
+        menu = ws.context_menu
+        self.assertIs(ws.viewer.content, menu.anchor)
+        self.assertIs(menu.anchor.content, ws.pointer_surface)
+        for zoom, dx, dy in [(1.18, -900, 420), (0.4, 800, -200)]:
+            ws.zoom, ws.translation_x, ws.translation_y = zoom, dx, dy
+            event = Data(local_position=Data(x=1800, y=950),
+                         global_position=Data(x=517, y=326))
+            fixtures.finish(menu.open(event))
+            self.native_open.assert_awaited_with(global_position=event.global_position)
+            menu.dismiss()
 
     def test_m_does_not_intercept_typing_and_muted_node_has_visual_indicator(self):
         view = self.view()

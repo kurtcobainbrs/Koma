@@ -4,6 +4,7 @@ import re
 import math
 from dataclasses import dataclass, field, replace
 from uuid import uuid4
+from koma.editor.frame_format import FrameFormat
 from koma.editor.node_types import node_type
 from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
 
@@ -92,8 +93,12 @@ class Storyboard:
     fps: int = 24
     audio_tracks: tuple[AudioTrack, ...] = ()
     markers: tuple[TimelineMarker, ...] = ()
+    frame_format: FrameFormat = field(default_factory=FrameFormat)
 
     def validate(self):
+        if not isinstance(self.frame_format, FrameFormat):
+            raise ValueError('Formato do projeto inválido.')
+        self.frame_format.validate()
         if type(self.fps) is not int or self.fps not in SUPPORTED_FPS:
             raise ValueError('Escolha 24, 25, 30 ou 60 FPS.')
         if not isinstance(self.title, str) or len(self.title) > 200:

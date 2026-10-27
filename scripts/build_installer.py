@@ -22,10 +22,13 @@ def sha256(path):
         return hashlib.file_digest(source, 'sha256').hexdigest()
 
 
-def build(root, compiler):
+def build(root, compiler, *, notes_path=None, prerelease=True):
     root, compiler = Path(root).resolve(), Path(compiler).resolve()
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']
     release_version = project['version']
+    supplied_notes = Path(notes_path).read_text(encoding='utf-8') if notes_path else None
+    if supplied_notes is not None and not supplied_notes.strip():
+        raise ValueError('As notas da release estão vazias.')
     if len(release_version.split('.')) != 3 or any(not part.isdecimal() for part in release_version.split('.')):
         raise ValueError('Use uma versão numérica major.minor.patch para o instalador.')
     destination = root / f'dist/releases/v{release_version}'
@@ -62,15 +65,15 @@ def build(root, compiler):
                 file_manifest.append(dict(path=relative, sha256=sha256(path), bytes=path.stat().st_size))
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip())
-    metadata = dict(version=release_version, tag=f'v{release_version}', prerelease=True,
+    metadata = dict(version=release_version, tag=f'v{release_version}', prerelease=prerelease,
         created_utc=datetime.now(timezone.utc).isoformat(), platform='Windows x64',
         source_git_head=commit, source_dirty=dirty,
         runtime={name: version(name) for name in ('flet', 'flet-desktop', 'miniaudio', 'pillow', 'reportlab', 'pyinstaller')},
         native_binary_count=len(audit['native_files']), installer_signed=False, files=file_manifest)
     (stage / 'build-info.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
-    notes = f'''# Koma {release_version} — prévia para Windows
+    notes = supplied_notes or f'''# Koma {release_version} — {'prévia' if prerelease else 'release'} para Windows
 
-Primeira distribuição instalável do editor de storyboard e animatic.
+Editor de storyboard e animatic para Windows.
 
 ## Instalar
 
@@ -108,5 +111,7 @@ Os hashes estão em SHA256SUMS.txt. Os avisos de terceiros acompanham o aplicati
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--iscc', type=Path, default=ROOT / 'build/tools/inno-6.7.3/ISCC.exe')
+    parser.add_argument('--notes', type=Path)
+    parser.add_argument('--stable', action='store_true')
     args = parser.parse_args()
-    print(build(ROOT, args.iscc))
+    print(build(ROOT, args.iscc, notes_path=args.notes, prerelease=not args.stable))

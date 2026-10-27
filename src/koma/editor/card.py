@@ -1,15 +1,23 @@
 """Card visual; edição e persistência são delegadas ao controlador do storyboard."""
 
 import flet as ft
+from dataclasses import replace
+
+from koma.ui.menus import menu_item, popup_menu
 
 from koma.ui.design import BORDER, COMPACT_CONTROL_HEIGHT, DRAG_INTERVAL_MS, MUTED, RADIUS, SELECTION, SURFACE
 from koma.ui.typography import FONT_HEADING, TEXT_BODY, TEXT_SMALL
 from koma.editor.geometry import NODE_WIDTH
 from koma.editor.framing import ImageViewport
 from koma.editor.shortcuts import Action
+from koma.ui.node_layout import NODE_LAYOUT
 
 
 class StoryCard:
+    @property
+    def layout(self):
+        return replace(NODE_LAYOUT, border=self.box.border.bottom.width)
+
     def __init__(self, view, frame):
         self.view, self.identifier = view, frame.id
         self.number = ft.Text(size=TEXT_BODY, font_family=FONT_HEADING)
@@ -26,25 +34,25 @@ class StoryCard:
             content=ft.Container(height=COMPACT_CONTROL_HEIGHT,
                 content=ft.Row([ft.Icon(ft.Icons.DRAG_INDICATOR, size=18, color=MUTED), self.number,
                     self.active_marker, self.mute_marker], spacing=6)))
-        self.sequence = ft.PopupMenuButton(icon=ft.Icons.MORE_HORIZ, tooltip='Opções do quadro e conexões',
-            items=[ft.PopupMenuItem('Anterior na sequência', icon=ft.Icons.ARROW_BACK,
+        self.sequence = popup_menu(icon=ft.Icons.MORE_HORIZ, tooltip='Opções do quadro e conexões',
+            items=[menu_item('Anterior na sequência', icon=ft.Icons.ARROW_BACK,
                 on_click=self.shift(-1)),
-                ft.PopupMenuItem('Próximo na sequência', icon=ft.Icons.ARROW_FORWARD,
+                menu_item('Próximo na sequência', icon=ft.Icons.ARROW_FORWARD,
                     on_click=self.shift(1)),
-                ft.PopupMenuItem('Desconectar entrada', on_click=view.graph.disconnect_port(frame.id, False)),
-                ft.PopupMenuItem('Desconectar saída', on_click=view.graph.disconnect_port(frame.id, True)),
-                ft.PopupMenuItem('Remover preservando fluxo',
+                menu_item('Desconectar entrada', on_click=view.graph.disconnect_port(frame.id, False)),
+                menu_item('Desconectar saída', on_click=view.graph.disconnect_port(frame.id, True)),
+                menu_item('Remover preservando fluxo',
                     on_click=lambda e: view.confirm_remove_frames({frame.id}, preserve_flow=True))])
-        self.mute_item = ft.PopupMenuItem('Mutar', icon=ft.Icons.VISIBILITY_OFF,
+        self.mute_item = menu_item('Mutar', icon=ft.Icons.VISIBILITY_OFF,
             on_click=self.toggle_muted)
         self.sequence.items.append(self.mute_item)
-        self.sequence.items.append(ft.PopupMenuItem('Editar propriedades', icon=ft.Icons.TUNE,
+        self.sequence.items.append(menu_item('Editar propriedades', icon=ft.Icons.TUNE,
             on_click=self.edit_properties))
         self.title = ft.Text(frame.title or 'Sem título', size=TEXT_SMALL, expand=True, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.duration = ft.Text(f'{frame.duration:g} s', size=TEXT_SMALL, color=MUTED)
         self.viewport = ImageViewport(view, frame.id)
-        self.image = self.viewport.content
+        self.image = ft.Container(content=self.viewport.content, alignment=ft.Alignment.CENTER)
         self.viewport.set_frame(frame)
         self.main_body = ft.Container(height=72, padding=8, on_click=lambda e: view.workspace.navigation.node_click(frame.id),
             content=ft.Column([ft.Row([ft.Icon(ft.Icons.MOVIE_OUTLINED, size=20),
@@ -53,8 +61,9 @@ class StoryCard:
                 ft.Text('Início de cena · conecte os quadros à saída', size=TEXT_SMALL, color=MUTED)], spacing=4))
         self.image_name = frame.image
         self.sockets = ft.Row([view.workspace.links.socket(frame.id, False), self.title, self.duration,
-            view.workspace.links.socket(frame.id, True)], height=22, spacing=6)
-        self.box = ft.Container(bgcolor=SURFACE, border=ft.Border.all(1, BORDER), border_radius=RADIUS, padding=4,
+            view.workspace.links.socket(frame.id, True)], height=NODE_LAYOUT.footer_height, spacing=6)
+        self.box = ft.Container(bgcolor=SURFACE, border=ft.Border.all(NODE_LAYOUT.border, BORDER),
+            border_radius=RADIUS, padding=NODE_LAYOUT.padding,
             on_size_change=lambda e: view.workspace.node_resized(frame.id, e),
             content=ft.Column([
                 ft.Row([self.handle, self.sequence,
@@ -63,9 +72,9 @@ class StoryCard:
                         on_click=self.duplicate),
                     ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Excluir quadro', icon_size=17,
                         width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
-                        on_click=lambda e: view.confirm_remove(frame.id))], spacing=2, height=28),
+                        on_click=lambda e: view.confirm_remove(frame.id))], spacing=2, height=NODE_LAYOUT.header_height),
                 self.image if frame.node_type.image else self.main_body, self.sockets,
-            ], tight=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH))
+            ], tight=True, spacing=NODE_LAYOUT.spacing, horizontal_alignment=ft.CrossAxisAlignment.STRETCH))
         self.content = ft.Container(content=view.external_drop.node(self.box, frame.id),
             left=frame.x or 0, top=frame.y or 0, width=NODE_WIDTH)
 
@@ -117,14 +126,17 @@ class StoryCard:
         self.duration.visible = frame.node_type.timed
         self.main_body.content.controls[0].controls[1].value = frame.title or 'Cena'
         self.box.content.controls[1] = self.image if frame.node_type.image else self.main_body
-        self.duration.value = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
-        self.duration.tooltip = f'Duração a {self.view.board.fps} FPS'
+        self.sync_duration(frame)
         self.image_name = frame.image
         self.viewport.set_frame(frame)
         for item in self.sequence.items[:2]:
             item.disabled = bool(self.view.board.links)
         self.paint(self.identifier in self.view.workspace.navigation.selection.ids,
             self.identifier == self.view.workspace.navigation.selected)
+
+    def sync_duration(self, frame):
+        self.duration.value = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
+        self.duration.tooltip = f'Duração a {self.view.board.fps} FPS'
 
     def paint(self, active, is_active=False):
         frame = self.viewport.frame

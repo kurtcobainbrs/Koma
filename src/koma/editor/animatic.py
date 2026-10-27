@@ -15,6 +15,8 @@ from koma.editor.shortcuts import Action
 from koma.ui.timeline_strip import TimelineStrip
 from koma.ui.player_layout import PlayerLayout
 from koma.ui.player_toolbar import PlayerToolbar
+from koma.ui.components import toggle_icon
+from koma.ui.splitter import Splitter
 from koma.editor.timeline_media import TimelineMedia
 from koma.audio_transport import AudioTransport
 from koma.editor.marker_edit import MarkerEditor
@@ -40,39 +42,46 @@ class AnimaticPlayer:
         self.layout = PlayerLayout()
         self.preview = ImageViewport(view, height=400)
         self.subtitles = SubtitlePreview(self)
-        self.screen = ft.Container(aspect_ratio=16/9, content=ft.Stack(
+        self.screen = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=ft.Stack(
             [self.preview.content, self.subtitles.content], fit=ft.StackFit.EXPAND))
         self.caption = ft.Text(size=TEXT_SMALL, font_family=FONT_HEADING, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.clock = ft.Text(size=TEXT_SMALL, color=MUTED)
         self.play = ft.IconButton(icon=ft.Icons.PLAY_ARROW, tooltip='Reproduzir', on_click=self.toggle,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
-        self.loop = ft.Checkbox(label='Repetir', value=False, height=COMPACT_CONTROL_HEIGHT)
-        self.show_subtitles = ft.Checkbox(label='Legendas', value=True, height=COMPACT_CONTROL_HEIGHT, on_change=self.toggle_subtitles,
-            tooltip='Mostrar ou ocultar no player. A inclusão no MP4 é escolhida na exportação.')
+        self.loop = toggle_icon(ft.Icons.REPEAT, ft.Icons.REPEAT_ON, self.toggle_loop)
+        self.show_subtitles = toggle_icon(ft.Icons.SUBTITLES_OFF_OUTLINED, ft.Icons.SUBTITLES,
+            self.toggle_subtitles, selected=True)
         self.previous_button = ft.IconButton(icon=ft.Icons.SKIP_PREVIOUS, on_click=self.previous,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
         self.next_button = ft.IconButton(icon=ft.Icons.SKIP_NEXT, on_click=self.next,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
         transport = ft.Row([self.previous_button, self.play, self.next_button], spacing=0, tight=True)
-        self.toolbar = PlayerToolbar(self.caption, self.strip.duration_input.field, transport, self.clock,
-            self.strip.fps, self.strip.history_tools, self.strip.zoom_tools)
+        self.toolbar = PlayerToolbar(self.strip.duration_input.field, transport, self.clock,
+            self.strip.fps, self.strip.history_tools, self.strip.zoom_tools,
+            [self.show_subtitles, self.loop], self.strip.audio_controls.tools)
+        # Reuse the audio footer for frame context instead of adding another band.
+        self.strip.footer_context.content = self.caption
         self.controls = self.toolbar.commands
-        self.preview_slot = ft.Container(content=self.screen, alignment=ft.Alignment.CENTER)
-        self.content = ft.Column([self.preview_slot, self.controls, self.strip.content], tight=True, spacing=APP_PADDING,
+        self.preview_bounds = None
+        self.preview_slot = ft.Container(content=self.screen, alignment=ft.Alignment.CENTER,
+            on_size_change=self.preview_resized)
+        self.preview_splitter = Splitter(view.page, self.preview_slot, horizontal=True, minimum=120, maximum=900)
+        self.content = ft.Column([self.preview_slot, self.preview_splitter.content, self.controls, self.strip.content], tight=True, spacing=APP_PADDING,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.keyboard = ft.KeyboardListener(content=self.content, autofocus=True)
-        self.export_button = ft.TextButton('MP4', icon=ft.Icons.MOVIE_OUTLINED, tooltip='Exportar MP4',
+        self.export_button = ft.OutlinedButton('Exportar MP4', icon=ft.Icons.FILE_UPLOAD_OUTLINED, tooltip='Exportar animatic em MP4',
             height=COMPACT_CONTROL_HEIGHT, on_click=view.files.video_from_player)
-        self.popup = dialog(title=ft.Text('Animatic'), content=self.keyboard,
+        self.title = ft.Text('Animatic', expand=True, size=TEXT_SECTION,
+            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+        self.close_button = ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Fechar · Esc', on_click=self.close,
+            width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
+        self.popup = dialog(title=ft.Row([self.title, self.export_button,
+                self.close_button], spacing=APP_PADDING * 2), content=self.keyboard,
             inset_padding=ft.Padding.all(self.layout.dialog_inset),
-            title_padding=ft.Padding.only(left=self.layout.content_padding, right=self.layout.content_padding, top=8, bottom=4),
+            title_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
             content_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
-            actions_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
-            modal=True, on_dismiss=self.dismissed, actions=[
-                self.show_subtitles, self.loop, self.export_button,
-                ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Fechar · Esc', on_click=self.close,
-                    width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)])
+            actions_padding=0, modal=True, on_dismiss=self.dismissed)
 
     def open(self, e=None):
         if not self.view.editable() or not self.view.board.frames or self.opened or self.dismiss_pending:
@@ -82,11 +91,12 @@ class AnimaticPlayer:
             self.view.notify('Esta cena não tem quadros ativos. Conecte quadros ou desmute os nodes para reproduzir.' if self.timeline.root
                 else 'Selecione um Node Principal ou um quadro conectado a ele para reproduzir a cena.', 'warning')
             return
-        self.popup.title = ft.Text(self.timeline.root.title or 'Cena' if self.timeline.root else 'Prévia',
-            size=TEXT_SECTION, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+        self.title.value = self.timeline.root.title or 'Cena' if self.timeline.root else 'Prévia'
         self.scene_anchor = self.timeline.root.id if self.timeline.root else None
         self.position, self.current = 0, -1
         self.layout.apply(self.view.page, self.content, self.preview_slot)
+        if self.preview_splitter.user_resized:
+            self.preview_slot.expand = False
         self.opened = True
         self.media.cancelled.clear()
         self.playing = False
@@ -99,6 +109,19 @@ class AnimaticPlayer:
         if self.opened and not self.view.closing:
             self.view.page.run_task(self.keyboard.focus)
 
+    def fit_preview(self):
+        self.screen.aspect_ratio = self.view.board.frame_format.aspect_ratio
+        if self.preview_bounds:
+            self.screen.width, self.screen.height = self.view.board.frame_format.fit(*self.preview_bounds)
+
+    def preview_resized(self, e):
+        if e.width > 0 and e.height > 0 and self.preview_bounds != (e.width, e.height):
+            self.preview_bounds = (e.width, e.height)
+            self.preview_slot.height = e.height
+            self.fit_preview()
+            if self.opened:
+                self.view.page.update(self.screen)
+
     def rebuild_timeline(self):
         self.timeline = Timeline(self.view.board, self.scene_anchor)
         self.position = max(0, min(self.position, self.timeline.total))
@@ -107,11 +130,13 @@ class AnimaticPlayer:
     @property
     def editing(self):
         return bool(self.duration_editor.drag or self.duration_editor.committing
-            or self.marker_editor.drag or self.marker_editor.committing)
+            or self.marker_editor.drag or self.marker_editor.committing
+            or self.strip.audio_lane.drag.snapshot)
 
     def render(self, update=True):
         if self.timeline is None:
             return
+        self.fit_preview()
         if self.duration_editor.drag is None and self.timeline.board is not self.view.board:
             self.rebuild_timeline()
         editing = self.editing
@@ -128,7 +153,7 @@ class AnimaticPlayer:
             self.current = index
             frame = self.timeline.frames[index]
             self.preview.set_frame(frame)
-            self.subtitles.set_text(frame.subtitle if self.show_subtitles.value else '')
+            self.subtitles.set_text(frame.subtitle if self.show_subtitles.selected else '')
             self.caption.value = f'{index+1:02d} · {frame.title or "Sem título"}'
             self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
         self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
@@ -136,6 +161,9 @@ class AnimaticPlayer:
         self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
         self.previous_button.tooltip = self.view.keymap.describe('Quadro ou marcador anterior', Action.PREVIOUS_STOP)
         self.next_button.tooltip = self.view.keymap.describe('Próximo quadro ou marcador', Action.NEXT_STOP)
+        self.show_subtitles.tooltip = ('Legendas ligadas · clique para ocultar' if self.show_subtitles.selected
+            else 'Legendas desligadas · clique para mostrar')
+        self.loop.tooltip = 'Repetir ligado · clique para desligar' if self.loop.selected else 'Repetir desligado · clique para ligar'
         self.previous_button.disabled = self.next_button.disabled = editing or not self.timeline.frames
         self.strip.sync()
         self.audio_transport.update(self.timeline, self.view.store, self.playing and self.opened, self.position)
@@ -143,15 +171,30 @@ class AnimaticPlayer:
             self.view.notify(self.audio_transport.error, 'warning')
             self.audio_transport.error = ''
         if update and self.opened and not self.view.closing:
-            self.view.page.update(self.content)
+            self.view.page.update(self.content, self.popup.title)
+
+    def render_duration_preview(self, frame):
+        """Update timing controls without resending the large preview or canvas."""
+        self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
+        self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
+        self.strip.sync()
+        if self.opened and not self.view.closing:
+            self.view.page.update(self.strip.content, self.controls, self.caption)
 
     def toggle_subtitles(self, e=None):
-        self.view.preferences.update(show_subtitles=bool(self.show_subtitles.value))
+        self.show_subtitles.selected = not self.show_subtitles.selected
+        self.view.preferences.update(show_subtitles=bool(self.show_subtitles.selected))
         if not self.opened or not self.timeline or self.current < 0:
             return
         frame = self.timeline.frames[self.current]
-        self.subtitles.set_text(frame.subtitle if self.show_subtitles.value else '')
-        self.view.page.update(self.content)
+        self.subtitles.set_text(frame.subtitle if self.show_subtitles.selected else '')
+        self.render()
+        self.focus_timeline()
+
+    def toggle_loop(self, e=None):
+        self.loop.selected = not self.loop.selected
+        self.render()
+        self.focus_timeline()
 
     def toggle(self, e=None):
         if not self.opened or self.play.disabled:
@@ -174,7 +217,7 @@ class AnimaticPlayer:
             return
         self.position = max(0, now-self.anchor)
         if self.position >= self.timeline.total:
-            if self.loop.value:
+            if self.loop.selected:
                 self.position %= self.timeline.total
                 self.anchor = now-self.position
             else:
@@ -224,6 +267,7 @@ class AnimaticPlayer:
             return
         if action == Action.CANCEL:
             editing = self.editing
+            self.strip.audio_lane.drag.cancel()
             self.duration_editor.cancel()
             self.marker_editor.cancel()
             if editing:
@@ -270,6 +314,7 @@ class AnimaticPlayer:
 
     def dismissed(self, e=None):
         self.opened = False
+        self.strip.audio_lane.drag.cancel(update=False)
         self.media.cancelled.set()
         self.audio_transport.stop()
         self.strip.audio_controls.focused = False

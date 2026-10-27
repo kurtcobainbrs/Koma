@@ -56,12 +56,14 @@ def progress_bar(**kwargs) -> ft.ProgressBar:
 def app_theme(config: ThemeConfig | None = None) -> ft.Theme:
     config = config or load_theme()
     button = ft.ButtonStyle(
+        animation_duration=0,
         shape=ft.RoundedRectangleBorder(radius=RADIUS),
         padding=ft.Padding.symmetric(horizontal=12, vertical=0),
         text_style=heading_style(TEXT_BODY), icon_size=ICON_SIZE,
         visual_density=ft.VisualDensity.COMPACT,
     )
     icon = ft.ButtonStyle(
+        animation_duration=0,
         shape=ft.RoundedRectangleBorder(radius=RADIUS),
         padding=0, icon_size=ICON_SIZE, visual_density=ft.VisualDensity.COMPACT,
     )

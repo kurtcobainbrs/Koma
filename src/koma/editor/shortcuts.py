@@ -5,6 +5,14 @@ from koma.keymap import Keymap, ShortcutAction
 
 
 class Action(StrEnum):
+    CLOSE_TAB = 'document.close_tab'
+    NEXT_TAB = 'document.next_tab'
+    PREVIOUS_TAB = 'document.previous_tab'
+    RECENT = 'document.recent'
+    COPY = 'nodes.copy'
+    CUT_NODES = 'nodes.cut'
+    SEARCH = 'nodes.search'
+    IMPORT_IMAGES = 'document.import_images'
     NEW = 'document.new'
     OPEN = 'document.open'
     SAVE = 'document.save'
@@ -49,6 +57,14 @@ class Action(StrEnum):
 
 
 ACTIONS = (
+    ShortcutAction(Action.CLOSE_TAB, 'Fechar aba', ('Ctrl+W',)),
+    ShortcutAction(Action.NEXT_TAB, 'Próxima aba', ('Ctrl+Tab',)),
+    ShortcutAction(Action.PREVIOUS_TAB, 'Aba anterior', ('Ctrl+Shift+Tab',)),
+    ShortcutAction(Action.RECENT, 'Abrir recentes', ('Ctrl+Shift+O',)),
+    ShortcutAction(Action.COPY, 'Copiar nodes', ('Ctrl+C',)),
+    ShortcutAction(Action.CUT_NODES, 'Recortar nodes', ('Ctrl+X',)),
+    ShortcutAction(Action.SEARCH, 'Localizar quadros e cenas', ('Ctrl+F',)),
+    ShortcutAction(Action.IMPORT_IMAGES, 'Importar imagens', ('Ctrl+I',)),
     ShortcutAction(Action.NEW, 'Novo documento', ('Ctrl+N',)),
     ShortcutAction(Action.OPEN, 'Abrir documento', ('Ctrl+O',)),
     ShortcutAction(Action.SAVE, 'Salvar documento', ('Ctrl+S',)),
@@ -64,13 +80,13 @@ ACTIONS = (
     ShortcutAction(Action.DUPLICATE, 'Duplicar', ('Ctrl+D', 'Shift+D')),
     ShortcutAction(Action.DELETE, 'Excluir', ('Delete', 'Backspace')),
     ShortcutAction(Action.GROUP, 'Criar moldura', ('Ctrl+G',)),
-    ShortcutAction(Action.PASTE, 'Colar imagem', ('Ctrl+V',)),
+    ShortcutAction(Action.PASTE, 'Colar nodes ou imagem', ('Ctrl+V',)),
     ShortcutAction(Action.UNDO, 'Desfazer', ('Ctrl+Z',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.REDO, 'Refazer', ('Ctrl+Shift+Z', 'Ctrl+Y'), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.PROPERTIES, 'Propriedades', ('N',)),
     ShortcutAction(Action.FOCUS, 'Enquadrar seleção / timeline', ('F',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.FIT, 'Enquadrar tudo', ('Home',)),
-    ShortcutAction(Action.ALL, 'Selecionar todos', ('A',)),
+    ShortcutAction(Action.ALL, 'Selecionar todos', ('A', 'Ctrl+A')),
     ShortcutAction(Action.NONE, 'Limpar seleção', ('Alt+A',)),
     ShortcutAction(Action.CANCEL, 'Cancelar', ('Esc',), contexts=('canvas', 'move', 'timeline')),
     ShortcutAction(Action.CONFIRM, 'Confirmar movimento', ('Enter',), contexts=('move',)),

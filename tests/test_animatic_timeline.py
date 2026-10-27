@@ -59,6 +59,21 @@ class TimelineEditingTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_playback_icon_toggles_update_state_and_subtitle_preference(self):
+        view, player = self.editor()
+        self.assertFalse(player.loop.selected)
+        player.loop.on_click(None)
+        self.assertTrue(player.loop.selected)
+        player.loop.on_click(None)
+        self.assertFalse(player.loop.selected)
+        self.assertTrue(player.show_subtitles.selected)
+        player.show_subtitles.on_click(None)
+        self.assertFalse(player.show_subtitles.selected)
+        self.assertFalse(view.preferences.options.show_subtitles)
+        player.show_subtitles.on_click(None)
+        self.assertTrue(player.show_subtitles.selected)
+        self.assertTrue(view.preferences.options.show_subtitles)
+
     def editor(self):
         view = self.view()
         fixtures.finish(view.add_frame())
@@ -129,6 +144,8 @@ class TimelineEditingTests(TestCase):
         dialog.field.value = '(24+12)*2'
         fixtures.finish(dialog.field.on_submit(Data(control=dialog.field)))
         self.assertEqual(dialog.field.value, '72')
+        self.assertFalse(dialog.focused)
+        self.assertIsNone(dialog.target)
         dialog.cancel()
         self.assertEqual(view.board.frames[0], first)
         self.assertEqual(view.board.frames[1].duration, 3)

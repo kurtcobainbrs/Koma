@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import math
 
-from koma.editor.timeline import Timeline, snap_duration
+from koma.editor.timeline import snap_duration
 from koma.editor.timing import parse_duration
 
 
@@ -18,6 +18,7 @@ class DurationDrag:
     value: float
     position: float
     previous_position: float
+    timeline: object
 
 
 class TimelineEditor:
@@ -55,7 +56,7 @@ class TimelineEditor:
             return None
         frame = player.timeline.frames[index]
         self.drag = DurationDrag(identifier, view.board, view.session, pointer_x, scale,
-            frame.duration, frame.duration, player.timeline.starts[index], player.position)
+            frame.duration, frame.duration, player.timeline.starts[index], player.position, player.timeline)
         player.playing = False
         player.position = self.drag.position
         view.lock(True)
@@ -75,12 +76,10 @@ class TimelineEditor:
         if value == drag.value:
             return
         drag.value = value
-        self.player.timeline = Timeline(drag.board.change(drag.identifier, duration=value), self.player.scene_anchor)
-        self.player.current = -1
-        self.view.cards[drag.identifier].sync(next(frame for frame in self.player.timeline.frames
-            if frame.id == drag.identifier))
-        self.view.page.update(self.view.cards[drag.identifier].content)
-        self.player.render()
+        self.player.timeline = drag.timeline.with_duration(drag.identifier, value)
+        frame = next(frame for frame in self.player.timeline.frames if frame.id == drag.identifier)
+        self.view.cards[drag.identifier].sync_duration(frame)
+        self.player.render_duration_preview(frame)
 
     def restore_card(self, drag):
         frame = next((frame for frame in self.view.board.frames if frame.id == drag.identifier), None)

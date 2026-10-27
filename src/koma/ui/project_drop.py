@@ -3,6 +3,8 @@
 from koma.documents.file_drop import project_drop_path
 from koma.ui import drop_runtime
 from koma.ui.drop_controls import ImageDropSurface
+from koma.documents.audio import AUDIO_EXTENSIONS
+from pathlib import Path
 
 
 class ProjectDrop:
@@ -35,6 +37,20 @@ class ProjectDrop:
                 or app.view.closing):
             return
         try:
+            if not isinstance(e.files, list) or not e.files or any(not isinstance(path, str) or not path for path in e.files):
+                raise ValueError('Lista de arquivos inválida.')
+            audio = [path for path in e.files if Path(path).suffix.lower().lstrip('.') in AUDIO_EXTENSIONS]
+            if audio:
+                if len(e.files) != 1:
+                    raise ValueError('Solte um arquivo de áudio por vez.')
+                player = app.view.player
+                if not player.opened:
+                    player.open()
+                if player.opened:
+                    await player.media.import_path(audio[0])
+                else:
+                    app.view.notify('Crie ou selecione uma cena com quadros para receber o áudio.', 'warning')
+                return
             path = project_drop_path(e.files)
             if path is not None:
                 await app.open_project(path)

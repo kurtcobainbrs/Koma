@@ -36,7 +36,7 @@ class CanvasNavigation:
             border=ft.Border.all(1, BORDER), border_radius=RADIUS,
             content=ft.Column([*self.buttons.values(), ft.Divider(height=8, color=BORDER),
                 self.focus_button], tight=True, spacing=2))
-        self.keyboard = ft.KeyboardListener(content=workspace.viewer,
+        self.keyboard = ft.KeyboardListener(content=workspace.secondary_pointer.surface(workspace.viewer),
             on_key_down=self.key_down, on_key_up=self.key_up)
         self.selection_count = ft.Text(size=TEXT_SMALL)
         self.selection_bar = ft.Container(left=10, bottom=10, padding=6, bgcolor=SURFACE,
@@ -69,6 +69,7 @@ class CanvasNavigation:
         if mode not in self.buttons or self.view.busy or self.view.closing:
             return
         self.view.properties.end_adjust()
+        self.workspace.secondary_pointer.cancel(update=False)
         self.workspace.grab.cancel()
         if self.workspace.drag:
             self.workspace.cancel_drag(self.workspace.drag.identifier)
@@ -88,7 +89,6 @@ class CanvasNavigation:
         self.workspace.scene.ignore_interactions = not tool.edit_nodes
         surface = self.workspace.pointer_surface
         surface.on_tap_down = None
-        surface.on_secondary_tap_down = tool.secondary or self.workspace.scene_secondary_click
         surface.on_pan_down = tool.press
         surface.on_pan_start = tool.begin
         surface.on_pan_update = tool.update
@@ -97,12 +97,13 @@ class CanvasNavigation:
         if self.workspace.grab.active:
             self.workspace.scene.ignore_interactions = True
             surface.on_tap_down = self.workspace.grab.confirm
-            surface.on_secondary_tap_down = self.workspace.grab.cancel
             surface.on_pan_down = surface.on_pan_start = surface.on_pan_update = surface.on_pan_end = surface.on_pan_cancel = None
-        self.workspace.viewer.pan_enabled = tool.pan and self.workspace.drag is None and not self.workspace.focusing_region
+        secondary_active = self.workspace.secondary_pointer.press is not None
+        self.workspace.viewer.pan_enabled = tool.pan and self.workspace.drag is None and not self.workspace.focusing_region and not secondary_active
         self.workspace.viewer.scale_enabled = (self.workspace.drag is None and not self.workspace.box_selection.active
-            and not self.workspace.box_zoom.active and not self.workspace.links.cut_points and not self.workspace.focusing_region)
+            and not self.workspace.box_zoom.active and not self.workspace.links.cut_points and not self.workspace.focusing_region and not secondary_active)
         surface.mouse_cursor = ft.MouseCursor.MOVE if self.workspace.grab.active else tool.cursor
+        self.workspace.secondary_pointer.sync()
         for key, button in self.buttons.items():
             button.style = ft.ButtonStyle(bgcolor=SELECTION if key == mode else None,
                 color=ON_SELECTION if key == mode else MUTED)
@@ -230,6 +231,7 @@ class CanvasNavigation:
         self.held_key, self.temporary_pan = None, False
 
     def refresh_shortcuts(self):
+        self.workspace.secondary_pointer.sync()
         for tool in self.definitions.values():
             self.buttons[tool.key].tooltip = self.keymap.describe(tool.label, tool.action)
         self.focus_button.tooltip = self.keymap.describe('Enquadrar selecionados', Action.FOCUS)
@@ -256,6 +258,9 @@ class CanvasNavigation:
             if fallback in (Action.CANCEL, Action.CONFIRM):
                 action = fallback
         if not action:
+            return
+        from koma.editor.application_commands import DOCUMENT_ACTIONS
+        if action in DOCUMENT_ACTIONS and hasattr(self.view, 'document_tools'):
             return
         if action == Action.TEMP_PAN:
             if not self.workspace.drag and not self.workspace.box_selection.active and not self.workspace.box_zoom.active:

@@ -15,9 +15,14 @@ class ShortcutCommands:
             nav.set_mode(modes[action])
             return
         handlers = {
+            Action.COPY: lambda: view.node_clipboard.copy(view),
+            Action.CUT_NODES: lambda: view.node_clipboard.copy(view, cut=True),
+            Action.SEARCH: lambda: view.document_tools.search(),
+            Action.IMPORT_IMAGES: view.pick_image,
             Action.NEW: view.files.new_document, Action.OPEN: view.files.open_document,
             Action.SAVE: view.files.save_document, Action.SAVE_AS: view.files.save_as,
-            Action.MOVE: ws.grab.start, Action.PASTE: view.image_input.paste,
+            Action.MOVE: ws.grab.start,
+            Action.PASTE: (lambda: view.node_clipboard.paste(view)) if hasattr(view, 'node_clipboard') else view.image_input.paste,
             Action.MUTE: view.toggle_muted,
             Action.INSERT: ws.context_menu.open_insert,
             Action.PROPERTIES: view.properties.toggle,
@@ -38,8 +43,10 @@ class ShortcutCommands:
     def cancel(self):
         nav, ws, view = self.nav, self.nav.workspace, self.nav.view
         ws.cancel_camera_transition()
-        if ws.context_menu.layer.visible:
+        if ws.context_menu.is_open:
             ws.context_menu.dismiss()
+        elif ws.secondary_pointer.press is not None:
+            ws.secondary_pointer.cancel()
         elif ws.grab.active:
             ws.grab.cancel()
         elif ws.box_zoom.active:

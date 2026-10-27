@@ -22,6 +22,7 @@ from koma.editor.links_layer import LinksLayer
 from koma.editor.group_frames import SceneFrames
 from koma.editor.graph import path_links
 from koma.editor.context_menu import CanvasContextMenu
+from koma.editor.secondary_pointer import SecondaryPointer
 
 
 @dataclass
@@ -44,6 +45,7 @@ class CanvasViewport(ft.Container):
         self.workspace = workspace
 
     def will_unmount(self):
+        self.workspace.secondary_pointer.cancel(update=False)
         self.workspace.grab.cancel(update=False)
         self.workspace.cancel_camera_transition()
         self.workspace.camera_memory.remember()
@@ -77,11 +79,12 @@ class StoryboardCanvas:
         self.links = LinksLayer(self)
         self.scene_frames = SceneFrames(self)
         self.scene = ft.Container(content=view.external_drop.scene(self.stack))
+        self.secondary_pointer = SecondaryPointer(self)
         self.pointer_surface = ft.GestureDetector(content=ft.Container(content=self.scene, bgcolor=ft.Colors.TRANSPARENT),
-            on_tap_down=self.scene_click, on_secondary_tap_down=self.scene_secondary_click,
+            on_tap_down=self.scene_click,
             on_hover=self.hover, hover_interval=DRAG_INTERVAL_MS, drag_interval=DRAG_INTERVAL_MS,
-            on_right_pan_start=self.links.cut_begin, on_right_pan_update=self.links.cut_update,
-            on_right_pan_end=self.links.cut_end)
+            on_right_pan_start=self.secondary_pointer.begin, on_right_pan_update=self.secondary_pointer.move,
+            on_right_pan_end=self.secondary_pointer.end)
         self.viewer = ft.InteractiveViewer(content=self.pointer_surface, constrained=False, expand=True,
             min_scale=MIN_ZOOM, max_scale=MAX_ZOOM, scale_factor=WHEEL_ZOOM_FACTOR, boundary_margin=MAX_POSITION,
             alignment=ft.Alignment.TOP_LEFT, interaction_update_interval=DRAG_INTERVAL_MS,

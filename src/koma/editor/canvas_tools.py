@@ -22,7 +22,6 @@ class CanvasTool:
     update: Callable | None = None
     end: Callable | None = None
     cancel: Callable | None = None
-    secondary: Callable | None = None
 
 
 def canvas_tools(workspace):
@@ -36,7 +35,7 @@ def canvas_tools(workspace):
         CanvasTool('zoom', Action.ZOOM, 'Zoom por caixa', ft.Icons.CROP_FREE, ft.MouseCursor.PRECISE,
             'Zoom: arraste uma caixa para enquadrar a área. Use Cancelar para interromper; botão direito reduz. A roda continua disponível.',
             press=zoom.press, begin=zoom.begin, update=zoom.update, end=zoom.end,
-            cancel=zoom.cancel, secondary=workspace.scene_secondary_click),
+            cancel=zoom.cancel),
         CanvasTool('cut', Action.CUT, 'Cortar ligações', ft.Icons.CONTENT_CUT, ft.MouseCursor.PRECISE,
             'Cortar ligações: arraste sobre os fios. Use Cancelar para interromper; Use Desfazer para restaurar.',
             begin=links.cut_begin, update=links.cut_update, end=links.cut_end, cancel=links.cancel_cut),

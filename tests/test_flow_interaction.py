@@ -16,6 +16,31 @@ from koma.preferences import AppPreferences
 from tests.test_storyboard_selection import finish, immediate
 from tests import test_storyboard as fixtures
 class FlowInteractionTests(unittest.TestCase):
+    def test_portrait_connection_tracks_measured_card_after_refresh_drag_and_resize(self):
+        from koma.editor.frame_format import FrameFormat
+        finish(self.view.graph.connect(self.a.id, self.b.id))
+        self.view.changed(replace(self.view.board, frame_format=FrameFormat(1080, 1920)))
+        self.view.refresh()
+        self.nav.select_node(self.b.id)
+        card = self.view.cards[self.b.id]
+        card.viewport.resized(Data(width=300, height=544))
+        self.workspace.node_resized(self.b.id, Data(height=612))
+        self.view.refresh()
+        self.assertEqual(card.viewport.height, 544)
+        links = self.workspace.links
+        before = links.port(self.b.id, False)
+        board = self.view.board
+        self.workspace.begin_drag(self.b.id, Data(global_position=Data(x=100, y=100)))
+        self.workspace.update_drag(self.b.id, Data(global_position=Data(x=124, y=148)))
+        after = links.port(self.b.id, False)
+        self.assertEqual((after[0] - before[0], after[1] - before[1]), (24, 48))
+        expected = card.content.top + 612 - card.layout.socket_bottom
+        self.assertEqual(after[1], expected)
+        self.assertIs(self.view.board, board)
+        self.workspace.node_resized(self.b.id, Data(height=720))
+        self.assertEqual(links.port(self.b.id, False)[1], expected + 108)
+        self.workspace.cancel_drag(self.b.id)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

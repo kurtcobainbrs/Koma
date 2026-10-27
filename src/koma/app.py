@@ -16,6 +16,9 @@ from koma.ui.design import APP_PADDING, BACKGROUND, app_theme
 from koma.ui.typography import register_fonts
 from koma.ui.project_tabs import ProjectTabs
 from koma.ui.project_drop import ProjectDrop
+from koma.documents.recent import RecentDocuments
+from koma.editor.node_clipboard import NodeClipboard
+from koma.editor.document_tools import DocumentTools
 
 
 class KomaApplication:
@@ -23,6 +26,9 @@ class KomaApplication:
         self.page = page
         self.page.title = 'Koma App'
         self.settings = AppPreferences(directory)
+        self.recent = RecentDocuments(directory)
+        self.node_clipboard = NodeClipboard()
+        self.document_tools = DocumentTools(self)
         self.closing_attempt = self.transitioning = False
         self.views = []
         self.untitled_number = 0
@@ -47,6 +53,12 @@ class KomaApplication:
         view.can_save_to = lambda path: self.can_save_to(view, path)
         view.can_accept_drop = lambda: self.view is view and not self.transitioning and not self.closing_attempt
         view.open_project_path = self.open_project
+        view.document_tools = self.document_tools
+        view.node_clipboard = self.node_clipboard
+        view.document_saved = self.recent.add
+        async def close_project():
+            await self.close_tab(view)
+        view.close_project = close_project
         return view
 
     async def open_project(self, path):
@@ -139,6 +151,8 @@ class KomaApplication:
         self.page.update(self.host)
         try:
             await target.activate()
+            if target.session.path:
+                self.recent.add(target.session.path)
             if target.load_error:
                 raise ValueError(target.load_error)
         except Exception:
@@ -279,15 +293,20 @@ def mount(page, document=None):
         elif e.type == ft.WindowEventType.BLUR:
             for view in application.views:
                 view.player.duration_editor.cancel()
+                view.player.strip.audio_lane.drag.cancel(update=view.active)
                 view.player.marker_editor.cancel()
                 view.player.strip.navigator.end()
                 nav = view.workspace.navigation
+                view.workspace.secondary_pointer.cancel(update=False)
                 nav.reset_keys()
                 if view.workspace.drag:
                     view.workspace.cancel_drag(view.workspace.drag.identifier)
                 nav.sync(update=view.active)
     page.window.on_event = on_window_event
     async def on_keyboard_event(e):
+        from koma.editor.application_commands import dispatch
+        if await dispatch(application, e):
+            return
         player = application.view.player
         if player.opened:
             await player.key_down(e)

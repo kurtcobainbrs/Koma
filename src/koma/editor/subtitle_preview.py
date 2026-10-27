@@ -7,11 +7,12 @@ from io import BytesIO
 import flet as ft
 
 from koma.exports.subtitles import normalized, render_subtitle
+from koma.editor.frame_format import FrameFormat
 
 
-def preview_bytes(text):
+def preview_bytes(text, size=None):
     output = BytesIO()
-    render_subtitle(text, (1280, 720)).save(output, format='PNG')
+    render_subtitle(text, size or FrameFormat().preview_size()).save(output, format='PNG')
     return output.getvalue()
 
 
@@ -29,19 +30,21 @@ class SubtitlePreview:
         self.content.visible = False
         if not text:
             return
-        if text in self.cache:
-            self.cache.move_to_end(text)
-            self.image.src = self.cache[text]
+        key = (text, self.player.view.board.frame_format.preview_size())
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            self.image.src = self.cache[key]
             self.content.visible = True
         else:
-            self.player.view.page.run_task(self.prepare, text, self.revision)
+            self.player.view.page.run_task(self.prepare, text, self.revision, key[1])
 
-    async def prepare(self, text, revision):
+    async def prepare(self, text, revision, size=None):
         try:
-            data = await asyncio.to_thread(preview_bytes, text)
+            size = size or self.player.view.board.frame_format.preview_size()
+            data = await asyncio.to_thread(preview_bytes, text, size)
             if revision != self.revision or not self.player.opened or self.player.view.closing:
                 return
-            self.cache[text] = data
+            self.cache[(text, size)] = data
             while len(self.cache) > 8:
                 self.cache.popitem(last=False)
             self.image.src = data

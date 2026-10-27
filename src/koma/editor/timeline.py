@@ -1,7 +1,8 @@
 """Sequência temporal e escala, independentes do player e dos controles Flet."""
 
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
 import math
 
@@ -33,6 +34,24 @@ class Timeline:
 
     def index_at(self, seconds):
         return max(0, min(len(self.frames) - 1, bisect_right(self.starts, seconds) - 1))
+
+    def with_duration(self, identifier, seconds):
+        """Transient timing snapshot; a duration edit cannot change graph topology."""
+        index = next((i for i, frame in enumerate(self.frames) if frame.id == identifier), None)
+        if index is None:
+            raise ValueError('O quadro não está mais na timeline.')
+        frame = replace(self.frames[index], duration=seconds)
+        frame.validate()
+        delta = seconds - self.frames[index].duration
+        preview = copy(self)
+        preview.frames = self.frames[:index] + (frame,) + self.frames[index + 1:]
+        preview.board = replace(self.board, frames=tuple(frame if item.id == identifier else item
+            for item in self.board.frames))
+        preview.starts = [start + delta if i > index else start for i, start in enumerate(self.starts)]
+        preview.picture_total = self.picture_total + delta
+        preview.total = max(preview.picture_total,
+            *(track.start + track.duration for track in self.audio_tracks), preview.picture_total)
+        return preview
 
 
 @dataclass(frozen=True)

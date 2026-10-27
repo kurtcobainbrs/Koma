@@ -16,6 +16,46 @@ class ChromeTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_collapsed_properties_keep_a_visible_reopen_control_and_selection(self):
+        view = self.view()
+        finish(view.add_frame())
+        props = view.properties
+        view.workspace.navigation.select_node(view.board.frames[0].id)
+        identifier, board = props.active, view.board
+        props.toggle()
+        self.assertFalse(props.content.visible)
+        self.assertTrue(props.reopen_rail.visible)
+        self.assertIn(props.reopen_rail, view.content.controls[1].controls)
+        props.reopen_button.on_click(None)
+        self.assertTrue(props.content.visible)
+        self.assertFalse(props.reopen_rail.visible)
+        self.assertEqual(props.active, identifier)
+        self.assertIs(view.board, board)
+
+    def test_property_sections_preserve_values_and_release_hidden_text_focus(self):
+        view = self.view()
+        finish(view.add_frame())
+        view.workspace.navigation.select_node(view.board.frames[0].id)
+        props = view.properties
+        props.script_section.toggle()
+        props.notes.value = 'Nota do quadro'
+        finish(props.notes.on_change(Data(control=props.notes)))
+        props.notes.on_focus(None)
+        self.assertTrue(view.workspace.navigation.editing_fields)
+        props.script_section.toggle()
+        self.assertFalse(props.script_section.body.visible)
+        self.assertFalse(view.workspace.navigation.editing_fields)
+        props.sync()
+        self.assertFalse(props.script_section.expanded)
+        props.script_section.toggle()
+        self.assertEqual(props.notes.value, 'Nota do quadro')
+        self.assertEqual(view.store.load().frames[0].notes, 'Nota do quadro')
+        finish(view.add_principal())
+        view.workspace.navigation.select_node(view.board.frames[-1].id)
+        self.assertFalse(props.timing.visible)
+        self.assertFalse(props.image_section.content.visible)
+        self.assertTrue(props.color_button.visible)
+
     def test_card_properties_command_opens_inspector_for_target_in_pan_mode(self):
         view = self.view()
         finish(view.add_frame())

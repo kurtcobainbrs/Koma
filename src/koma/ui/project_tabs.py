@@ -3,8 +3,13 @@
 import flet as ft
 from uuid import uuid4
 
-from koma.ui.design import BORDER, MUTED, SURFACE
-from koma.ui.typography import TEXT_BODY
+from koma.ui.design import BORDER, COMPACT_CONTROL_HEIGHT, MUTED, SURFACE
+from koma.ui.typography import TEXT_BODY, body_style
+from koma.ui.components import drag_feedback
+
+TAB_HEIGHT = 30
+TAB_LABEL_WIDTH = 160
+TAB_CLOSE_WIDTH = 26
 
 
 class ProjectTabs:
@@ -15,12 +20,12 @@ class ProjectTabs:
         self.group = f'koma-project-tabs-{uuid4().hex}'
         self.row = ft.Row(spacing=1, scroll=ft.ScrollMode.AUTO, expand=True)
         self.add = ft.IconButton(icon=ft.Icons.ADD, tooltip='Novo projeto', icon_size=18,
-            width=30, height=30, on_click=application.new_document)
+            width=TAB_HEIGHT, height=TAB_HEIGHT, on_click=application.new_document)
         self.end_target = ft.DragTarget(content=self.add, group=self.group, on_accept=self.drop_on(None))
         self.content = ft.Container(bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
             border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
             padding=ft.Padding.symmetric(horizontal=4),
-            content=ft.Row([self.row], spacing=0, height=30))
+            content=ft.Row([self.row], spacing=0, height=TAB_HEIGHT))
         self.sync()
 
     def drop_on(self, target):
@@ -42,11 +47,11 @@ class ProjectTabs:
             if await self.application.select_view(view):
                 view.chrome.rename()
         label = ft.Text(view.document_label, size=TEXT_BODY, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-        button = ft.TextButton(content=label, width=160, height=28, on_click=select,
+        button = ft.TextButton(content=label, width=TAB_LABEL_WIDTH, height=COMPACT_CONTROL_HEIGHT, on_click=select,
             style=ft.ButtonStyle(padding=ft.Padding.symmetric(horizontal=8)))
         title = ft.GestureDetector(content=button, on_double_tap=rename)
         close_button = ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Fechar projeto', icon_size=15,
-            width=26, height=26, on_click=close)
+            width=TAB_CLOSE_WIDTH, height=TAB_CLOSE_WIDTH, on_click=close)
         box = ft.Container(content=ft.Row([title, close_button], spacing=0, tight=True))
         return box, label, button, close_button
 
@@ -60,13 +65,19 @@ class ProjectTabs:
                 drag = ft.Draggable(content=self.entries[view][0], group=self.group,
                     data=view.session.directory.name, axis=ft.Axis.HORIZONTAL,
                     max_simultaneous_drags=1,
-                    content_feedback=ft.Container(bgcolor=SURFACE, padding=8,
-                        border=ft.Border.all(1, BORDER), content=ft.Text(view.document_label, size=TEXT_BODY)))
+                    content_when_dragging=ft.Container(width=TAB_LABEL_WIDTH + TAB_CLOSE_WIDTH,
+                        height=TAB_HEIGHT),
+                    content_feedback=drag_feedback(ft.Container(bgcolor=SURFACE,
+                        width=TAB_LABEL_WIDTH + TAB_CLOSE_WIDTH, height=TAB_HEIGHT,
+                        padding=ft.Padding.symmetric(horizontal=8), alignment=ft.Alignment.CENTER_LEFT,
+                        content=ft.Text(view.document_label, max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS, color=ft.Colors.ON_SURFACE,
+                            style=body_style()))))
                 self.targets[view] = ft.DragTarget(content=drag, group=self.group, on_accept=self.drop_on(view))
             box, label, button, close = self.entries[view]
             active = view is app.view
             label.value = view.document_label
-            self.targets[view].content.content_feedback.content.value = view.document_label
+            self.targets[view].content.content_feedback.content.content.value = view.document_label
             label.color = ft.Colors.ON_SURFACE if active else MUTED
             button.tooltip = str(view.session.path) if view.session.path else 'Projeto ainda sem arquivo'
             box.bgcolor = SURFACE if active else ft.Colors.SURFACE_CONTAINER_LOWEST

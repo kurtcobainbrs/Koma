@@ -6,8 +6,9 @@ import flet.canvas as cv
 from koma.ui.design import DRAG_INTERVAL_MS
 from koma.editor import graph
 from koma.editor.shortcuts import Action
-from koma.editor.geometry import NODE_WIDTH, NODE_HEIGHT
-from koma.editor.wire_geometry import (PORT_Y, INPUT_X, OUTPUT_INSET,
+from koma.editor.geometry import NODE_WIDTH, GRID_STEP
+from koma.ui.node_layout import NODE_LAYOUT
+from koma.editor.wire_geometry import (
     curve, route, sample_route, crossing, curve_hits_rectangle, distance)
 
 
@@ -32,15 +33,16 @@ class LinksLayer:
         self.candidate = None
 
     def port(self, identifier, output):
-        card = self.view.cards[identifier]
-        node = card.content
-        height = card.viewport.height if card.viewport.frame.node_type.image else 72
-        return node.left + (NODE_WIDTH - OUTPUT_INSET if output else INPUT_X), node.top + height + 52
+        left, top, right, bottom = self.bounds(identifier)
+        layout = self.view.cards[identifier].layout
+        return (right - layout.socket_inset if output else left + layout.socket_inset,
+            bottom - layout.socket_bottom)
 
     def bounds(self, identifier):
         card = self.view.cards[identifier]
         node = card.content
-        fallback = card.viewport.height + 68 if card.viewport.frame.node_type.image else 140
+        body_height = card.viewport.height if card.viewport.frame.node_type.image else card.main_body.height
+        fallback = card.layout.height(body_height)
         height = self.workspace.node_heights.get(identifier, fallback)
         return node.left, node.top, node.left + NODE_WIDTH, node.top + height
 
@@ -109,7 +111,8 @@ class LinksLayer:
             return
         self.drag_pointer = (e.global_position.x, e.global_position.y)
         x, y = self.port(identifier, True)
-        self.drag_origin = (x + e.local_position.x - 6, y + e.local_position.y - 6)
+        radius = NODE_LAYOUT.socket_size / 2
+        self.drag_origin = (x + e.local_position.x - radius, y + e.local_position.y - radius)
         self.drag_endpoint = self.drag_origin
         self.preview_shape = path_shape((curve((x, y), self.drag_endpoint),), ft.Colors.SECONDARY)
         self.refresh(update=True)
@@ -138,7 +141,8 @@ class LinksLayer:
         self.cancel()
 
     def socket(self, identifier, output):
-        circle = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.SECONDARY)
+        circle = ft.Container(width=NODE_LAYOUT.socket_size, height=NODE_LAYOUT.socket_size,
+            border_radius=NODE_LAYOUT.socket_size / 2, bgcolor=ft.Colors.SECONDARY)
         if output:
             return ft.GestureDetector(content=circle, mouse_cursor=ft.MouseCursor.CLICK,
                 drag_interval=DRAG_INTERVAL_MS,
@@ -190,9 +194,10 @@ class LinksLayer:
         if (not self.view.cards[identifier].viewport.frame.node_type.accepts_input
                 or any(identifier in (edge.source, edge.target) for edge in self.view.board.links)):
             return None
-        node = self.view.cards[identifier].content
-        rect = node.left + 24, node.top + 32, node.left + NODE_WIDTH - 24, node.top + NODE_HEIGHT - 4
-        point = node.left + NODE_WIDTH / 2, node.top + PORT_Y
+        left, top, right, bottom = self.bounds(identifier)
+        rect = (left + GRID_STEP, top + NODE_LAYOUT.header_height + NODE_LAYOUT.spacing,
+            right - GRID_STEP, bottom - NODE_LAYOUT.padding)
+        point = (left + right) / 2, self.port(identifier, True)[1]
         candidates = [(min(distance(point, a, b) for a, b in zip(cached[2], cached[2][1:])), edge)
             for edge, cached in self.cache.items() if identifier not in (edge.source, edge.target)
             and curve_hits_rectangle(cached[2], rect)]

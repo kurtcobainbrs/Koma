@@ -2,11 +2,13 @@
 
 import flet as ft
 import flet.canvas as cv
+from dataclasses import replace
+from koma.editor.audio_drag import AudioDrag
 
 from koma.editor.timing import duration_text
 from koma.editor.shortcuts import Action
 from koma.expressions import MAX_EXPRESSION_LENGTH
-from koma.ui.design import BORDER, MUTED, SURFACE, CONTROL_HEIGHT, COMPACT_CONTROL_HEIGHT, RADIUS, input_style
+from koma.ui.design import APP_PADDING, BORDER, MUTED, SURFACE, CONTROL_HEIGHT, COMPACT_CONTROL_HEIGHT, DRAG_INTERVAL_MS, RADIUS, input_style
 from koma.ui.typography import TEXT_SMALL
 
 
@@ -15,16 +17,21 @@ class AudioLane:
         self.strip = strip
         self.key = None
         self.canvas = cv.Canvas(shapes=[])
+        self.drag = AudioDrag(strip.player)
         self.viewport = ft.Container(top=0, bottom=0, content=self.canvas)
         self.background = ft.Container(left=0, right=0, top=0, bottom=0, bgcolor=SURFACE,
             border=ft.Border.all(1, BORDER), border_radius=RADIUS)
         self.content = ft.Container(left=0, height=strip.style.audio_height,
-            content=ft.Stack([self.background, self.viewport], fit=ft.StackFit.EXPAND),
-            ignore_interactions=True)
+            content=ft.GestureDetector(on_pan_start=self.drag.begin, on_pan_update=self.drag.move,
+                on_pan_end=self.drag.end, on_pan_cancel=self.drag.cancel,
+                mouse_cursor=ft.MouseCursor.MOVE, drag_interval=DRAG_INTERVAL_MS,
+                content=ft.Stack([self.background, self.viewport], fit=ft.StackFit.EXPAND)))
 
     def sync(self):
         strip = self.strip
         track = strip.player.media.track
+        if track and self.drag.start is not None:
+            track = replace(track, start=self.drag.start)
         waveform = strip.player.media.waveform(track) if track else None
         key = (track, id(waveform), strip.scale, strip.offset, strip.width)
         if key == self.key:
@@ -52,7 +59,8 @@ class AudioControls:
         self.player = player
         self.focused = False
         self.target = None
-        self.name = ft.Text('Sem áudio', size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, expand=True)
+        self.name = ft.Text('Sem áudio', size=TEXT_SMALL, max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS, width=CONTROL_HEIGHT * 6)
         self.import_button = ft.OutlinedButton('Áudio', icon=ft.Icons.AUDIO_FILE_OUTLINED,
             on_click=player.media.pick_audio, height=COMPACT_CONTROL_HEIGHT)
         self.mute = self.button(ft.Icons.VOLUME_UP, 'Mutar áudio', self.toggle_mute)
@@ -65,13 +73,14 @@ class AudioControls:
             player.view.keymap.describe('Criar marcador', Action.ADD_MARKER), player.media.add_marker)
         self.snap = self.button(ft.Icons.GRID_ON,
             player.view.keymap.describe('Snap dos marcadores', Action.SNAP), self.toggle_snap)
-        self.content = ft.Row([self.import_button, self.name, self.start, self.mute, self.remove,
-            self.add_marker, self.snap], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self.tools = ft.Row([self.add_marker, self.snap], spacing=0, tight=True)
+        self.content = ft.Row([self.import_button, self.name, self.start, self.mute, self.remove],
+            spacing=APP_PADDING, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def toggle_snap(self, e=None):
         self.player.marker_editor.snap_enabled = not self.player.marker_editor.snap_enabled
         self.sync()
-        self.player.view.page.update(self.content)
+        self.player.view.page.update(self.content, self.tools)
         self.player.focus_timeline()
 
     @staticmethod
@@ -105,6 +114,7 @@ class AudioControls:
                 raise ValueError('A trilha mudou. Selecione o campo novamente.')
             await self.player.media.set_start(self.start.value or '')
             self.blur()
+            self.player.focus_timeline()
         except ValueError as exc:
             self.player.view.notify(str(exc), 'warning')
 

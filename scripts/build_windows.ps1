@@ -1,12 +1,21 @@
-param([string]$Python = '.venv\Scripts\python.exe')
+param(
+    [string]$Python = '.venv\Scripts\python.exe',
+    [switch]$FullTests,
+    [switch]$IncludePythonArtifacts,
+    [switch]$ValidationKit
+)
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
-    & $Python -m unittest discover -s tests -q
-    if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
+    if ($FullTests) {
+        & $Python -m unittest discover -s tests -q
+        if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
+    }
     & $Python scripts\prepare_release_resources.py
     if ($LASTEXITCODE -ne 0) { throw 'Os recursos da release não foram preparados.' }
-    & $Python scripts\build_flet_client.py
+    $clientArguments = @('scripts\build_flet_client.py')
+    if ($FullTests) { $clientArguments += '--full-tests' }
+    & $Python @clientArguments
     if ($LASTEXITCODE -ne 0) { throw 'O cliente Flet com drop nativo não foi validado.' }
     & $Python -c "from pathlib import Path; from scripts.prepare_release_resources import third_party_notices; from koma.ui.drop_runtime import development_client; root=Path.cwd(); third_party_notices(root, root/'build/release/licenses', development_client(root))"
     if ($LASTEXITCODE -ne 0) { throw 'Os avisos de terceiros não foram preparados.' }
@@ -41,10 +50,14 @@ try {
     if (-not $diagnostics.ok -or -not $diagnostics.frozen) { throw 'O pacote falhou no diagnóstico offline.' }
     & $Python scripts\publish_windows_package.py $package
     if ($LASTEXITCODE -ne 0) { throw 'Não foi possível publicar o pacote; a versão anterior foi preservada.' }
-    & $Python -m build --no-isolation
-    if ($LASTEXITCODE -ne 0) { throw 'O build Python falhou.' }
-    & $Python scripts\prepare_windows_validation.py
-    if ($LASTEXITCODE -ne 0) { throw 'A criação do kit de validação falhou.' }
+    if ($IncludePythonArtifacts) {
+        & $Python -m build --no-isolation
+        if ($LASTEXITCODE -ne 0) { throw 'O build Python falhou.' }
+    }
+    if ($ValidationKit) {
+        & $Python scripts\prepare_windows_validation.py
+        if ($LASTEXITCODE -ne 0) { throw 'A criação do kit de validação falhou.' }
+    }
     Write-Output 'Distribuição em dist\Koma\Koma.exe. Distribua a pasta Koma inteira.'
 } finally {
     Pop-Location

@@ -22,13 +22,14 @@ Depois da instalação, também é possível usar `koma` ou `python -m koma cami
 - Os projetos ficam em abas no topo, logo abaixo dos menus. Use **+** ou **Arquivo → Novo** para criar outra aba; **Abrir** também abre em uma nova aba.
 - Cada aba mantém documento, histórico, seleção, câmera e imagens próprios. O asterisco na aba indica alterações ainda não salvas no `.koma`.
 - Clique no nome para alternar; dê dois cliques para renomear ou use **Arquivo → Renomear**. O **×** fecha a aba, com Salvar/Descartar/Cancelar quando necessário.
+- O painel de propriedades mantém título e duração visíveis, com seções **Imagem** e **Roteiro** recolhíveis sem animação. Ao recolher o painel inteiro, use a seta na borda direita para reabri-lo; o atalho de Propriedades continua disponível.
 - Abrir um arquivo já presente seleciona sua aba, preservando as alterações em memória. Salvar como não pode sobrescrever um arquivo aberto em outra aba.
 - Ao fechar a janela, todos os projetos com alterações são verificados antes de descartar qualquer sessão. Fechar a última aba cria um projeto vazio.
 - Salvar mantém uma cópia da versão anterior em `<nome>.koma.bak`. Para abrir esse backup, copie-o para um nome terminado em `.koma`.
 - Se outro programa ou outra janela modificar o arquivo, o salvamento é recusado. Use Salvar como para preservar ambas as versões.
 - Um documento novo permanece sem caminho até o primeiro salvamento.
 
-O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 2), `images/<uuid>.png` e áudio em `audio/<uuid>.wav`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições, enquadramento, trilhas e marcadores. Projetos da versão 1 continuam abrindo; clientes antigos rejeitam a versão 2 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote.
+O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 3), `images/<uuid>.png` e áudio em `audio/<uuid>.wav`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições, enquadramento, trilhas e marcadores. Projetos das versões 1 e 2 continuam abrindo em 1920 × 1080; clientes antigos rejeitam a versão 3 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote.
 
 Não há compatibilidade com `.akira-storyboard`.
 
@@ -52,13 +53,15 @@ Seleção e câmera não alteram o documento. Imagens antigas são mantidas dura
 
 ## Exportações
 
-Nas propriedades, **FPS do projeto** define a taxa de 24, 25, 30 ou 60 FPS, salva no `.koma` e usada pelo MP4. Documentos antigos usam 24 FPS. A duração de cada quadro pode ser editada em **segundos** ou **frames**; o outro valor é atualizado automaticamente, inclusive com vírgula decimal. Por exemplo, a 24 FPS, 48 frames equivalem a 2 segundos. Alterar o FPS mantém os segundos e recalcula os frames. Frações de frame são permitidas; a exportação arredonda os limites acumulados para frames inteiros, com pelo menos um frame por quadro. Durações de um frame a 60 FPS são aceitas. Desfazer/refazer inclui durações e FPS.
+Em **Arquivo → Projeto…**, escolha um formato pronto ou edite **Proporção** (por exemplo, `9:16`, `1:1`, `5:4` ou `2.39:1`). Enter recalcula as dimensões; **Aplicar** confirma. Largura e altura também podem ser editadas diretamente, com dimensões pares de 64 a 8192 px e até 32 megapixels. A configuração é salva no `.koma`, aceita desfazer e orienta os quadros, a prévia, as legendas e as exportações. O PDF mantém a folha e acomoda a imagem na proporção do projeto.
+
+Em **Arquivo → Projeto…**, **FPS** define a taxa de 24, 25, 30 ou 60 FPS, salva no `.koma` e usada pelo MP4. Documentos antigos usam 24 FPS. A duração de cada quadro pode ser editada em **segundos** ou **frames**; o outro valor é atualizado automaticamente, inclusive com vírgula decimal. Por exemplo, a 24 FPS, 48 frames equivalem a 2 segundos. Alterar o FPS mantém os segundos e recalcula os frames. Frações de frame são permitidas; a exportação arredonda os limites acumulados para frames inteiros, com pelo menos um frame por quadro. Durações de um frame a 60 FPS são aceitas. Desfazer/refazer inclui durações e FPS.
 
 **PDF:** ReportLab, fontes Archivo incluídas, folhas de seis quadros e continuação de textos longos. Funciona sem Blender.
 
 **Timeline e áudio:** a prévia permite importar WAV, MP3, FLAC ou OGG por cena, visualizar a waveform, ajustar o início em frames, mutar e substituir/remover áudio. Marcadores têm nome e posição; clique para navegar e duplo clique para editar. Zoom, régua e agulha são compartilhados. Veja [arquitetura, limites e validação](docs/TIMELINE_AUDIO.md).
 
-**MP4:** configure o executável em **Arquivo → Preferências do Blender**. O Blender é instalado separadamente. Selecione uma cena ou um quadro pertencente a ela antes de exportar. O resultado usa cortes diretos, inclui a trilha ativa da cena e legendas opcionais; suporta 24/25/30/60 FPS e 1920 × 1080 ou 1280 × 720.
+**MP4:** configure o executável em **Arquivo → Preferências do Blender**. O Blender é instalado separadamente. Selecione uma cena ou um quadro pertencente a ela antes de exportar. O resultado usa cortes diretos, inclui a trilha ativa da cena e legendas opcionais; suporta 24/25/30/60 FPS e usa o formato definido no projeto, preservando suas dimensões.
 
 A exportação com áudio foi validada com **Blender 5.2 no Windows**; a exportação anterior sem áudio também foi validada com Blender 5.0.1. Outras versões precisam de validação. Não instala `bpy` no Python do aplicativo e não abre arquivos `.blend`.
 
@@ -75,6 +78,14 @@ O runner usa um processo cancelável e um arquivo temporário. Falhas e cancelam
 Os testes verificam grafo, gestos, controles Flet, histórico, documentos, falhas de gravação, conflitos externos, recuperação e fechamento cancelável. A validação real gera `.koma`, PDF e MP4 em `build/validation`. O segundo script verifica resolução, duração em frames e FPS do vídeo por leitura no Blender.
 
 ## Distribuição Windows
+
+Para gerar instalador, portátil, notas e checksums a partir de um commit limpo e publicar no remote `origin`:
+
+```powershell
+.venv\Scripts\python.exe scripts\release.py --notes docs\releases\v0.2.0.md --publish
+```
+
+Atualize a versão em `pyproject.toml` e registre as mudanças antes de executar. Sem `--publish`, os artefatos ficam apenas em `dist/releases/v<versão>`. O comando reutiliza o cliente Flutter validado em cache e não executa suítes de testes por padrão; `--full-tests` as habilita. Uma publicação interrompida pode ser retomada com o mesmo comando e commit.
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -e '.[build]'

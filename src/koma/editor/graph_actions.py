@@ -4,6 +4,8 @@ from dataclasses import replace
 
 import flet as ft
 
+from koma.ui.menus import menu_item, popup_menu
+
 from koma.ui.design import CONTROL_HEIGHT, COMPACT_CONTROL_HEIGHT, dialog, input_style
 from koma.editor import graph
 from koma.editor.shortcuts import Action
@@ -16,21 +18,23 @@ class GraphActions:
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=self.undo, disabled=True)
         self.redo_button = ft.IconButton(icon=ft.Icons.REDO, tooltip=view.keymap.describe('Refazer', Action.REDO),
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=self.redo, disabled=True)
-        self.menu = ft.PopupMenuButton(icon=ft.Icons.ACCOUNT_TREE_OUTLINED, tooltip='Fluxo e cenas', items=[
-            ft.PopupMenuItem(view.keymap.describe('Criar moldura', Action.GROUP), on_click=lambda e: self.group_dialog()),
-            ft.PopupMenuItem('Desconectar', on_click=self.disconnect_selected),
-            ft.PopupMenuItem('Remover e reconectar', on_click=self.remove_preserving),
+        self.menu = popup_menu(icon=ft.Icons.ACCOUNT_TREE_OUTLINED, tooltip='Fluxo e cenas', items=[
+            menu_item(view.keymap.describe('Criar moldura', Action.GROUP), on_click=lambda e: self.group_dialog()),
+            menu_item('Desconectar', on_click=self.disconnect_selected),
+            menu_item('Remover e reconectar', on_click=self.remove_preserving),
         ])
 
     def sync_history(self):
         locked = self.view.busy or bool(self.view.load_error)
         self.undo_button.disabled = locked or not self.view.history.past
         self.redo_button.disabled = locked or not self.view.history.future
+        self.undo_button.tooltip = self.view.keymap.describe(self.view.history.undo_description, Action.UNDO)
+        self.redo_button.tooltip = self.view.keymap.describe(self.view.history.redo_description, Action.REDO)
 
-    async def commit(self, board):
+    async def commit(self, board, *, label=None):
         if not self.view.editable():
             return
-        self.view.changed(graph.ordered(board))
+        self.view.changed(graph.ordered(board), label=label)
         self.view.refresh()
         self.page.update(self.view.content)
         await self.view.workspace.compensate_origin()

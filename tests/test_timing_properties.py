@@ -87,8 +87,8 @@ class TimingTests(TestCase):
     def test_one_frame_at_each_supported_fps(self):
         view, props = self.editor()
         for fps in (24, 25, 30, 60):
-            props.fps.value = str(fps)
-            fixtures.finish(props.fps_changed())
+            view.project_properties.fps.value = str(fps)
+            fixtures.finish(view.project_properties.fps_changed())
             self.enter(props.duration_frames, '1')
             self.assertAlmostEqual(view.board.frames[0].duration, 1 / fps)
             self.assertEqual(frame_counts(view.board.frames, fps), [1])
@@ -106,8 +106,8 @@ class TimingTests(TestCase):
 
     def test_fps_preserves_seconds_persists_and_undo_restores_conversion(self):
         view, props = self.editor()
-        props.fps.value = '30'
-        fixtures.finish(props.fps_changed())
+        view.project_properties.fps.value = '30'
+        fixtures.finish(view.project_properties.fps_changed())
         self.assertEqual(view.board.fps, 30)
         self.assertEqual(view.board.frames[0].duration, 2)
         self.assertEqual(props.duration_frames.value, '60')
@@ -115,7 +115,7 @@ class TimingTests(TestCase):
         self.assertEqual(restored.fps, 30)
         self.assertEqual(view.store.load().fps, 30)
         fixtures.finish(view.graph.undo())
-        self.assertEqual(props.fps.value, '24')
+        self.assertEqual(view.project_properties.fps.value, '24')
         self.assertEqual(props.duration_frames.value, '48')
 
     def test_legacy_document_defaults_to_24_and_invalid_fps_is_rejected(self):
@@ -129,8 +129,8 @@ class TimingTests(TestCase):
 
     def test_export_uses_project_fps(self):
         view, props = self.editor()
-        props.fps.value = '60'
-        fixtures.finish(props.fps_changed())
+        view.project_properties.fps.value = '60'
+        fixtures.finish(view.project_properties.fps_changed())
         view.files.pick_video = AsyncMock()
         view.files.video_options()
         popup = view.page.show_dialog.call_args.args[0]

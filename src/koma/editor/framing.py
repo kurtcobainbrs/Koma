@@ -8,12 +8,13 @@ import flet as ft
 from koma.ui.design import DRAG_INTERVAL_MS, MUTED, RADIUS
 from koma.editor.geometry import NODE_WIDTH
 from koma.editor.shortcuts import Action
+from koma.editor.frame_format import FrameFormat
 
 
 def png_size(data):
     if data and data[:8] == b'\x89PNG\r\n\x1a\n' and len(data) >= 24:
         return struct.unpack('>II', data[16:24])
-    return 16, 9
+    return FrameFormat().size
 
 
 def placement(source, viewport, fit, x=0, y=0):
@@ -31,19 +32,28 @@ class ImageViewport:
     def __init__(self, view, identifier=None, height=180):
         self.view, self.identifier = view, identifier
         self.width, self.height = NODE_WIDTH-18, height
+        self.maximum_height = height
+        self.format = None
         self.frame = None
-        self.source = (16, 9)
+        self.source = FrameFormat().size
         self.drag = None
         self.image = None
         self.stack = ft.Stack(expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE)
         self.gesture = ft.GestureDetector(content=self.stack, drag_interval=DRAG_INTERVAL_MS,
             on_tap_down=self.select, on_pan_start=self.begin, on_pan_update=self.move,
             on_pan_end=self.end, on_pan_cancel=self.cancel)
-        self.content = ft.Container(aspect_ratio=16/9, content=self.gesture, border_radius=RADIUS,
+        self.content = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=self.gesture, border_radius=RADIUS,
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW, clip_behavior=ft.ClipBehavior.HARD_EDGE,
             on_size_change=self.resized)
 
     def set_frame(self, frame):
+        format = self.view.board.frame_format
+        if self.format != format:
+            self.format = format
+            self.content.aspect_ratio = format.aspect_ratio
+            if self.identifier is not None:
+                self.width, self.height = format.fit(NODE_WIDTH-18, self.maximum_height)
+                self.content.width, self.content.height = self.width, self.height
         changed_image = self.frame is None or self.frame.image != frame.image
         self.frame = frame
         if changed_image:
@@ -56,6 +66,8 @@ class ImageViewport:
         self.layout()
 
     def layout(self):
+        if self.image is None and self.stack.controls:
+            self.stack.controls[0].width, self.stack.controls[0].height = self.width, self.height
         if self.image and self.frame:
             self.image.width, self.image.height, self.image.left, self.image.top = placement(
                 self.source, (self.width, self.height), self.frame.image_fit, self.frame.crop_x, self.frame.crop_y)

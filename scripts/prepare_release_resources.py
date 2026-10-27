@@ -3,7 +3,7 @@
 import gzip
 from importlib.metadata import distribution
 from pathlib import Path
-import re
+from io import BytesIO
 import shutil
 import tomllib
 
@@ -14,7 +14,6 @@ from PIL import Image, ImageDraw, ImageFont
 def prepare(root):
     root = Path(root).resolve()
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']
-    version = project['version']
     assets = root / 'src/koma/assets'
     image = Image.new('RGBA', (512, 512))
     draw = ImageDraw.Draw(image)
@@ -23,16 +22,18 @@ def prepare(root):
     font = ImageFont.truetype(str(assets / 'fonts/Archivo-SemiBold.ttf'), 316)
     draw.text((256, 258), 'K', font=font, anchor='mm', fill='#F2F2F2', stroke_width=1)
     icon = assets / 'koma.ico'
-    image.save(icon, sizes=[(size, size) for size in (16, 20, 24, 32, 48, 64, 128, 256)])
+    encoded = BytesIO()
+    image.save(encoded, format='ICO', sizes=[(size, size) for size in (16, 20, 24, 32, 48, 64, 128, 256)])
+    if not icon.exists() or icon.read_bytes() != encoded.getvalue():
+        icon.write_bytes(encoded.getvalue())
     preview = root / 'build/release'
     preview.mkdir(parents=True, exist_ok=True)
     image.save(preview / 'koma-icon.png')
-    shutil.copy2(icon, root / 'flutter/client/windows/runner/resources/app_icon.ico')
-    pubspec = root / 'flutter/client/pubspec.yaml'
-    text, count = re.subn(r'^version:.*$', f'version: {version}+1', pubspec.read_text(encoding='utf-8'), flags=re.MULTILINE)
-    if count != 1:
-        raise ValueError('Versão do cliente Flutter não localizada.')
-    pubspec.write_text(text, encoding='utf-8')
+    client_icon = root / 'flutter/client/windows/runner/resources/app_icon.ico'
+    if not client_icon.exists() or client_icon.read_bytes() != icon.read_bytes():
+        shutil.copy2(icon, client_icon)
+    # O cliente tem versão própria. Uma mudança apenas no Python não exige
+    # recompilar Flutter só para atualizar os metadados do processo auxiliar.
     return project
 
 

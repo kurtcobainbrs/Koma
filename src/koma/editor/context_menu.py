@@ -6,7 +6,8 @@ import flet as ft
 
 from koma.editor.geometry import NODE_HEIGHT, NODE_WIDTH, coordinate
 from koma.editor.shortcuts import Action
-from koma.ui.design import BORDER, MUTED
+from koma.ui.design import MUTED
+from koma.ui.menus import DesktopContextMenu, menu_item, MENU_ICON_SIZE
 
 
 class CanvasContextMenu:
@@ -14,19 +15,22 @@ class CanvasContextMenu:
         self.workspace, self.view = workspace, workspace.view
         self.pointer = None
         self.items = []
-        self.popup = ft.Container(width=208, padding=ft.Padding.symmetric(vertical=4),
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH, border=ft.Border.all(1, BORDER), border_radius=2)
-        barrier = ft.GestureDetector(content=ft.Container(bgcolor=ft.Colors.TRANSPARENT, expand=True),
-            on_tap=self.dismiss, on_secondary_tap_down=self.dismiss)
-        self.layer = ft.Stack([barrier, self.popup], fit=ft.StackFit.EXPAND, visible=False)
-        self.content = ft.Stack([workspace.navigation.keyboard, self.layer], fit=ft.StackFit.EXPAND)
+        self.is_open = False
+        # Keep the anchor in scene space. Flutter converts local positions using
+        # the rendered transform; Python's camera snapshot is not an anchor.
+        self.anchor = DesktopContextMenu(content=workspace.pointer_surface,
+            secondary_trigger=None, tertiary_trigger=None,
+            on_dismiss=self.dismiss, on_select=self.dismiss)
+        workspace.viewer.content = self.anchor
+        self.content = workspace.navigation.keyboard
 
     def dismiss(self, e=None, *, refocus=True):
-        if not self.layer.visible:
+        if not self.is_open:
             return
-        self.layer.visible = False
+        self.is_open = False
+        if e is None:
+            self.view.page.run_task(self.anchor.close)
         if not self.view.closing and self.view.active:
-            self.view.page.update(self.layer)
             if refocus:
                 self.workspace.navigation.focus_keyboard()
 
@@ -36,11 +40,8 @@ class CanvasContextMenu:
             result = handler(e)
             if isawaitable(result):
                 await result
-        return ft.MenuItemButton(content=ft.Text(text, size=13), leading=ft.Icon(icon, size=18, color=MUTED),
-            height=34, on_click=chosen,
-            style=ft.ButtonStyle(animation_duration=0, overlay_color=ft.Colors.TRANSPARENT,
-                bgcolor={ft.ControlState.HOVERED: ft.Colors.SURFACE_CONTAINER_HIGHEST},
-                padding=ft.Padding.symmetric(horizontal=8), shape=ft.RoundedRectangleBorder(radius=0)))
+        return menu_item(ft.Text(text),
+            icon=ft.Icon(icon, size=MENU_ICON_SIZE, color=MUTED), on_click=chosen)
 
     async def open_insert(self):
         await self.open(insertion_only=True)
@@ -88,9 +89,14 @@ class CanvasContextMenu:
             self.item('Importar imagens…', ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED, view.pick_images),
         ])
         self.items = items
-        self.popup.content = ft.Column(items, spacing=0, tight=True)
-        self.popup.left = max(0, min(x * ws.zoom + ws.translation_x, ws.viewport_width - 208))
-        self.popup.top = max(0, min(y * ws.zoom + ws.translation_y, ws.viewport_height - (len(items) * 34 + 8)))
-        self.layer.visible = True
-        view.page.update(self.layer)
-        ws.navigation.focus_keyboard()
+        self.anchor.items = items
+        self.is_open = True
+        view.page.update(self.anchor)
+        try:
+            if e is not None and getattr(e, 'global_position', None) is not None:
+                await self.anchor.open(global_position=e.global_position)
+            else:
+                await self.anchor.open(local_position=point)
+        except Exception:
+            self.is_open = False
+            raise

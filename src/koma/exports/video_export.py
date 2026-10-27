@@ -6,15 +6,16 @@ from PIL import Image, ImageOps, ImageDraw
 
 from koma.ui.theme import load_theme
 from koma.exports.subtitles import render_subtitle
+from koma.editor.frame_format import FrameFormat
 
 
-def frame_counts(frames, fps):
+def frame_counts(frames, fps, *, durations=None):
     if fps not in (24, 25, 30, 60):
         raise ValueError('Escolha 24, 25, 30 ou 60 FPS.')
     elapsed, previous, counts = Decimal(0), 0, []
-    for frame in frames:
+    for index, frame in enumerate(frames):
         frame.validate()
-        elapsed += Decimal(str(frame.duration))*fps
+        elapsed += Decimal(str(durations[index] if durations is not None else frame.duration))*fps
         boundary = max(previous+1, int(elapsed.quantize(Decimal(1), rounding=ROUND_HALF_UP)))
         counts.append(boundary-previous)
         previous = boundary
@@ -23,6 +24,8 @@ def frame_counts(frames, fps):
 
 def timeline_frame_counts(timeline, fps):
     """Mantém o último quadro até o fim do áudio, sem editar o documento."""
+    if hasattr(timeline, 'durations'):
+        return frame_counts(timeline.frames, fps, durations=timeline.durations)
     counts = frame_counts(timeline.frames, fps)
     if counts:
         end = int((Decimal(str(timeline.total)) * fps).quantize(Decimal(1), rounding=ROUND_HALF_UP))
@@ -31,8 +34,7 @@ def timeline_frame_counts(timeline, fps):
 
 
 def prepare_frames(frames, store, directory, size, cancelled=lambda: False, *, include_subtitles=True):
-    if size not in ((1920, 1080), (1280, 720)):
-        raise ValueError('Resolução de animatic inválida.')
+    FrameFormat(*size).validate()
     colors = load_theme().colors
     paths = []
     for index, frame in enumerate(frames):

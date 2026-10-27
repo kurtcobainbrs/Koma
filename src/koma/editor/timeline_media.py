@@ -10,7 +10,7 @@ from time import monotonic
 import flet as ft
 
 from koma.documents.audio import AUDIO_EXTENSIONS, import_audio, load_waveform
-from koma.editor.media_models import AudioTrack, TimelineMarker
+from koma.editor.media_models import AudioTrack, TimelineMarker, next_marker_title
 from koma.editor.models import MAX_CARDS, MAX_DURATION
 from koma.editor.timeline_navigation import frame_position
 from koma.expressions import arithmetic_value
@@ -35,13 +35,13 @@ class TimelineMedia:
     def track(self):
         return next((track for track in self.view.board.audio_tracks if track.scene_id == self.scope), None)
 
-    async def commit(self, board, *, pause=True):
+    async def commit(self, board, *, pause=True, label=None):
         if not self.view.editable() or not self.player.opened:
             return
         board.validate()
         if pause:
             self.player.playing = False
-        self.view.changed(board)
+        self.view.changed(board, label=label)
         self.player.rebuild_timeline()
         self.player.render()
         await self.view.persist()
@@ -164,7 +164,8 @@ class TimelineMedia:
             player.render()
             player.focus_timeline()
             return
-        marker = TimelineMarker(title=f'Marcador {len(player.timeline.markers) + 1}', position=position, scene_id=self.scope)
+        marker = TimelineMarker(title=next_marker_title(player.timeline.markers),
+            position=position, scene_id=self.scope)
         player.marker_editor.selected = marker.id
         await self.commit(replace(self.view.board, markers=(*self.view.board.markers, marker)), pause=False)
         player.focus_timeline()

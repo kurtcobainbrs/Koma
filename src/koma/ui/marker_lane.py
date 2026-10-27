@@ -12,10 +12,12 @@ class MarkerFlag:
         self.token = None
         self.pointer_x = None
         self.icon = ft.Icon(ft.Icons.FLAG, size=TEXT_SMALL)
+        self.guide = ft.Container(top=0, bottom=0, width=lane.strip.style.marker_line_width)
         self.title = ft.Text(size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, expand=True)
         self.box = ft.Container(top=0, width=lane.strip.style.marker_height,
             height=lane.strip.style.marker_height,
-            content=ft.GestureDetector(content=ft.Row([self.icon, self.title], spacing=2), on_tap=self.select,
+            content=ft.GestureDetector(content=ft.Row([self.icon, self.title], spacing=2),
+                on_tap=self.select, on_double_tap=self.rename,
                 on_pan_down=self.pointer_down, on_pan_start=self.begin, on_pan_update=self.move,
                 on_pan_end=self.finish, on_pan_cancel=self.cancel, drag_interval=DRAG_INTERVAL_MS,
                 mouse_cursor=ft.MouseCursor.MOVE))
@@ -60,15 +62,20 @@ class MarkerLane:
         self.flags = {}
         self.renaming = None
         self.rename_target = None
+        self.saving = False
         self.field = ft.TextField(max_length=200, counter=ft.Container(width=0, height=0),
             on_submit=self.save_name, on_blur=self.cancel_rename,
             tooltip='Enter confirma o nome; Esc cancela.', **input_style(height=strip.style.marker_height))
-        self.rename_box = ft.Container(top=0, width=CONTROL_HEIGHT * 6, content=self.field, visible=False)
+        self.rename_box = ft.Container(top=0, width=CONTROL_HEIGHT * 6, content=self.field,
+            bgcolor=SURFACE, visible=False)
         self.background = ft.Container(left=0, right=0, top=0, bottom=0, bgcolor=SURFACE,
             border=ft.Border(bottom=ft.BorderSide(1, BORDER)))
         self.empty = ft.Container(left=8, top=0, bottom=0,
             content=ft.Text('Marcadores', size=TEXT_SMALL, color=MUTED))
         self.content = ft.Stack(left=0, top=0, height=strip.style.marker_height)
+        self.guides = ft.Container(left=0, right=0, top=strip.style.marker_height, bottom=0,
+            ignore_interactions=True, content=ft.Stack(fit=ft.StackFit.EXPAND,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE))
 
     def sync(self):
         strip, editor = self.strip, self.editor
@@ -82,6 +89,7 @@ class MarkerLane:
         if self.renaming not in identifiers:
             self.renaming = self.rename_target = None
         controls = [self.background]
+        guides = []
         if not markers:
             self.empty.left = strip.offset + 8
             controls.append(self.empty)
@@ -95,8 +103,14 @@ class MarkerLane:
                 flag.box.width = min(strip.style.marker_label_width,
                     max(strip.style.marker_height, next_x - x), strip.track.width - flag.box.left)
                 flag.title.value = marker.title
+                flag.box.visible = self.renaming != marker.id
                 flag.icon.color = ft.Colors.PRIMARY if editor.selected == marker.id else ft.Colors.TERTIARY
-                flag.box.tooltip = f'{marker.title} · {position * self.player.view.board.fps:.6g} f · arraste para mover; F2 renomeia'
+                flag.guide.left = max(0, min(strip.track.width - flag.guide.width, x))
+                opacity = (strip.style.selected_marker_line_opacity if editor.selected == marker.id
+                    else strip.style.marker_line_opacity)
+                flag.guide.bgcolor = ft.Colors.with_opacity(opacity, flag.icon.color)
+                guides.append(flag.guide)
+                flag.box.tooltip = f'{marker.title} · {position * self.player.view.board.fps:.6g} f · arraste para mover; duplo clique ou F2 para renomear'
                 controls.append(flag.box)
             if self.renaming == marker.id:
                 self.rename_box.width = min(CONTROL_HEIGHT * 6, strip.width)
@@ -105,6 +119,7 @@ class MarkerLane:
         controls.append(self.rename_box)
         self.content.width = strip.track.width
         self.content.controls = controls
+        self.guides.content.controls = guides
 
     def rename(self, e=None):
         if self.player.editing or not self.player.view.editable():
@@ -115,21 +130,32 @@ class MarkerLane:
             self.renaming = marker.id
             self.rename_target = (self.player.view.board, self.player.view.session)
             self.field.value = marker.title
+            self.field.error_text = None
             self.player.render()
             self.player.view.page.run_task(self.field.focus)
 
     async def save_name(self, e=None):
         identifier, target = self.renaming, self.rename_target
-        if identifier is None or target is None:
+        if identifier is None or target is None or self.saving:
             return
+        self.saving = True
         try:
             await self.player.media.rename_marker(identifier, self.field.value or '', *target)
             self.cancel_rename()
+            self.player.focus_timeline()
         except ValueError as exc:
-            self.player.view.notify(str(exc), 'warning')
+            self.field.error_text = str(exc)
+            self.player.view.page.update(self.field)
+        finally:
+            self.saving = False
 
     def cancel_rename(self, e=None):
+        if e is not None and self.saving:
+            return
         self.renaming = self.rename_target = None
+        self.field.error_text = None
         self.rename_box.visible = False
+        for flag in self.flags.values():
+            flag.box.visible = True
         if self.player.opened:
             self.player.view.page.update(self.content)

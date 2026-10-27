@@ -52,10 +52,13 @@ class _SurfaceState extends State<_Surface> {
         onDragDone: (details) {
           final files = details.files.map((file) => file.path).toList();
           final hasProject = files.any((path) => path.toLowerCase().endsWith('.koma'));
+          final extensions = control.get<List<dynamic>>('audio_extensions', [])!;
+          final hasAudio = files.any((path) => extensions.any((extension) =>
+              path.toLowerCase().endsWith('.$extension')));
           final documentsOnly = control.getBool('documents_only', false)!;
           // As duas superfícies têm responsabilidades exclusivas, sem abrir
           // duas abas nem importar imagens de uma soltura mista.
-          if (documentsOnly != hasProject) return;
+          if (documentsOnly != (hasProject || hasAudio)) return;
           final destination = documentsOnly ? null :
               registry.resolve(details.globalPosition, View.of(context).viewId);
           if (!documentsOnly && destination == null) return;

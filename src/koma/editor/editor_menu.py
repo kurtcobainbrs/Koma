@@ -2,27 +2,24 @@
 
 import flet as ft
 
-from koma.ui.design import BORDER, COMPACT_CONTROL_HEIGHT, MUTED, RADIUS, SURFACE
+from koma.ui.design import COMPACT_CONTROL_HEIGHT, MUTED
 from koma.ui.typography import TEXT_BODY
+from koma.ui.menus import MENU_ITEM_HEIGHT, MENU_ICON_SIZE, menu_button_style, menu_panel_style
 
 
 class EditorMenuBar:
     def __init__(self, sources):
         self.entries = []
         self.menus = []
-        button_style = ft.ButtonStyle(padding=ft.Padding.symmetric(horizontal=8),
-            text_style=ft.TextStyle(size=TEXT_BODY), animation_duration=0,
-            shape=ft.RoundedRectangleBorder(radius=RADIUS))
-        menu_style = ft.MenuStyle(bgcolor=SURFACE, elevation=0,
-            padding=ft.Padding.symmetric(vertical=4), side=ft.BorderSide(1, BORDER),
-            shape=ft.RoundedRectangleBorder(radius=RADIUS))
+        button_style = menu_button_style()
+        menu_style = menu_panel_style()
         for source, is_file in sources:
             entries = []
             for command in source.items:
-                check = ft.Icon(ft.Icons.CHECK, size=16, color=MUTED, visible=bool(command.checked))
+                check = ft.Icon(ft.Icons.CHECK, size=MENU_ICON_SIZE, color=MUTED, visible=bool(command.checked))
                 entry = ft.MenuItemButton(content=ft.Text(command.content, size=TEXT_BODY),
-                    leading=ft.Icon(command.icon, size=18) if command.icon else None,
-                    trailing=check, height=32, style=button_style, on_click=command.on_click)
+                    leading=ft.Icon(command.icon, size=MENU_ICON_SIZE) if command.icon else None,
+                    trailing=check, height=MENU_ITEM_HEIGHT, style=button_style, on_click=command.on_click)
                 entries.append(entry)
                 self.entries.append((command, entry, check))
             target = ft.SubmenuButton(content=ft.Text(source.content.content.value, size=TEXT_BODY),

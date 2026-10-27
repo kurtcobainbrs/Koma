@@ -62,6 +62,9 @@ class DurationInput:
             if frame and frame.id == identifier:
                 self.field.value = duration_text(frame.duration, self.player.view.board.fps, frames=True)
             self.field.error_text = None
+            self.focused = False
+            self.target = None
+            self.player.focus_timeline()
         except ValueError as exc:
             self.field.error_text = str(exc)
         finally:

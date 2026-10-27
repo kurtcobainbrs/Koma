@@ -8,6 +8,8 @@ from pathlib import Path
 
 import flet as ft
 
+from koma.ui.menus import menu_item, popup_menu
+
 from koma.ui.design import CONTROL_HEIGHT, MUTED, dialog, input_style
 from koma.paths import initial_directory, open_file
 from koma.documents.session import DocumentSession
@@ -36,15 +38,15 @@ class StoryboardFiles:
         self.open_button = ft.TextButton('Abrir MP4', icon=ft.Icons.OPEN_IN_NEW,
             height=CONTROL_HEIGHT, visible=False, on_click=self.open_video)
         self.actions = ft.Row([self.cancel_button, self.open_button], visible=False, spacing=4)
-        self.menu = ft.PopupMenuButton(tooltip='Arquivo', items=[
-            ft.PopupMenuItem('Novo', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=self.new_document),
-            ft.PopupMenuItem('Abrir…', icon=ft.Icons.FOLDER_OPEN, on_click=self.open_document),
-            ft.PopupMenuItem('Salvar', icon=ft.Icons.SAVE_OUTLINED, on_click=self.save_document),
-            ft.PopupMenuItem('Salvar como…', on_click=self.save_as),
-            ft.PopupMenuItem('Recuperar sessão…', on_click=self.recover_document),
-            ft.PopupMenuItem('Exportar PDF…', icon=ft.Icons.PICTURE_AS_PDF_OUTLINED, on_click=view.export),
-            ft.PopupMenuItem('Exportar MP4…', icon=ft.Icons.MOVIE_OUTLINED, on_click=self.video_options),
-            ft.PopupMenuItem('Preferências do Blender…', icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.blender_options),
+        self.menu = popup_menu(tooltip='Arquivo', items=[
+            menu_item('Novo', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=self.new_document),
+            menu_item('Abrir…', icon=ft.Icons.FOLDER_OPEN, on_click=self.open_document),
+            menu_item('Salvar', icon=ft.Icons.SAVE_OUTLINED, on_click=self.save_document),
+            menu_item('Salvar como…', on_click=self.save_as),
+            menu_item('Recuperar sessão…', on_click=self.recover_document),
+            menu_item('Exportar PDF…', icon=ft.Icons.PICTURE_AS_PDF_OUTLINED, on_click=view.export),
+            menu_item('Exportar MP4…', icon=ft.Icons.MOVIE_OUTLINED, on_click=self.video_options),
+            menu_item('Preferências do Blender…', icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.blender_options),
         ])
 
     async def initial(self):
@@ -106,6 +108,8 @@ class StoryboardFiles:
             saved = await asyncio.to_thread(view.session.save, board, target, expected_stamp=expected)
         view.session.board = view.board
         self.directory = str(saved.parent)
+        if hasattr(view, 'document_saved'):
+            view.document_saved(saved)
         await view.persist()
         view.chrome.sync()
         view.notify(f'Documento salvo: {saved}', 'success')
@@ -244,27 +248,60 @@ class StoryboardFiles:
         view = self.view
         if not view.editable():
             return
-        timeline = Timeline(view.board, view.workspace.navigation.selected)
-        if not timeline.frames:
-            view.notify('Selecione uma cena com quadros para exportar o animatic.', 'warning')
-            return
+        board, session = view.board, view.session
+        timeline = Timeline(board, view.workspace.navigation.selected)
+        from koma.exports.sequence import ExportSequence
+        from koma.expressions import arithmetic_value
+        roots = [frame for frame in board.frames if frame.node_type.starts_scene]
+        scope = ft.Dropdown(label='Exportar', value='current' if timeline.frames else 'project', options=[
+            ft.DropdownOption('current', 'Cena atual'), ft.DropdownOption('project', 'Projeto completo'),
+            ft.DropdownOption('selected', 'Escolher cenas')], **input_style())
+        scenes = [(root, ft.Checkbox(label=root.title or 'Cena', value=True)) for root in roots]
+        scene_list = ft.Column([control for _, control in scenes], visible=False, tight=True)
+        start = ft.TextField(label='Início (f)', value='0', expand=True, **input_style())
+        end = ft.TextField(label='Fim (f)', expand=True, **input_style())
+        error = ft.Text(color=ft.Colors.ERROR, visible=False)
+        def selection():
+            if scope.value == 'current':
+                return ExportSequence.from_timelines([timeline])
+            return ExportSequence.from_project(board,
+                {root.id for root, control in scenes if control.value} if scope.value == 'selected' else None)
+        def update_scope(e=None):
+            scene_list.visible = scope.value == 'selected'
+            start.value, end.value = '0', f'{selection().total * board.fps:.15g}'
+            if e is not None:
+                self.page.update(scene_list, start, end)
+        scope.on_select = update_scope
+        for _, control in scenes:
+            control.on_change = update_scope
+        update_scope()
         name = timeline.root.title if timeline.root else view.board.title
         fps = ft.Text(f'{view.board.fps} FPS · definido nas propriedades do projeto')
         project_fps = view.board.fps
-        size = ft.Dropdown(label='Resolução', value='1920', options=[
-            ft.DropdownOption('1920', '1920 × 1080'), ft.DropdownOption('1280', '1280 × 720')], **input_style())
+        project_format = view.board.frame_format
+        size = ft.Text(f'{project_format.width} × {project_format.height} · {project_format.ratio_label} · formato do projeto')
         subtitles = ft.Checkbox(label='Incluir legendas no MP4', value=self.include_subtitles)
         def choose_subtitles(e=None):
             self.include_subtitles = bool(subtitles.value)
             view.preferences.update(include_subtitles=self.include_subtitles)
         subtitles.on_change = choose_subtitles
         async def export(e):
+            try:
+                if view.board is not board or view.session is not session or not view.editable():
+                    raise ValueError('O projeto mudou. Feche e abra novamente as opções de exportação.')
+                sequence = selection()
+                sequence = sequence.window(arithmetic_value(start.value or '0') / project_fps,
+                    arithmetic_value(end.value or '0') / project_fps)
+            except ValueError as exc:
+                error.value, error.visible = str(exc), True
+                self.page.update(error)
+                return
             self.page.pop_dialog()
             choose_subtitles()
-            await self.pick_video(timeline, name, project_fps, (int(size.value), 1080 if size.value == '1920' else 720),
+            await self.pick_video(sequence, name if scope.value == 'current' else view.board.title, project_fps, project_format.size,
                 include_subtitles=self.include_subtitles)
         self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), content=ft.Column([
-            ft.Text(f'{name} · {len(timeline.frames)} quadros · {timeline.total:g} s'), fps, size, subtitles,
+            scope, scene_list, ft.Row([start, end]), error, fps, size, subtitles,
             ft.Text('Usa o Blender configurado no Koma. Inclui a trilha ativa da cena e mantém os enquadramentos.', color=MUTED),
         ], width=390, tight=True, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
@@ -322,12 +359,20 @@ class StoryboardFiles:
                     view.feedback.progress.value = value
                     text = f"{event.get('phase', 'Exportando')} · {event.get('done', 0)}/{event.get('total', 1)}"
                     view.notify(text, 'working')
-                audio_tracks = [dict(path=str((view.store.audio / track.asset).resolve()), start=track.start, volume=track.volume)
-                    for track in timeline.audio_tracks if not track.muted and track.volume > 0]
+                audio_tracks = []
+                for index, track in enumerate(timeline.audio_tracks):
+                    if track.muted or track.volume <= 0:
+                        continue
+                    path = (view.store.audio / track.asset).resolve()
+                    if hasattr(track, 'source_offset'):
+                        from koma.exports.audio_segment import extract
+                        path = await asyncio.to_thread(extract, path, Path(temporary) / f'audio-{index}.wav',
+                            track.source_offset, track.duration, lambda: self.cancelled or view.closing)
+                    audio_tracks.append(dict(path=str(path), start=track.start, volume=track.volume))
                 options = dict(expected_destination_stamp=expected_stamp, frame_durations=counts)
                 if audio_tracks:
                     options['audio_tracks'] = audio_tracks
-                result = await self.runner.run(blender, paths, destination, fps, 'HIGH', size[0], progress, **options)
+                result = await self.runner.run(blender, paths, destination, fps, 'HIGH', 0, progress, **options)
             if result:
                 self.last_video = result
                 self.directory = str(result.parent)

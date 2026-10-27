@@ -9,8 +9,9 @@ from uuid import uuid4
 from koma.editor.models import MAX_CARDS, Storyboard, StoryFrame, StoryLink, StoryGroup
 from koma.paths import atomic_json
 from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
+from koma.editor.frame_format import FrameFormat
 
-DOCUMENT_VERSION = 2
+DOCUMENT_VERSION = 3
 
 
 def document(board, document_id):
@@ -20,7 +21,7 @@ def document(board, document_id):
 
 def parse_document(raw):
     try:
-        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, DOCUMENT_VERSION):
+        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, 2, DOCUMENT_VERSION):
             raise ValueError('Formato ou versão Koma não reconhecidos.')
         identifier = raw['document_id']
         if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
@@ -39,7 +40,8 @@ def parse_document(raw):
             tuple(StoryLink(**link) for link in links),
             tuple(StoryGroup(group['id'], group['title'], tuple(group['members'])) for group in groups),
             fps=raw.get('fps', 24), audio_tracks=tuple(AudioTrack(**track) for track in tracks),
-            markers=tuple(TimelineMarker(**marker) for marker in markers))
+            markers=tuple(TimelineMarker(**marker) for marker in markers),
+            frame_format=FrameFormat(**raw.get('frame_format', {})))
         board.validate()
         return board, identifier
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
