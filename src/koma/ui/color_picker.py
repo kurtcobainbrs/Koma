@@ -7,7 +7,7 @@ import math
 import flet as ft
 
 from koma.ui.typography import TEXT_BODY
-from koma.ui.design import dialog, BORDER, CONTROL_HEIGHT, RADIUS
+from koma.ui.design import dialog, BORDER, CONTROL_HEIGHT, RADIUS, DRAG_INTERVAL_MS
 
 
 def rgb_hex(rgb: tuple[float, float, float]) -> str:
@@ -23,6 +23,8 @@ class ColorPicker:
         self.page, self.on_apply = page, on_apply
         self.on_preview, self.on_cancel = on_preview, on_cancel
         self.settled = False
+        self.visual_key = None
+        self.preview_value = None
         self.hue, self.saturation, self.brightness = self.parse(color)
         self.preview = ft.Container(height=36, bgcolor=self.value, border_radius=RADIUS,
                                     border=ft.Border.all(1, BORDER))
@@ -37,12 +39,13 @@ class ColorPicker:
             self.marker,
         ], width=self.WHEEL_SIZE, height=self.WHEEL_SIZE, clip_behavior=ft.ClipBehavior.NONE)
         self.wheel = ft.GestureDetector(content=wheel, mouse_cursor=ft.MouseCursor.CLICK,
-            on_tap_down=self.pick, on_pan_start=self.pick, on_pan_update=self.pick,
-            tooltip="Escolha o tom ao redor e a intensidade pela distância do centro.")
+            on_tap_down=self.pick, on_pan_start=self.pick, on_pan_update=self.pick, on_pan_end=self.pick,
+            drag_interval=DRAG_INTERVAL_MS)
         self.value_slider = ft.Slider(min=0, max=100, divisions=100, value=self.brightness * 100,
-            label="{value}%", on_change=self.change_value, expand=True)
+            label="{value}%", on_change=self.change_value, on_change_end=self.change_value, expand=True)
         self.dialog = dialog(
             title=ft.Text(title),
+            on_confirm=self.apply, on_cancel=self.cancel, on_outside=self.apply,
             content=ft.Column([
                 ft.Row([self.wheel], alignment=ft.MainAxisAlignment.CENTER),
                 ft.Text("Luminosidade", size=TEXT_BODY),
@@ -73,6 +76,8 @@ class ColorPicker:
         return rgb_hex(colorsys.hsv_to_rgb(self.hue, self.saturation, self.brightness))
 
     def pick(self, e) -> None:
+        if self.settled:
+            return
         position = e.local_position
         if position is None:
             return
@@ -83,21 +88,33 @@ class ColorPicker:
         self.refresh()
 
     def change_value(self, e) -> None:
+        if self.settled:
+            return
         self.brightness = max(0, min(1, float(e.control.value) / 100))
-        self.refresh()
+        self.refresh(sync_slider=False)
 
-    def refresh(self, update: bool = True) -> None:
+    def refresh(self, update: bool = True, *, sync_slider: bool = True) -> None:
+        key = (self.hue, self.saturation, self.brightness)
+        if self.visual_key == key:
+            return
+        self.visual_key = key
         radius = self.WHEEL_SIZE / 2
         angle = self.hue * math.tau
         self.marker.left = radius + math.cos(angle) * radius * self.saturation - 7
         self.marker.top = radius + math.sin(angle) * radius * self.saturation - 7
         self.marker.bgcolor = self.value
-        self.value_slider.value = self.brightness * 100
+        slider_changed = sync_slider and self.value_slider.value != self.brightness * 100
+        if slider_changed:
+            self.value_slider.value = self.brightness * 100
         self.preview.bgcolor = self.value
         if update:
-            if self.on_preview and not self.settled:
+            if self.on_preview and not self.settled and self.preview_value != self.value:
+                self.preview_value = self.value
                 self.on_preview(self.value)
-            self.page.update()
+            controls = [self.marker, self.preview]
+            if slider_changed:
+                controls.append(self.value_slider)
+            self.page.update(*controls)
 
     @staticmethod
     def palette() -> list[str]:
@@ -106,6 +123,8 @@ class ColorPicker:
         return [rgb_hex(rgb) for rgb in values]
 
     def select(self, color: str) -> None:
+        if self.settled:
+            return
         self.hue, self.saturation, self.brightness = self.parse(color)
         self.refresh()
 

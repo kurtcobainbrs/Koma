@@ -24,6 +24,11 @@ def change_label(before, after):
         'subtitle': 'Editar legenda', 'action': 'Editar ação', 'audio': 'Editar diálogo',
         'notes': 'Editar notas', 'scene_color': 'Alterar cor da cena'}
     for identifier in old.keys() & new.keys():
+        previous, current = old[identifier].drawing, new[identifier].drawing
+        if previous != current:
+            if previous.visible != current.visible:
+                return 'Mostrar desenho' if current.visible else 'Ocultar desenho'
+            return 'Apagar traços' if len(current.strokes) < len(previous.strokes) else 'Desenhar'
         for key, label in labels.items():
             if getattr(old[identifier], key) != getattr(new[identifier], key):
                 return label

@@ -79,7 +79,8 @@ def app_theme(config: ThemeConfig | None = None) -> ft.Theme:
 
 
 def dialog(**kwargs) -> ft.AlertDialog:
-    """Popups fecham por Esc/toque externo; ações exigem clique explícito."""
+    """Shared compact dialogs with explicit confirm/cancel keyboard actions."""
+    from koma.ui.dialog_actions import action_dialog
     defaults = dict(
         modal=False, bgcolor=SURFACE, shape=ft.RoundedRectangleBorder(radius=RADIUS),
         title_padding=ft.Padding.only(left=20, right=20, top=16, bottom=10),
@@ -87,4 +88,4 @@ def dialog(**kwargs) -> ft.AlertDialog:
         actions_padding=ft.Padding.only(left=20, right=20, top=8, bottom=12),
         title_text_style=heading_style(TEXT_TITLE), content_text_style=body_style(),
     )
-    return ft.AlertDialog(**(defaults | kwargs))
+    return action_dialog(**(defaults | kwargs))

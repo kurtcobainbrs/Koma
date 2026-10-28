@@ -21,8 +21,8 @@ def source_fingerprint(root):
     digest = hashlib.sha256(FLUTTER_VERSION.encode())
     excluded = {'build', '.dart_tool', '.idea', 'ephemeral', '.git'}
     suffixes = {'.dart', '.yaml', '.lock', '.cpp', '.cc', '.h', '.txt', '.rc', '.manifest', '.ico', '.cmake'}
-    sources = [root / 'scripts/build_flet_client.py']
-    for directory in (root / 'flutter/client', root / 'flutter/koma_drop'):
+    sources = [root / 'scripts/build_flet_client.py', root / 'scripts/flet_compat.py']
+    for directory in (root / 'flutter/client', root / 'flutter/koma_drop', root / 'flutter/compat'):
         for parent, dirs, files in os.walk(directory, followlinks=False):
             dirs[:] = sorted(name for name in dirs if name not in excluded)
             sources.extend(Path(parent) / name for name in sorted(files) if Path(name).suffix in suffixes)
@@ -98,6 +98,12 @@ def main():
     sdk = json.loads(subprocess.check_output([str(flutter), '--version', '--machine'], text=True))
     if sdk.get('flutterVersion') != '3.44.8':
         raise SystemExit('Use Flutter 3.44.8, compatível com o cliente Flet 1.0.5 fixado.')
+    from flet_compat import prepare, VERSION
+    try:
+        prepare(ROOT)
+    except FileNotFoundError:
+        run(flutter, ['pub', 'cache', 'add', 'flet', '--version', VERSION], ROOT)
+        prepare(ROOT)
     resolve(flutter, EXTENSION)
     run(flutter, ['analyze', '--no-pub'], EXTENSION)
     if args.full_tests:

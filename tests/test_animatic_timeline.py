@@ -205,6 +205,24 @@ class TimelineEditingTests(TestCase):
         navigator.move(200)
         self.assertEqual(player.position, player.timeline.total)
 
+    def test_scrub_updates_only_cursor_and_transport_within_same_frame(self):
+        view, player = self.editor()
+        player.render()
+        with patch.object(player.strip, 'sync', wraps=player.strip.sync) as sync:
+            view.page.update.reset_mock()
+            player.strip.navigator.seek(.5)
+            sync.assert_not_called()
+            updated = view.page.update.call_args.args
+            self.assertNotIn(player.content, updated)
+            self.assertNotIn(player.strip.content, updated)
+            self.assertIn(player.strip.needle, updated)
+            view.page.update.reset_mock()
+            player.strip.navigator.seek(.5 + .001)
+            view.page.update.assert_not_called()
+            player.strip.navigator.begin(100, TimeScale(100))
+            player.strip.navigator.end(Data(global_position=Data(x=150)))
+            self.assertEqual(player.position, 1)
+            self.assertIsNone(player.strip.navigator.gesture)
     def test_ruler_hit_test_uses_track_coordinates_and_zoom_keeps_center_time(self):
         view, player = self.editor()
         strip = player.strip

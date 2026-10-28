@@ -70,7 +70,7 @@ class TimelineBlock:
                 ft.Container(right=0, top=0, bottom=0, content=self.handle)]))
 
     def seek(self, e):
-        if self.strip.editor.drag or self.strip.editor.committing:
+        if self.strip.player.editing:
             return
         player = self.strip.player
         index = next((i for i, frame in enumerate(player.timeline.frames) if frame.id == self.identifier), None)
@@ -110,6 +110,8 @@ class TimelineBlock:
         self.strip.editor.move(self.token, e.global_position.x)
 
     async def finish(self, e):
+        if e is not None and getattr(e, 'global_position', None) is not None:
+            self.move(e)
         token, self.token = self.token, None
         self.duration_pointer_x = None
         await self.strip.editor.finish(token)
@@ -328,12 +330,7 @@ class TimelineStrip:
             if identifier in self.blocks:
                 self.blocks[identifier].box.bgcolor = ft.Colors.PRIMARY_CONTAINER if identifier == current else SURFACE
         self.active = current
-        self.playhead.visible = bool(timeline.frames and self.scale)
-        self.needle.visible = self.playhead.visible
-        if self.scale:
-            self.playhead.left = max(0, min(self.track.width - self.playhead.width, self.scale.pixels(player.position)))
-            self.needle.left = max(0, min(self.track.width - self.style.handle_width,
-                self.scale.pixels(player.position) - self.style.handle_width / 2))
+        self.sync_cursor()
         self.sync_ruler()
         self.audio_lane.sync()
         self.audio_controls.sync()
@@ -346,6 +343,15 @@ class TimelineStrip:
         self.redo.tooltip = view.keymap.describe(view.history.redo_description, Action.REDO)
         for control in (self.fit_button, self.zoom_out, self.zoom_in):
             control.disabled = editing or not timeline.frames
+
+    def sync_cursor(self):
+        """Playback changes only these positions, not track geometry or waveform."""
+        self.playhead.visible = bool(self.player.timeline.frames and self.scale)
+        self.needle.visible = self.playhead.visible
+        if self.scale:
+            self.playhead.left = max(0, min(self.track.width - self.playhead.width, self.scale.pixels(self.player.position)))
+            self.needle.left = max(0, min(self.track.width - self.style.handle_width,
+                self.scale.pixels(self.player.position) - self.style.handle_width / 2))
 
     async def undo_edit(self, e=None):
         if not self.undo.disabled:

@@ -7,6 +7,7 @@ from PIL import Image, ImageOps, ImageDraw
 from koma.ui.theme import load_theme
 from koma.exports.subtitles import render_subtitle
 from koma.editor.frame_format import FrameFormat
+from koma.exports.drawings import paint_image
 
 
 def frame_counts(frames, fps, *, durations=None):
@@ -52,6 +53,7 @@ def prepare_frames(frames, store, directory, size, cancelled=lambda: False, *, i
                 target.paste(image, ((size[0]-image.width)//2, (size[1]-image.height)//2), image)
         else:
             ImageDraw.Draw(target).text((size[0]//2, size[1]//2), 'Sem imagem', fill=colors['on_surface'], anchor='mm')
+        paint_image(target, frame.drawing)
         if include_subtitles and frame.subtitle.strip():
             overlay = render_subtitle(frame.subtitle, size)
             target.paste(overlay, (0, 0), overlay)

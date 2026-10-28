@@ -8,6 +8,7 @@ from koma.documents.session import DocumentSession
 from koma.editor.geometry import place_missing
 from koma.editor.node_clipboard import capture_selection
 from koma.ui.design import dialog, input_style, MUTED, COMPACT_CONTROL_HEIGHT
+from koma.ui.menus import menu_item
 
 
 class DocumentTools:
@@ -21,16 +22,22 @@ class DocumentTools:
             actions=[ft.TextButton('Fechar', on_click=lambda e: self.app.page.pop_dialog())]))
         return body
 
-    def recent(self, e=None):
-        controls = []
+    def recent_items(self, before_open=None):
+        items = []
         for value in self.app.recent.paths:
             path = Path(value)
             async def open_path(e=None, target=path):
-                self.app.page.pop_dialog()
+                if before_open:
+                    before_open()
                 await self.app.open_project(target)
-            controls.append(ft.TextButton(path.name, tooltip=str(path), on_click=open_path,
-                disabled=not path.is_file(), height=COMPACT_CONTROL_HEIGHT))
-        self.show_list('Abrir recentes', controls or [ft.Text('Nenhum projeto recente.', color=MUTED)])
+            items.append(menu_item(path.name, tooltip=str(path), on_click=open_path, disabled=not path.is_file()))
+        return items or [menu_item('Nenhum arquivo', disabled=True)]
+
+    def recent(self, e=None):
+        controls = [ft.TextButton(command.content, tooltip=command.tooltip, on_click=command.on_click,
+            disabled=command.disabled, height=COMPACT_CONTROL_HEIGHT)
+            for command in self.recent_items(self.app.page.pop_dialog)]
+        self.show_list('Recentes', controls)
 
     def search(self, e=None):
         view = self.app.view

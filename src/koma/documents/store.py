@@ -10,8 +10,9 @@ from koma.editor.models import MAX_CARDS, Storyboard, StoryFrame, StoryLink, Sto
 from koma.paths import atomic_json
 from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
 from koma.editor.frame_format import FrameFormat
+from koma.editor.drawing_models import DrawingLayer
 
-DOCUMENT_VERSION = 3
+DOCUMENT_VERSION = 4
 
 
 def document(board, document_id):
@@ -21,7 +22,7 @@ def document(board, document_id):
 
 def parse_document(raw):
     try:
-        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, 2, DOCUMENT_VERSION):
+        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, 2, 3, DOCUMENT_VERSION):
             raise ValueError('Formato ou versão Koma não reconhecidos.')
         identifier = raw['document_id']
         if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
@@ -36,7 +37,14 @@ def parse_document(raw):
         if any(not isinstance(items, list) or len(items) > limit for items, limit in
                 ((tracks, MAX_AUDIO_TRACKS), (markers, MAX_MARKERS))):
             raise ValueError('Lista de trilhas ou marcadores inválida.')
-        board = Storyboard(raw['title'], tuple(StoryFrame(**frame) for frame in frames),
+        parsed_frames = []
+        for frame in frames:
+            if not isinstance(frame, dict):
+                raise ValueError('Quadro inválido.')
+            values = dict(frame)
+            values['drawing'] = DrawingLayer.from_document(values.pop('drawing', {}))
+            parsed_frames.append(StoryFrame(**values))
+        board = Storyboard(raw['title'], tuple(parsed_frames),
             tuple(StoryLink(**link) for link in links),
             tuple(StoryGroup(group['id'], group['title'], tuple(group['members'])) for group in groups),
             fps=raw.get('fps', 24), audio_tracks=tuple(AudioTrack(**track) for track in tracks),

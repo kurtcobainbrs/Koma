@@ -59,9 +59,12 @@ class TimelineNavigator:
         if not self.available or not math.isfinite(seconds):
             return
         player = self.player
+        position = frame_position(seconds, player.timeline.total, player.view.board.fps)
+        if position == player.position and not player.playing:
+            return
         player.playing = False
-        player.position = frame_position(seconds, player.timeline.total, player.view.board.fps)
-        player.render()
+        player.position = position
+        player.render_position()
 
     def begin(self, pointer_x, scale, seconds=None):
         if not self.available or not math.isfinite(pointer_x):
@@ -75,4 +78,6 @@ class TimelineNavigator:
             self.seek(gesture.position + gesture.scale.seconds(pointer_x - gesture.pointer_x))
 
     def end(self, e=None):
+        if e is not None and getattr(e, 'global_position', None) is not None:
+            self.move(e.global_position.x)
         self.gesture = None

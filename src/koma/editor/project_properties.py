@@ -20,8 +20,8 @@ class ProjectProperties:
             *[ft.DropdownOption(str(index), label) for index, (label, _) in enumerate(FORMAT_PRESETS)],
             ft.DropdownOption('custom', 'Personalizado')], on_select=self.preset_changed, **input_style())
         self.ratio = ft.TextField(label='Proporção', max_length=32,
-            counter=ft.Container(width=0, height=0), on_submit=self.ratio_submitted,
-            tooltip='16:9, 9:16, 1:1 ou uma proporção livre, como 2.39:1. Enter atualiza as dimensões.',
+            counter=ft.Container(width=0, height=0),
+            tooltip='16:9, 9:16, 1:1 ou uma proporção livre, como 2.39:1. Enter aplica as alterações.',
             **input_style())
         self.width = ft.TextField(label='Largura (px)', expand=True, max_length=5,
             counter=ft.Container(width=0, height=0), on_change=self.dimensions_changed, **input_style())
@@ -63,16 +63,6 @@ class ProjectProperties:
         ratio = (self.ratio.value or '').strip()
         return format if ratio == format.ratio_label else format.with_ratio(ratio)
 
-    def ratio_submitted(self, e=None):
-        try:
-            format = self.chosen_format()
-        except ValueError as exc:
-            self.ratio.error_text = str(exc)
-            self.view.page.update(self.ratio)
-            return
-        self.width.value, self.height.value = str(format.width), str(format.height)
-        self.dimensions_changed()
-
     def preset_changed(self, e=None):
         format = self.formats.get(self.preset.value)
         if format:
@@ -86,7 +76,7 @@ class ProjectProperties:
         if not self.view.editable():
             return
         self.sync()
-        self.view.page.show_dialog(dialog(title=ft.Text('Projeto'),
+        self.view.page.show_dialog(dialog(title=ft.Text('Projeto'), on_confirm=self.apply,
             content=ft.Column([self.preset, self.ratio, ft.Row([self.width, self.height]), self.fps],
                 width=320, tight=True, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.view.page.pop_dialog()),

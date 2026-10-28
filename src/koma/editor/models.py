@@ -7,6 +7,7 @@ from uuid import uuid4
 from koma.editor.frame_format import FrameFormat
 from koma.editor.node_types import node_type
 from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
+from koma.editor.drawing_models import DrawingLayer
 
 MAX_CARDS = 500
 TEXT_LIMIT = 20000
@@ -48,6 +49,7 @@ class StoryFrame:
     scene_color: str = ''
     subtitle: str = ''
     muted: bool = False
+    drawing: DrawingLayer = field(default_factory=DrawingLayer)
 
     @property
     def node_type(self):
@@ -55,6 +57,9 @@ class StoryFrame:
 
     def validate(self):
         node_type(self.kind)
+        if not isinstance(self.drawing, DrawingLayer):
+            raise ValueError('Camada de desenho inválida.')
+        self.drawing.validate()
         if type(self.muted) is not bool:
             raise ValueError('Estado de mute inválido.')
         if not isinstance(self.subtitle, str) or len(self.subtitle) > SUBTITLE_LIMIT:

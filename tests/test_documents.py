@@ -170,7 +170,8 @@ class DocumentTests(unittest.TestCase):
         self.session.save(self.board, self.target)
         with ZipFile(self.target) as archive:
             raw = json.loads(archive.read('manifest.json'))
-        raw['version'] = 3
+        from koma.documents.store import DOCUMENT_VERSION
+        raw['version'] = DOCUMENT_VERSION + 1
         with ZipFile(self.target, 'w') as archive:
             archive.writestr('manifest.json', json.dumps(raw))
         with self.assertRaises(ValueError):

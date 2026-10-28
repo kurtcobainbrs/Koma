@@ -259,11 +259,11 @@ class StoryboardView:
             self.changed(self.board.change(identifier, **{key: value or ''}), (identifier, key))
             await self.persist()
 
-    async def set_frame_properties(self, identifier, coalesce_key=None, **values):
+    async def set_frame_properties(self, identifier, coalesce_key=None, *, label=None, **values):
         if not self.editable() or identifier not in self.cards:
             return
         try:
-            self.changed(self.board.change(identifier, **values), coalesce_key)
+            self.changed(self.board.change(identifier, **values), coalesce_key, label=label)
             frame = next(frame for frame in self.board.frames if frame.id == identifier)
             self.cards[identifier].sync(frame)
             self.page.update(self.cards[identifier].content)

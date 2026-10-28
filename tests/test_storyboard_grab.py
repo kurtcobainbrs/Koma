@@ -26,7 +26,7 @@ class GrabTests(TestCase):
         self.assertFalse(self.workspace.grab.active)
         fixtures.finish(self.nav.key_down(fixtures.Data(key='l')))
         self.assertTrue(self.workspace.grab.active)
-        self.assertEqual(self.view.chrome.edit_items[5].content, 'Mover · L')
+        self.assertEqual(self.view.chrome.edit_commands[Action.MOVE].content, 'Mover · L')
         self.workspace.grab.cancel()
 
     def test_alt_drag_detaches_and_bridges_neighbors_as_one_undo(self):

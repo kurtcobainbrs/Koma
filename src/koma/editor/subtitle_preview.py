@@ -21,11 +21,14 @@ class SubtitlePreview:
         self.player = player
         self.revision = 0
         self.cache = OrderedDict()
+        self.pending = None
+        self.preparing = False
         self.image = ft.Image(src='', fit=ft.BoxFit.FILL, gapless_playback=True)
         self.content = ft.Container(content=self.image, visible=False, ignore_interactions=True)
 
     def set_text(self, text):
         self.revision += 1
+        self.pending = None
         text = normalized(text)
         self.content.visible = False
         if not text:
@@ -36,7 +39,19 @@ class SubtitlePreview:
             self.image.src = self.cache[key]
             self.content.visible = True
         else:
-            self.player.view.page.run_task(self.prepare, text, self.revision, key[1])
+            self.pending = (text, self.revision, key[1])
+            if not self.preparing:
+                self.preparing = True
+                self.player.view.page.run_task(self.drain)
+
+    async def drain(self):
+        """Keep one render in flight and only the latest requested subtitle."""
+        try:
+            while self.pending is not None:
+                request, self.pending = self.pending, None
+                await self.prepare(*request)
+        finally:
+            self.preparing = False
 
     async def prepare(self, text, revision, size=None):
         try:
@@ -56,4 +71,5 @@ class SubtitlePreview:
 
     def clear(self):
         self.revision += 1
+        self.pending = None
         self.content.visible = False

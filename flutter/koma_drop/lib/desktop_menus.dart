@@ -4,6 +4,7 @@ library;
 import 'package:flet/flet.dart';
 import 'package:flet/src/utils/popup_menu.dart' show buildPopupMenuEntries;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 class DesktopMenusExtension extends FletExtension {
   @override
@@ -25,6 +26,15 @@ class _ContextMenuState extends State<_ContextMenu> {
   ModalRoute<dynamic>? _route;
   Future<String?>? _pendingMenu;
   bool _closing = false;
+  Offset? _pointer;
+  bool _tracksPointer = false;
+
+  void _trackPointer(PointerEvent event) {
+    if (event is PointerHoverEvent || event is PointerMoveEvent ||
+        event is PointerDownEvent) {
+      _pointer = event.position;
+    }
+  }
 
   void _close() {
     _closing = true;
@@ -36,11 +46,18 @@ class _ContextMenuState extends State<_ContextMenu> {
   void initState() {
     super.initState();
     widget.control.addInvokeMethodListener(_invokeMethod);
+    _tracksPointer = widget.control.getBool('open_at_pointer', false)!;
+    if (_tracksPointer) {
+      GestureBinding.instance.pointerRouter.addGlobalRoute(_trackPointer);
+    }
   }
 
   @override
   void dispose() {
     widget.control.removeInvokeMethodListener(_invokeMethod);
+    if (_tracksPointer) {
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(_trackPointer);
+    }
     final route = _route;
     if (route != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -76,6 +93,7 @@ class _ContextMenuState extends State<_ContextMenu> {
       color: control.getColor('bgcolor', context),
       shape: control.getShape('shape', Theme.of(context)),
       elevation: 0,
+      constraints: control.getBoxConstraints('size_constraints'),
     );
     _pendingMenu = menu;
     final selected = await menu;
@@ -98,7 +116,8 @@ class _ContextMenuState extends State<_ContextMenu> {
     if (name != 'open') throw ArgumentError('Unsupported menu method: $name');
     final box = context.findRenderObject() as RenderBox;
     final local = parseOffset(args['local_position']);
-    final global = parseOffset(args['global_position']);
+    final global = parseOffset(args['global_position']) ??
+        (local == null && _tracksPointer ? _pointer : null);
     final resolvedLocal = local ?? (global == null
         ? box.size.center(Offset.zero) : box.globalToLocal(global));
     _open(global ?? box.localToGlobal(resolvedLocal), resolvedLocal);

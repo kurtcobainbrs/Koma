@@ -6,8 +6,8 @@ Na revisão de integração posterior, foram acrescentadas sete verificações a
 
 ## Documentos e abas
 
-- **Arquivo → Abrir recentes** mantém os últimos projetos abertos ou salvos. Arquivos indisponíveis aparecem desabilitados.
-- **Arquivo → Importar projeto** acrescenta os nodes de outro `.koma` ao projeto atual, com novos identificadores e cópias das imagens e áudios. O arquivo de origem permanece independente.
+- **Arquivo → Recentes** lista os últimos projetos abertos ou salvos em um submenu. Arquivos indisponíveis aparecem desabilitados; o caminho completo fica na dica do item.
+- **Arquivo → Importar → Projeto** acrescenta os nodes de outro `.koma` ao projeto atual, com novos identificadores e cópias das imagens e áudios. O arquivo de origem permanece independente.
 - `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+S` e `Ctrl+W`: novo, abrir, salvar, salvar como e fechar aba, inclusive com o foco em campos de texto.
 - `Ctrl+Tab` / `Ctrl+Shift+Tab`: próxima aba / aba anterior.
 - `Ctrl+Shift+O`: recentes. `Ctrl+F`: localizar quadros e cenas.
@@ -19,8 +19,16 @@ Na revisão de integração posterior, foram acrescentadas sete verificações a
 - Seleções múltiplas permitem editar propriedades compatíveis em uma única operação de histórico. Valores diferentes aparecem como mistos; campos de tempo continuam aceitando expressões.
 - Arrastar a divisória do inspetor ajusta sua largura. A faixa lateral continua permitindo reabrir o painel recolhido.
 - **Exibir → Localizar** pesquisa título, legenda, ação, diálogo e notas, selecionando e enquadrando o resultado.
-- **Exibir → Mídias** lista imagens, dimensões, referências e áudios. Clicar em uma imagem seleciona os nodes que a utilizam.
+- **Exibir → Painéis → Mídias** lista imagens, dimensões, referências e áudios. Clicar em uma imagem seleciona os nodes que a utilizam.
 - Os comandos de desfazer e refazer mostram a operação correspondente.
+
+Os menus seguem a mesma densidade e abertura instantânea de **Arquivo**:
+
+- **Editar** separa histórico, recortar/copiar/colar, duplicar/mover e excluir.
+- **Exibir** reúne enquadramento e zoom, grade, painéis e busca. **Painéis** contém propriedades, ferramentas e mídias.
+- **Seleção** mantém todos, nenhum e inverter em uma lista curta.
+- **Inserir** separa os tipos de node de **Importar**, que compartilha os comandos de imagens, áudio e projeto com **Arquivo**.
+- **Fluxo** separa moldura, organização e operações que removem conexões ou nodes.
 
 ## Animatic
 

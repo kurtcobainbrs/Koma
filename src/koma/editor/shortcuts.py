@@ -52,8 +52,11 @@ class Action(StrEnum):
     START = 'timeline.start'
     END = 'timeline.end'
     RENAME_MARKER = 'timeline.marker.rename'
-    DELETE_MARKER = 'timeline.marker.delete'
+    # Preserve the persisted shortcut id while widening its selection context.
+    DELETE_SELECTION = 'timeline.marker.delete'
+    DELETE_MARKER = DELETE_SELECTION
     IMPORT_AUDIO = 'timeline.audio.import'
+    DRAWING_TOOLS = 'timeline.drawing.tools'
 
 
 ACTIONS = (
@@ -104,8 +107,9 @@ ACTIONS = (
     ShortcutAction(Action.START, 'Ir ao início', ('Home',), contexts=('timeline',)),
     ShortcutAction(Action.END, 'Ir ao fim', ('End',), contexts=('timeline',)),
     ShortcutAction(Action.RENAME_MARKER, 'Renomear marcador', ('F2',), contexts=('timeline',)),
-    ShortcutAction(Action.DELETE_MARKER, 'Excluir marcador selecionado', ('Delete',), contexts=('timeline',)),
+    ShortcutAction(Action.DELETE_SELECTION, 'Excluir seleção no animatic', ('Delete',), contexts=('timeline',)),
     ShortcutAction(Action.IMPORT_AUDIO, 'Importar áudio', ('Ctrl+I',), contexts=('timeline',)),
+    ShortcutAction(Action.DRAWING_TOOLS, 'Ferramentas de desenho', ('Tab',), contexts=('timeline',)),
 )
 
 

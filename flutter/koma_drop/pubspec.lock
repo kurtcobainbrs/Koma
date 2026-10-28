@@ -196,10 +196,9 @@ packages:
   flet:
     dependency: "direct main"
     description:
-      name: flet
-      sha256: b2aa2c8b91291cff43cbff42f68dec94d2ae6d839363f0278ffd2a4674e0ff11
-      url: "https://pub.dev"
-    source: hosted
+      path: "../../build/flet-compat"
+      relative: true
+    source: path
     version: "1.0.5"
   flutter:
     dependency: "direct main"

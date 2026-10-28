@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Keep source files consistent across platforms and override core.autocrlf.
+* text=auto eol=lf
+
+# Keep Windows batch scripts in CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf

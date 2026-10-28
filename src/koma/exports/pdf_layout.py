@@ -8,6 +8,7 @@ from reportlab.platypus import Flowable, Paragraph
 
 from koma.editor.framing import placement
 from koma.editor.frame_format import FrameFormat
+from koma.exports.drawings import paint_pdf
 
 
 def paragraph(value, style):
@@ -123,6 +124,7 @@ class StoryboardSheet(Flowable):
             c.setFillColor(p['muted'])
             c.setFont('StoryboardBody', 9)
             c.drawCentredString(ix + iw / 2, iy + ih / 2, 'Sem imagem')
+        paint_pdf(c, frame.drawing, vx, vy, vw, vh)
         c.setFillColor(p['accent'])
         c.rect(ix, top - 28, 25, 20, stroke=0, fill=1)
         c.setFillColor(p['paper'])

@@ -38,16 +38,17 @@ class StoryboardFiles:
         self.open_button = ft.TextButton('Abrir MP4', icon=ft.Icons.OPEN_IN_NEW,
             height=CONTROL_HEIGHT, visible=False, on_click=self.open_video)
         self.actions = ft.Row([self.cancel_button, self.open_button], visible=False, spacing=4)
-        self.menu = popup_menu(tooltip='Arquivo', items=[
-            menu_item('Novo', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=self.new_document),
-            menu_item('Abrir…', icon=ft.Icons.FOLDER_OPEN, on_click=self.open_document),
-            menu_item('Salvar', icon=ft.Icons.SAVE_OUTLINED, on_click=self.save_document),
-            menu_item('Salvar como…', on_click=self.save_as),
-            menu_item('Recuperar sessão…', on_click=self.recover_document),
-            menu_item('Exportar PDF…', icon=ft.Icons.PICTURE_AS_PDF_OUTLINED, on_click=view.export),
-            menu_item('Exportar MP4…', icon=ft.Icons.MOVIE_OUTLINED, on_click=self.video_options),
-            menu_item('Preferências do Blender…', icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.blender_options),
-        ])
+        self.commands = {
+            'new': menu_item('Novo', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=self.new_document),
+            'open': menu_item('Abrir…', icon=ft.Icons.FOLDER_OPEN, on_click=self.open_document),
+            'save': menu_item('Salvar', icon=ft.Icons.SAVE_OUTLINED, on_click=self.save_document),
+            'save_as': menu_item('Salvar como…', on_click=self.save_as),
+            'recover': menu_item('Recuperar…', on_click=self.recover_document),
+            'pdf': menu_item('PDF…', icon=ft.Icons.PICTURE_AS_PDF_OUTLINED, on_click=view.export),
+            'mp4': menu_item('MP4…', icon=ft.Icons.MOVIE_OUTLINED, on_click=self.video_options),
+            'blender': menu_item('Configurar Blender…', icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.blender_options),
+        }
+        self.menu = popup_menu(tooltip='Arquivo', items=list(self.commands.values()))
 
     async def initial(self):
         return await asyncio.to_thread(initial_directory, self.directory)
@@ -55,7 +56,9 @@ class StoryboardFiles:
     def track_task(self):
         self.task = asyncio.current_task()
 
-    async def choose(self, title, message, choices):
+    async def choose(self, title, message, choices, *, confirm=None):
+        if confirm is not None and confirm not in {key for key, _ in choices}:
+            raise ValueError('A ação padrão precisa pertencer às opções do diálogo.')
         future = asyncio.get_running_loop().create_future()
         def dismissed(e=None):
             if not future.done():
@@ -67,6 +70,8 @@ class StoryboardFiles:
                 self.page.pop_dialog()
             return handler
         self.page.show_dialog(dialog(title=ft.Text(title), content=ft.Text(message), modal=True,
+            on_confirm=selected(confirm) if confirm is not None else False,
+            on_cancel=selected('cancel'),
             on_dismiss=dismissed,
             actions=[ft.TextButton(label, on_click=selected(key)) for key, label in choices]))
         return await future
@@ -76,7 +81,7 @@ class StoryboardFiles:
             return True
         decision = await self.choose('Alterações não salvas',
             f'Projeto: {self.view.board.title or "Sem título"}. Salve as alterações antes de fechá-lo.',
-            [('cancel', 'Cancelar'), ('discard', 'Descartar'), ('save', 'Salvar')])
+            [('cancel', 'Cancelar'), ('discard', 'Descartar'), ('save', 'Salvar')], confirm='save')
         if decision == 'save':
             return await self._save_document()
         return decision == 'discard'
@@ -205,6 +210,7 @@ class StoryboardFiles:
         self.view.lock(True)
         try:
             self.page.show_dialog(dialog(title=ft.Text('Recuperar sessão'), modal=True, on_dismiss=dismissed,
+                on_confirm=False, on_cancel=selected(None),
                 content=ft.Column([ft.TextButton(label, on_click=selected(entry)) for entry, label in recovery_labels],
                     scroll=ft.ScrollMode.AUTO, height=240, width=420),
                 actions=[ft.TextButton('Cancelar', on_click=selected(None))]))
@@ -237,7 +243,7 @@ class StoryboardFiles:
                 self.view.settings.blender = previous
                 error.value, error.visible = str(exc), True
                 self.page.update(error)
-        self.page.show_dialog(dialog(title=ft.Text('Preferências do Blender'),
+        self.page.show_dialog(dialog(title=ft.Text('Preferências do Blender'), on_confirm=save,
             content=ft.Column([field, ft.TextButton('Escolher executável…', on_click=browse),
                 ft.Text('Necessário apenas para exportar MP4. O Blender é instalado separadamente.', color=MUTED), error],
                 width=520, tight=True),
@@ -300,7 +306,7 @@ class StoryboardFiles:
             choose_subtitles()
             await self.pick_video(sequence, name if scope.value == 'current' else view.board.title, project_fps, project_format.size,
                 include_subtitles=self.include_subtitles)
-        self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), content=ft.Column([
+        self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), on_confirm=export, content=ft.Column([
             scope, scene_list, ft.Row([start, end]), error, fps, size, subtitles,
             ft.Text('Usa o Blender configurado no Koma. Inclui a trilha ativa da cena e mantém os enquadramentos.', color=MUTED),
         ], width=390, tight=True, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),

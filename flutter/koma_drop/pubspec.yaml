@@ -12,3 +12,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+dependency_overrides:
+  flet:
+    path: ../../build/flet-compat

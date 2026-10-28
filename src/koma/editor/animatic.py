@@ -12,6 +12,7 @@ from koma.editor.subtitle_preview import SubtitlePreview
 from koma.editor.timeline import Timeline
 from koma.editor.timeline_edit import TimelineEditor
 from koma.editor.shortcuts import Action
+from koma.keymap import key_name
 from koma.ui.timeline_strip import TimelineStrip
 from koma.ui.player_layout import PlayerLayout
 from koma.ui.player_toolbar import PlayerToolbar
@@ -21,6 +22,8 @@ from koma.editor.timeline_media import TimelineMedia
 from koma.audio_transport import AudioTransport
 from koma.editor.marker_edit import MarkerEditor
 from koma.editor.timeline_navigation import adjacent_stop
+from koma.editor.drawing_editor import FrameDrawingEditor
+from koma.ui.drawing_surface import DrawingSurface
 
 
 class AnimaticPlayer:
@@ -38,12 +41,14 @@ class AnimaticPlayer:
         self.audio_transport = AudioTransport()
         self.duration_editor = TimelineEditor(self)
         self.marker_editor = MarkerEditor(self)
+        self.drawing = FrameDrawingEditor(self)
+        self.drawing_surface = DrawingSurface(self)
         self.strip = TimelineStrip(self, self.duration_editor)
         self.layout = PlayerLayout()
-        self.preview = ImageViewport(view, height=400)
+        self.preview = ImageViewport(view, height=400, show_drawing=False)
         self.subtitles = SubtitlePreview(self)
         self.screen = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=ft.Stack(
-            [self.preview.content, self.subtitles.content], fit=ft.StackFit.EXPAND))
+            [self.preview.content, self.drawing_surface.content, self.subtitles.content], fit=ft.StackFit.EXPAND))
         self.caption = ft.Text(size=TEXT_SMALL, font_family=FONT_HEADING, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.clock = ft.Text(size=TEXT_SMALL, color=MUTED)
@@ -76,12 +81,14 @@ class AnimaticPlayer:
             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         self.close_button = ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Fechar · Esc', on_click=self.close,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
-        self.popup = dialog(title=ft.Row([self.title, self.export_button,
-                self.close_button], spacing=APP_PADDING * 2), content=self.keyboard,
+        self.popup = dialog(title=ft.Column([
+                ft.Row([self.title, self.export_button, self.close_button], spacing=APP_PADDING * 2),
+                self.drawing_surface.tools], tight=True, spacing=APP_PADDING,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH), content=self.keyboard,
             inset_padding=ft.Padding.all(self.layout.dialog_inset),
             title_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
             content_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
-            actions_padding=0, modal=True, on_dismiss=self.dismissed)
+            actions_padding=0, modal=True, on_dismiss=self.dismissed, native_actions=False)
 
     def open(self, e=None):
         if not self.view.editable() or not self.view.board.frames or self.opened or self.dismiss_pending:
@@ -131,6 +138,7 @@ class AnimaticPlayer:
     def editing(self):
         return bool(self.duration_editor.drag or self.duration_editor.committing
             or self.marker_editor.drag or self.marker_editor.committing
+            or self.drawing.drag or self.drawing.committing
             or self.strip.audio_lane.drag.snapshot)
 
     def render(self, update=True):
@@ -139,6 +147,9 @@ class AnimaticPlayer:
         self.fit_preview()
         if self.duration_editor.drag is None and self.timeline.board is not self.view.board:
             self.rebuild_timeline()
+        if self.drawing.drag and (not self.timeline.frames or
+                self.timeline.frames[self.timeline.index_at(self.position)].id != self.drawing.drag.frame.id):
+            self.drawing.cancel(update=False)
         editing = self.editing
         self.play.disabled = editing or not self.timeline.frames
         self.export_button.disabled = editing or not self.view.editable() or not self.timeline.frames
@@ -166,6 +177,7 @@ class AnimaticPlayer:
         self.loop.tooltip = 'Repetir ligado · clique para desligar' if self.loop.selected else 'Repetir desligado · clique para ligar'
         self.previous_button.disabled = self.next_button.disabled = editing or not self.timeline.frames
         self.strip.sync()
+        self.drawing_surface.sync()
         self.audio_transport.update(self.timeline, self.view.store, self.playing and self.opened, self.position)
         if self.audio_transport.error:
             self.view.notify(self.audio_transport.error, 'warning')
@@ -180,6 +192,31 @@ class AnimaticPlayer:
         self.strip.sync()
         if self.opened and not self.view.closing:
             self.view.page.update(self.strip.content, self.controls, self.caption)
+
+    def render_position(self):
+        """Seek/playback update only transport and the frames that actually change."""
+        if not self.opened or self.view.closing or self.timeline is None:
+            return
+        if self.timeline.board is not self.view.board or self.current < 0:
+            self.render()
+            return
+        old_index = self.current
+        index = self.timeline.index_at(self.position)
+        if index != old_index:
+            self.render(update=False)
+            controls = [self.preview.content, self.subtitles.content, self.caption,
+                self.drawing_surface.content, self.drawing_surface.visibility,
+                self.strip.duration_input.field,
+                *[self.strip.blocks[self.timeline.frames[i].id].box
+                    for i in {old_index, index} if 0 <= i < len(self.timeline.frames)]]
+        else:
+            self.strip.sync_cursor()
+            self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
+            self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
+            self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
+            self.audio_transport.update(self.timeline, self.view.store, self.playing, self.position)
+            controls = []
+        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls)
 
     def toggle_subtitles(self, e=None):
         self.show_subtitles.selected = not self.show_subtitles.selected
@@ -223,7 +260,7 @@ class AnimaticPlayer:
             else:
                 self.position = self.timeline.total
                 self.playing = False
-        self.render()
+        self.render_position()
 
     async def tick(self):
         while self.opened and not self.view.closing:
@@ -250,6 +287,19 @@ class AnimaticPlayer:
         modifiers = {name for field, name in (('ctrl', 'Ctrl'), ('alt', 'Alt'),
             ('shift', 'Shift'), ('meta', 'Meta')) if getattr(e, field, False)}
         action = self.view.keymap.resolve(e.key, modifiers, 'timeline')
+        if self.drawing_surface.picker is not None:
+            if action == Action.CANCEL:
+                self.drawing_surface.close_picker()
+                self.focus_timeline()
+            elif key_name(e.key) == 'Enter':
+                self.drawing_surface.picker.apply(e)
+                self.focus_timeline()
+            return
+        if self.drawing_surface.focused:
+            if action == Action.CANCEL:
+                self.drawing_surface.set_width()
+                self.focus_timeline()
+            return
         if self.strip.marker_lane.renaming is not None:
             if action == Action.CANCEL:
                 self.strip.marker_lane.cancel_rename()
@@ -265,8 +315,18 @@ class AnimaticPlayer:
                 self.strip.duration_input.cancel()
                 self.focus_timeline()
             return
+        if self.drawing_surface.tool_menu.opened:
+            if action in (Action.DRAWING_TOOLS, Action.CANCEL):
+                self.drawing_surface.tool_menu.close()
+            return
         if action == Action.CANCEL:
+            if not self.editing and self.drawing.selected_index() is not None:
+                self.drawing.clear_selection()
+                self.render()
+                self.focus_timeline()
+                return
             editing = self.editing
+            self.drawing.cancel()
             self.strip.audio_lane.drag.cancel()
             self.duration_editor.cancel()
             self.marker_editor.cancel()
@@ -277,7 +337,9 @@ class AnimaticPlayer:
             return
         if self.editing or not self.view.editable():
             return
-        if action == Action.PLAY:
+        if action == Action.DRAWING_TOOLS:
+            await self.drawing_surface.toggle_tools()
+        elif action == Action.PLAY:
             self.toggle()
         elif action == Action.ADD_MARKER:
             await self.media.add_marker()
@@ -297,8 +359,8 @@ class AnimaticPlayer:
             self.strip.navigator.seek(self.timeline.total)
         elif action == Action.RENAME_MARKER:
             self.strip.marker_lane.rename()
-        elif action == Action.DELETE_MARKER and self.marker_editor.selected:
-            await self.media.remove_marker(self.marker_editor.selected)
+        elif action == Action.DELETE_SELECTION:
+            await self.delete_selection()
         elif action == Action.IMPORT_AUDIO:
             await self.media.pick_audio()
         elif action == Action.UNDO:
@@ -308,12 +370,25 @@ class AnimaticPlayer:
         elif action in (Action.FOCUS, Action.FIT):
             self.strip.fit()
 
+    async def delete_selection(self):
+        if self.editing or not self.view.editable():
+            return
+        if await self.drawing.delete_selected():
+            return
+        if self.marker_editor.selected:
+            await self.media.remove_marker(self.marker_editor.selected)
+
     def next(self, e):
         self.step(1)
         self.focus_timeline()
 
     def dismissed(self, e=None):
         self.opened = False
+        self.drawing_surface.tool_menu.close()
+        self.drawing.cancel(update=False)
+        self.drawing.clear_selection()
+        self.drawing_surface.reset_inputs()
+        self.drawing_surface.focused = False
         self.strip.audio_lane.drag.cancel(update=False)
         self.media.cancelled.set()
         self.audio_transport.stop()
@@ -332,6 +407,8 @@ class AnimaticPlayer:
             self.task = None
 
     def close(self, e=None):
+        self.drawing_surface.close_picker()
+        self.drawing_surface.tool_menu.close()
         self.dismissed()
         self.dismiss_pending = True
         self.view.page.pop_dialog()

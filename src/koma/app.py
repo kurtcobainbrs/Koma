@@ -293,6 +293,7 @@ def mount(page, document=None):
         elif e.type == ft.WindowEventType.BLUR:
             for view in application.views:
                 view.player.duration_editor.cancel()
+                view.player.drawing.cancel(update=view.active)
                 view.player.strip.audio_lane.drag.cancel(update=view.active)
                 view.player.marker_editor.cancel()
                 view.player.strip.navigator.end()

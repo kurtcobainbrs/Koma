@@ -10,6 +10,8 @@ from flet.messaging.protocol import configure_encode_object_for_msgpack
 
 from tests import test_storyboard as fixtures
 from tests.test_storyboard_selection import finish
+from koma.editor.shortcuts import Action
+from koma.ui.menus import MenuGroup
 
 
 class ChromeTests(TestCase):
@@ -76,11 +78,11 @@ class ChromeTests(TestCase):
         self.assertEqual(view.board.frames[0].kind, 'main')
         finish(chrome.add_menu.items[1].on_click(None))
         self.assertEqual(len(view.board.frames), 2)
-        self.assertFalse(chrome.edit_items[0].disabled)
-        finish(chrome.edit_items[0].on_click(None))
+        self.assertFalse(chrome.edit_commands[Action.UNDO].disabled)
+        finish(chrome.edit_commands[Action.UNDO].on_click(None))
         self.assertEqual(len(view.board.frames), 1)
-        self.assertFalse(chrome.edit_items[1].disabled)
-        finish(chrome.edit_items[1].on_click(None))
+        self.assertFalse(chrome.edit_commands[Action.REDO].disabled)
+        finish(chrome.edit_commands[Action.REDO].on_click(None))
         self.assertEqual(len(view.board.frames), 2)
 
     def test_selection_menus_use_the_same_active_selection_and_disable_empty_actions(self):
@@ -88,10 +90,10 @@ class ChromeTests(TestCase):
         finish(view.add_frame())
         finish(view.add_frame())
         chrome = view.chrome
-        self.assertTrue(chrome.edit_items[3].disabled)
+        self.assertTrue(chrome.edit_commands[Action.DUPLICATE].disabled)
         chrome.selection_menu.items[0].on_click(None)
         self.assertEqual(view.workspace.navigation.selection.ids, set(view.cards))
-        self.assertFalse(chrome.edit_items[3].disabled)
+        self.assertFalse(chrome.edit_commands[Action.DUPLICATE].disabled)
         self.assertTrue(view.workspace.navigation.selection_bar.visible)
         self.assertFalse(view.count.visible)
         chrome.selection_menu.items[2].on_click(None)
@@ -119,6 +121,7 @@ class ChromeTests(TestCase):
         view = self.view()
         view.chrome.rename()
         popup = view.page.show_dialog.call_args.args[0]
+        popup.open = True
         popup.content.content.value = 'Estudo de câmera'
         finish(popup.actions[-1].on_click(None))
         self.assertEqual(view.document_label, 'Estudo de câmera *')
@@ -133,7 +136,9 @@ class ChromeTests(TestCase):
         self.assertFalse(view.count.visible)
         self.assertFalse(view.workspace.navigation.focus_button.visible)
         self.assertEqual(chrome.content.content.height, 28)
-        self.assertEqual(len(chrome.view_menu.items), 6)
+        panels = next(entry.data for entry in chrome.view_menu.items if isinstance(entry.data, MenuGroup))
+        self.assertIn(chrome.props_item, panels.items)
+        self.assertIn(chrome.tools_item, panels.items)
         chrome.resized(Data(width=1200))
         self.assertFalse(hasattr(chrome, "name_box"))
         self.assertTrue(view.workspace.navigation.focus_button.visible)

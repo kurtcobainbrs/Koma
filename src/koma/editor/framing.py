@@ -9,6 +9,7 @@ from koma.ui.design import DRAG_INTERVAL_MS, MUTED, RADIUS
 from koma.editor.geometry import NODE_WIDTH
 from koma.editor.shortcuts import Action
 from koma.editor.frame_format import FrameFormat
+from koma.ui.drawing_overlay import DrawingOverlay
 
 
 def png_size(data):
@@ -29,7 +30,7 @@ def placement(source, viewport, fit, x=0, y=0):
 
 
 class ImageViewport:
-    def __init__(self, view, identifier=None, height=180):
+    def __init__(self, view, identifier=None, height=180, *, show_drawing=True):
         self.view, self.identifier = view, identifier
         self.width, self.height = NODE_WIDTH-18, height
         self.maximum_height = height
@@ -38,6 +39,7 @@ class ImageViewport:
         self.source = FrameFormat().size
         self.drag = None
         self.image = None
+        self.drawing = DrawingOverlay() if show_drawing else None
         self.stack = ft.Stack(expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE)
         self.gesture = ft.GestureDetector(content=self.stack, drag_interval=DRAG_INTERVAL_MS,
             on_tap_down=self.select, on_pan_start=self.begin, on_pan_update=self.move,
@@ -63,9 +65,13 @@ class ImageViewport:
             self.stack.controls = [self.image] if data else [ft.Container(left=0, top=0,
                 width=self.width, height=self.height, alignment=ft.Alignment.CENTER,
                 content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=28, color=MUTED))]
+            if self.drawing:
+                self.stack.controls.append(self.drawing.content)
         self.layout()
 
     def layout(self):
+        if self.drawing and self.frame:
+            self.drawing.sync(self.frame.drawing, self.width, self.height)
         if self.image is None and self.stack.controls:
             self.stack.controls[0].width, self.stack.controls[0].height = self.width, self.height
         if self.image and self.frame:

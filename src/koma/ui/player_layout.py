@@ -11,7 +11,7 @@ class PlayerLayout:
     vertical_fraction: float = .88
     dialog_inset: float = PAGE_PADDING * 2
     content_padding: float = PAGE_PADDING
-    chrome_height: float = COMPACT_CONTROL_HEIGHT + APP_PADDING * 4
+    chrome_height: float = COMPACT_CONTROL_HEIGHT * 2 + APP_PADDING * 5
 
     def apply(self, page, content, preview_slot):
         width, height = getattr(page, 'width', None), getattr(page, 'height', None)

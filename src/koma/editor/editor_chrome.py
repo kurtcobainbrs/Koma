@@ -4,7 +4,7 @@ import flet as ft
 
 from koma.ui.design import BORDER, COMPACT_CONTROL_HEIGHT, RADIUS, SURFACE, dialog, input_style
 from koma.ui.typography import TEXT_BODY
-from koma.ui.menus import menu_item, popup_menu, MENU_ITEM_HEIGHT
+from koma.ui.menus import menu_item, popup_menu, submenu, menu_separator, MENU_ITEM_HEIGHT
 from koma.editor.editor_menu import EditorMenuBar
 from koma.editor.node_types import NODE_TYPES
 from koma.editor.shortcuts import Action
@@ -32,39 +32,50 @@ class StoryboardChrome:
         self.shortcut_items = []
         self.wide = True
         self.compact = False
-        self.edit_items = [self.shortcut_item('Desfazer', Action.UNDO, view.graph.undo, ft.Icons.UNDO),
-            self.shortcut_item('Refazer', Action.REDO, view.graph.redo, ft.Icons.REDO),
-            self.shortcut_item('Colar', Action.PASTE, self.paste_nodes, ft.Icons.CONTENT_PASTE),
-            self.shortcut_item('Duplicar', Action.DUPLICATE, self.nav.duplicate_selected, ft.Icons.CONTENT_COPY),
-            self.shortcut_item('Excluir', Action.DELETE, self.nav.delete_selected, ft.Icons.DELETE_OUTLINE),
-            self.shortcut_item('Mover', Action.MOVE, self.workspace.grab.start, ft.Icons.OPEN_WITH),
-            self.shortcut_item('Copiar', Action.COPY, self.copy_nodes, ft.Icons.CONTENT_COPY),
-            self.shortcut_item('Recortar', Action.CUT_NODES, self.cut_nodes, ft.Icons.CONTENT_CUT)]
-        self.edit_menu = menu('Editar', self.edit_items)
+        self.edit_commands = {action: self.shortcut_item(label, action, handler, icon)
+            for action, label, handler, icon in (
+                (Action.UNDO, 'Desfazer', view.graph.undo, ft.Icons.UNDO),
+                (Action.REDO, 'Refazer', view.graph.redo, ft.Icons.REDO),
+                (Action.CUT_NODES, 'Recortar', self.cut_nodes, ft.Icons.CONTENT_CUT),
+                (Action.COPY, 'Copiar', self.copy_nodes, ft.Icons.CONTENT_COPY),
+                (Action.PASTE, 'Colar', self.paste_nodes, ft.Icons.CONTENT_PASTE),
+                (Action.DUPLICATE, 'Duplicar', self.nav.duplicate_selected, ft.Icons.CONTROL_POINT_DUPLICATE),
+                (Action.MOVE, 'Mover', self.workspace.grab.start, ft.Icons.OPEN_WITH),
+                (Action.DELETE, 'Excluir', self.nav.delete_selected, ft.Icons.DELETE_OUTLINE))}
+        edit = self.edit_commands
+        self.edit_menu = menu('Editar', [edit[Action.UNDO], edit[Action.REDO], menu_separator(),
+            edit[Action.CUT_NODES], edit[Action.COPY], edit[Action.PASTE], menu_separator(),
+            edit[Action.DUPLICATE], edit[Action.MOVE], menu_separator(), edit[Action.DELETE]])
         self.snap_item = item('Ajustar à grade', self.workspace.toggle_snap, ft.Icons.GRID_ON)
-        self.tools_item = item('Ferramentas', self.toggle_tools)
+        self.tools_item = item('Ferramentas', self.toggle_tools, ft.Icons.BUILD_OUTLINED)
         self.props_item = self.shortcut_item('Propriedades', Action.PROPERTIES, view.properties.toggle, ft.Icons.TUNE)
         self.view_menu = menu('Exibir', [self.shortcut_item('Enquadrar tudo', Action.FIT, self.workspace.fit, ft.Icons.FIT_SCREEN),
             self.shortcut_item('Enquadrar seleção', Action.FOCUS, self.nav.focus_selected, ft.Icons.CENTER_FOCUS_STRONG),
-            item('Zoom 100%', self.workspace.reset, ft.Icons.ZOOM_IN), self.snap_item, self.tools_item, self.props_item])
-        self.view_menu.items.extend([
+            item('Zoom 100%', self.workspace.reset, ft.Icons.ZOOM_IN), menu_separator(),
+            self.snap_item, menu_separator(),
+            submenu('Painéis', [self.props_item, self.tools_item,
+                item('Mídias…', self.open_media, ft.Icons.PERM_MEDIA_OUTLINED)], icon=ft.Icons.VIEW_SIDEBAR_OUTLINED),
             self.shortcut_item('Localizar…', Action.SEARCH, lambda e: view.document_tools.search(), ft.Icons.SEARCH),
-            item('Mídias…', self.open_media, ft.Icons.PERM_MEDIA_OUTLINED)])
-        self.selection_menu = menu('Seleção', [self.shortcut_item('Todos', Action.ALL, self.select_all),
-            self.shortcut_item('Nenhum', Action.NONE, self.select_none), item('Inverter', self.invert)])
+        ])
+        self.selection_menu = menu('Seleção', [self.shortcut_item('Todos', Action.ALL, self.select_all, ft.Icons.SELECT_ALL),
+            self.shortcut_item('Nenhum', Action.NONE, self.select_none, ft.Icons.DESELECT),
+            item('Inverter', self.invert, ft.Icons.FLIP_TO_BACK)])
+        self.import_items = [
+            self.shortcut_item('Imagens…', Action.IMPORT_IMAGES, view.pick_images, ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED),
+            item('Áudio…', self.import_audio, ft.Icons.AUDIO_FILE_OUTLINED),
+            item('Projeto…', self.import_project, ft.Icons.FILE_OPEN_OUTLINED)]
         self.add_menu = menu('Inserir', [
             *[item(spec.label, view.node_handler(spec.kind),
                 ft.Icons.MOVIE_OUTLINED if spec.starts_scene else ft.Icons.ADD)
               for spec in NODE_TYPES.values()],
-            item('Importar imagens…', view.pick_images, ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED)])
-        self.shortcut_items.append((view.graph.menu.items[0], 'Criar moldura', Action.GROUP))
+            menu_separator(), submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED)])
+        self.track_shortcut(view.graph.commands['group'], 'Criar moldura…', Action.GROUP)
         self.node_menu = view.graph.menu
         self.node_menu.icon = None
         self.node_menu.content = menu_label('Fluxo')
         self.node_menu.height = COMPACT_CONTROL_HEIGHT
         self.node_menu.padding = ft.Padding.symmetric(horizontal=8, vertical=4)
         self.node_menu.menu_position = ft.PopupMenuPosition.UNDER
-        self.node_menu.items.append(item('Organizar fluxo', view.graph.organize, ft.Icons.ACCOUNT_TREE_OUTLINED))
         for entry in self.node_menu.items:
             entry.height = MENU_ITEM_HEIGHT
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
@@ -75,14 +86,21 @@ class StoryboardChrome:
         files.height = COMPACT_CONTROL_HEIGHT
         files.padding = ft.Padding.symmetric(horizontal=8, vertical=4)
         files.menu_position = ft.PopupMenuPosition.UNDER
-        files.items.insert(0, item('Renomear…', self.rename, ft.Icons.EDIT_OUTLINED))
-        files.items.append(item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED))
-        files.items.extend([
-            self.shortcut_item('Abrir recentes…', Action.RECENT, lambda e: view.document_tools.recent(), ft.Icons.HISTORY),
-            self.shortcut_item('Importar imagens…', Action.IMPORT_IMAGES, view.pick_images, ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED),
-            item('Importar áudio…', self.import_audio, ft.Icons.AUDIO_FILE_OUTLINED),
-            item('Importar projeto…', self.import_project, ft.Icons.FILE_OPEN_OUTLINED),
-            self.shortcut_item('Fechar aba', Action.CLOSE_TAB, self.close_tab, ft.Icons.CLOSE)])
+        commands = view.files.commands
+        self.recent_menu = submenu('Recentes', load=self.recent_items, key=self.recent_key, icon=ft.Icons.HISTORY)
+        files.items = [
+            self.track_shortcut(commands['new'], 'Novo', Action.NEW),
+            self.track_shortcut(commands['open'], 'Abrir…', Action.OPEN), self.recent_menu, commands['recover'],
+            menu_separator(),
+            self.track_shortcut(commands['save'], 'Salvar', Action.SAVE),
+            self.track_shortcut(commands['save_as'], 'Salvar como…', Action.SAVE_AS),
+            item('Renomear…', self.rename, ft.Icons.EDIT_OUTLINED),
+            self.shortcut_item('Fechar', Action.CLOSE_TAB, self.close_tab, ft.Icons.CLOSE),
+            menu_separator(),
+            submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED),
+            submenu('Exportar', [commands['pdf'], commands['mp4']], icon=ft.Icons.FILE_UPLOAD_OUTLINED),
+            menu_separator(),
+            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED), commands['blender']]
         for entry in files.items:
             entry.height = MENU_ITEM_HEIGHT
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
@@ -127,9 +145,20 @@ class StoryboardChrome:
         self.sync()
 
     def shortcut_item(self, title, action, handler, icon=None):
-        entry = item(self.view.keymap.describe(title, action), handler, icon)
+        return self.track_shortcut(item(title, handler, icon), title, action)
+
+    def track_shortcut(self, entry, title, action):
+        entry.content = self.view.keymap.describe(title, action)
         self.shortcut_items.append((entry, title, action))
         return entry
+
+    def recent_items(self):
+        tools = getattr(self.view, 'document_tools', None)
+        return tools.recent_items() if tools else [menu_item('Nenhum arquivo', disabled=True)]
+
+    def recent_key(self):
+        tools = getattr(self.view, 'document_tools', None)
+        return tuple(tools.app.recent.paths) if tools else ()
 
     async def paste_nodes(self, e=None):
         if hasattr(self.view, 'node_clipboard'):
@@ -168,18 +197,19 @@ class StoryboardChrome:
     def sync(self):
         if self.view.loaded and not self.view.closing and self.view.on_state:
             self.view.on_state(self.view)
-        self.edit_items[0].disabled = self.view.graph.undo_button.disabled
-        self.edit_items[1].disabled = self.view.graph.redo_button.disabled
-        self.edit_items[0].content = self.view.keymap.describe(self.view.history.undo_description, Action.UNDO)
-        self.edit_items[1].content = self.view.keymap.describe(self.view.history.redo_description, Action.REDO)
+        edit = self.edit_commands
+        edit[Action.UNDO].disabled = self.view.graph.undo_button.disabled
+        edit[Action.REDO].disabled = self.view.graph.redo_button.disabled
+        edit[Action.UNDO].content = self.view.keymap.describe(self.view.history.undo_description, Action.UNDO)
+        edit[Action.REDO].content = self.view.keymap.describe(self.view.history.redo_description, Action.REDO)
         selected = bool(self.nav.selection.ids)
-        for entry in self.edit_items[2:]:
-            entry.disabled = not selected
+        for action in (Action.CUT_NODES, Action.COPY, Action.DUPLICATE, Action.MOVE, Action.DELETE):
+            edit[action].disabled = not selected
         active = next((frame for frame in self.view.board.frames if frame.id == self.nav.selected), None)
         clipboard = getattr(self.view, 'node_clipboard', None)
-        self.edit_items[2].disabled = not (clipboard and clipboard.payload) and (not active or not active.node_type.image)
-        for entry in self.node_menu.items[:3]:
-            entry.disabled = not selected
+        edit[Action.PASTE].disabled = not (clipboard and clipboard.payload) and (not active or not active.node_type.image)
+        for command in ('group', 'disconnect', 'remove_preserving'):
+            self.view.graph.commands[command].disabled = not selected
         self.snap_item.checked = self.workspace.snap_enabled
         self.tools_item.checked = self.nav.tools.visible
         self.props_item.checked = self.view.properties.opened
@@ -223,7 +253,8 @@ class StoryboardChrome:
             self.page.pop_dialog()
             self.view.title.value = field.value or ''
             await self.view.edit_title(None)
-        self.page.show_dialog(dialog(title=ft.Text('Renomear projeto'), content=ft.Container(width=380, content=field),
+        self.page.show_dialog(dialog(title=ft.Text('Renomear projeto'), on_confirm=save,
+            content=ft.Container(width=380, content=field),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()), ft.FilledButton('Salvar', on_click=save)]))
 
     def toggle_tools(self, e=None):

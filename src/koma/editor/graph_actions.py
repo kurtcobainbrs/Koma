@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import flet as ft
 
-from koma.ui.menus import menu_item, popup_menu
+from koma.ui.menus import menu_item, popup_menu, menu_separator
 
 from koma.ui.design import CONTROL_HEIGHT, COMPACT_CONTROL_HEIGHT, dialog, input_style
 from koma.editor import graph
@@ -18,11 +18,17 @@ class GraphActions:
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=self.undo, disabled=True)
         self.redo_button = ft.IconButton(icon=ft.Icons.REDO, tooltip=view.keymap.describe('Refazer', Action.REDO),
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=self.redo, disabled=True)
+        self.commands = {
+            'group': menu_item(view.keymap.describe('Criar moldura…', Action.GROUP),
+                icon=ft.Icons.CROP_FREE, on_click=lambda e: self.group_dialog()),
+            'organize': menu_item('Organizar', icon=ft.Icons.ACCOUNT_TREE_OUTLINED, on_click=self.organize),
+            'disconnect': menu_item('Desconectar', icon=ft.Icons.LINK_OFF, on_click=self.disconnect_selected),
+            'remove_preserving': menu_item('Remover e reconectar', icon=ft.Icons.DELETE_OUTLINE,
+                on_click=self.remove_preserving),
+        }
         self.menu = popup_menu(icon=ft.Icons.ACCOUNT_TREE_OUTLINED, tooltip='Fluxo e cenas', items=[
-            menu_item(view.keymap.describe('Criar moldura', Action.GROUP), on_click=lambda e: self.group_dialog()),
-            menu_item('Desconectar', on_click=self.disconnect_selected),
-            menu_item('Remover e reconectar', on_click=self.remove_preserving),
-        ])
+            self.commands['group'], menu_separator(), self.commands['organize'], menu_separator(),
+            self.commands['disconnect'], self.commands['remove_preserving']])
 
     def sync_history(self):
         locked = self.view.busy or bool(self.view.load_error)
@@ -87,7 +93,7 @@ class GraphActions:
             except ValueError as exc:
                 error.value, error.visible = str(exc), True
                 self.page.update(error)
-        self.page.show_dialog(dialog(title=ft.Text('Renomear moldura' if group else 'Agrupar em moldura'),
+        self.page.show_dialog(dialog(title=ft.Text('Renomear moldura' if group else 'Agrupar em moldura'), on_confirm=save,
             content=ft.Column([field, error], width=380, tight=True),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
                      ft.FilledButton('Salvar', on_click=save)]))

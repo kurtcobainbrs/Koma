@@ -61,6 +61,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.sessions.append(session)
         session.board = board
         view = StoryboardView(Mock(), session, AppPreferences(self.directory))
+        view.page.show_dialog.side_effect = lambda popup: setattr(popup, 'open', True)
         for method in ('pan', 'zoom', 'reset'):
             setattr(view.workspace.viewer, method, AsyncMock())
         await view.activate()
