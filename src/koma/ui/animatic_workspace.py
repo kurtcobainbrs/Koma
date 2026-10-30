@@ -28,4 +28,3 @@ class AnimaticWorkspace:
             self.timeline.height = minimum
         elif self.timeline.height < minimum:
             self.timeline.height = minimum
-
