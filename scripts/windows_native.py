@@ -19,9 +19,12 @@ DEBUG_RUNTIME = re.compile(r'(?:vcruntime\d+(?:_\d+)?d|msvcp\d+d|ucrtbased)\.dll
 WINDOWS_SYSTEM_DLLS = set('''advapi32.dll avicap32.dll avrt.dll bcrypt.dll cfgmgr32.dll
 comctl32.dll crypt32.dll d3d11.dll d3d9.dll dbghelp.dll dwmapi.dll dxgi.dll gdi32.dll
 gdiplus.dll imm32.dll iphlpapi.dll kernel32.dll mf.dll mfplat.dll mfreadwrite.dll
-ntdll.dll ole32.dll oleacc.dll oleaut32.dll opengl32.dll propsys.dll psapi.dll
-rpcrt4.dll shell32.dll shlwapi.dll uiautomationcore.dll user32.dll uxtheme.dll
+msvcrt.dll ncrypt.dll ntdll.dll ole32.dll oleacc.dll oleaut32.dll opengl32.dll propsys.dll psapi.dll
+rpcrt4.dll secur32.dll shell32.dll shlwapi.dll uiautomationcore.dll user32.dll uxtheme.dll
 version.dll winmm.dll ws2_32.dll'''.split())
+# PyAV 17.1's delvewheel loader registers this package-local directory before
+# importing av._core. It is not a global search path for unrelated packages.
+PACKAGE_DLL_DIRECTORIES = {'av': ('av.libs',)}
 
 
 def inspect_pe(path):
@@ -83,6 +86,9 @@ def audit_distribution(directory, report_path, system_directory=None):
             errors.append(f'{relative}: DLL órfã não deve entrar no pacote')
         # O cliente Flutter é outro processo: não herda a resolução Python de _internal.
         search = [path.parent] if path.is_relative_to(internal / 'desktop/flet') else [path.parent, internal]
+        for package, directories in PACKAGE_DLL_DIRECTORIES.items():
+            if path.is_relative_to(internal / package):
+                search.extend(internal / folder for folder in directories)
         local_names = {p.name.lower() for folder in search if folder.is_dir() for p in folder.iterdir() if p.is_file()}
         resolved = {}
         for name in info['imports']:

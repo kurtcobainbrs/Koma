@@ -81,3 +81,20 @@ class NativePolicyTests(unittest.TestCase):
         self.read_pe.return_value['machine'] = 0x14c
         with self.assertRaisesRegex(ValueError, 'arquitetura diferente de x64'):
             native.audit_distribution(self.client, self.root / 'audit.json', self.root)
+
+    def test_package_registered_dll_directory_is_resolved_only_for_its_package(self):
+        dist = self.root / 'dist'
+        for folder in ('av/audio', 'av.libs', 'other'):
+            (dist / '_internal' / folder).mkdir(parents=True)
+        codec = dist / '_internal/av.libs/codec.dll'
+        codec.write_bytes(b'codec')
+        module = dist / '_internal/av/audio/frame.pyd'
+        module.write_bytes(b'av-module')
+        self.read_pe.side_effect = lambda path: {'machine': 0x8664,
+            'imports': ['codec.dll'] if path.suffix == '.pyd' else []}
+        report = native.audit_distribution(dist, self.root / 'audit.json', self.root)
+        row = next(row for row in report['native_files'] if row['file'].endswith('frame.pyd'))
+        self.assertEqual(row['dependencies']['codec.dll'], 'bundled')
+        (dist / '_internal/other/unrelated.pyd').write_bytes(b'other')
+        with self.assertRaisesRegex(ValueError, 'dependência ausente codec.dll'):
+            native.audit_distribution(dist, self.root / 'audit.json', self.root)
