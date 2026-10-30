@@ -48,7 +48,8 @@ class StoryboardChrome:
         edit = self.edit_commands
         self.edit_menu = menu('Editar', [edit[Action.UNDO], edit[Action.REDO], menu_separator(),
             edit[Action.CUT_NODES], edit[Action.COPY], edit[Action.PASTE], menu_separator(),
-            edit[Action.DUPLICATE], edit[Action.MOVE], menu_separator(), edit[Action.DELETE]])
+            edit[Action.DUPLICATE], edit[Action.MOVE], menu_separator(), edit[Action.DELETE],
+            menu_separator(), item('Preferências…', self.open_preferences, ft.Icons.TUNE)])
         self.snap_item = item('Ajustar à grade', self.workspace.toggle_snap, ft.Icons.GRID_ON)
         self.tools_item = item('Ferramentas', self.toggle_tools, ft.Icons.BUILD_OUTLINED)
         self.props_item = self.shortcut_item('Propriedades', Action.PROPERTIES, view.properties.toggle, ft.Icons.TUNE)
@@ -106,8 +107,7 @@ class StoryboardChrome:
             submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED),
             submenu('Exportar', [commands['pdf'], commands['mp4']], icon=ft.Icons.FILE_UPLOAD_OUTLINED),
             menu_separator(),
-            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED),
-            item('Preferências…', self.open_preferences, ft.Icons.TUNE)]
+            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED)]
         for entry in files.items:
             entry.height = MENU_ITEM_HEIGHT
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)

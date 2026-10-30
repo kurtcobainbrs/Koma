@@ -1,6 +1,6 @@
 # Preferências globais
 
-Abra **Arquivo > Preferências…**. A janela reúne 12 categorias em uma navegação
+Abra **Editar > Preferências…**. A janela reúne 12 categorias em uma navegação
 lateral, com campos compactos, prévia de identificação e estilos e restauração
 por seção. Os atalhos editam o mapa compartilhado, com validação de conflitos.
 
