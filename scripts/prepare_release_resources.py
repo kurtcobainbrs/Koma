@@ -40,7 +40,7 @@ def prepare(root):
 def third_party_notices(root, destination, client):
     root, destination = Path(root), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    pending = ['flet', 'flet-desktop', 'platformdirs', 'reportlab', 'pillow', 'miniaudio']
+    pending = ['flet', 'flet-desktop', 'platformdirs', 'reportlab', 'pillow', 'miniaudio', 'av']
     seen, notices = set(), []
     while pending:
         name = pending.pop()

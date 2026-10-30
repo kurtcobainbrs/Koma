@@ -1,50 +1,58 @@
-"""Reprodução temporizada por relógio monotônico; usa imagens já em memória."""
+"""Playback and editing tools shared by the full Animatic workspace."""
 
 import asyncio
 from time import monotonic
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
-from koma.ui.design import APP_PADDING, COMPACT_CONTROL_HEIGHT, ICON_SIZE, MUTED, dialog
+from koma.ui.design import APP_PADDING, COMPACT_CONTROL_HEIGHT, ICON_SIZE, MUTED, input_style
 from koma.ui.typography import FONT_HEADING, TEXT_SECTION, TEXT_SMALL
 from koma.editor.framing import ImageViewport
 from koma.editor.subtitle_preview import SubtitlePreview
 from koma.editor.timeline import Timeline
+from koma.editor.scenes import resolve_scene
 from koma.editor.timeline_edit import TimelineEditor
 from koma.editor.shortcuts import Action
 from koma.keymap import key_name
 from koma.ui.timeline_strip import TimelineStrip
-from koma.ui.player_layout import PlayerLayout
+from koma.ui.animatic_workspace import AnimaticWorkspace
+from koma.editor.selection import NodeSelection
 from koma.ui.player_toolbar import PlayerToolbar
 from koma.ui.components import toggle_icon
-from koma.ui.splitter import Splitter
 from koma.editor.timeline_media import TimelineMedia
 from koma.audio_transport import AudioTransport
 from koma.editor.marker_edit import MarkerEditor
 from koma.editor.timeline_navigation import adjacent_stop
 from koma.editor.drawing_editor import FrameDrawingEditor
 from koma.ui.drawing_surface import DrawingSurface
+from koma.editor.video_preview import VideoPreview
+from koma.ui.workspace_style import WORKSPACE_STYLE
+from koma.ui.retained_container import retain_children
 
 
 class AnimaticPlayer:
     def __init__(self, view):
         self.view = view
         self.opened = self.playing = False
-        self.dismiss_pending = False
+        self.suspended = False
+        self.selection = NodeSelection()
+        self.inspector_key = None
         self.position = 0.0
         self.anchor = 0.0
         self.current = -1
+        self.modifiers = set()
         self.task = None
         self.timeline = None
         self.scene_anchor = None
         self.media = TimelineMedia(self)
         self.audio_transport = AudioTransport()
+        self.video_preview = VideoPreview(self)
         self.duration_editor = TimelineEditor(self)
         self.marker_editor = MarkerEditor(self)
         self.drawing = FrameDrawingEditor(self)
         self.drawing_surface = DrawingSurface(self)
         self.strip = TimelineStrip(self, self.duration_editor)
-        self.layout = PlayerLayout()
         self.preview = ImageViewport(view, height=400, show_drawing=False)
         self.subtitles = SubtitlePreview(self)
         self.screen = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=ft.Stack(
@@ -71,60 +79,128 @@ class AnimaticPlayer:
         self.preview_bounds = None
         self.preview_slot = ft.Container(content=self.screen, alignment=ft.Alignment.CENTER,
             on_size_change=self.preview_resized)
-        self.preview_splitter = Splitter(view.page, self.preview_slot, horizontal=True, minimum=120, maximum=900)
-        self.content = ft.Column([self.preview_slot, self.preview_splitter.content, self.controls, self.strip.content], tight=True, spacing=APP_PADDING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
-        self.keyboard = ft.KeyboardListener(content=self.content, autofocus=True)
         self.export_button = ft.OutlinedButton('Exportar MP4', icon=ft.Icons.FILE_UPLOAD_OUTLINED, tooltip='Exportar animatic em MP4',
             height=COMPACT_CONTROL_HEIGHT, on_click=view.files.video_from_player)
-        self.title = ft.Text('Animatic', expand=True, size=TEXT_SECTION,
+        self.title = ft.Text('Animatic', width=WORKSPACE_STYLE.scene_choice_width, size=TEXT_SECTION,
             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-        self.close_button = ft.IconButton(icon=ft.Icons.CLOSE, tooltip='Fechar · Esc', on_click=self.close,
+        self.scene_choice = ft.Dropdown(width=WORKSPACE_STYLE.scene_choice_width, options=[], on_select=self.choose_scene,
+            tooltip='Cena', **input_style(height=COMPACT_CONTROL_HEIGHT))
+        self.scenes_key = None
+        self.close_button = ft.IconButton(icon=ft.Icons.ARROW_BACK, tooltip='Voltar ao canvas · Esc', on_click=self.close,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
-        self.popup = dialog(title=ft.Column([
-                ft.Row([self.title, self.export_button, self.close_button], spacing=APP_PADDING * 2),
-                self.drawing_surface.tools], tight=True, spacing=APP_PADDING,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH), content=self.keyboard,
-            inset_padding=ft.Padding.all(self.layout.dialog_inset),
-            title_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
-            content_padding=ft.Padding.symmetric(horizontal=self.layout.content_padding, vertical=APP_PADDING),
-            actions_padding=0, modal=True, on_dismiss=self.dismissed, native_actions=False)
+        self.drawing_slot = ft.Container(content=self.drawing_surface.tools, expand=True)
+        self.header = ft.Row([
+                self.scene_choice, self.title, self.drawing_slot,
+                ft.IconButton(icon=ft.Icons.PERM_MEDIA_OUTLINED, tooltip='Mídias do quadro',
+                    width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
+                    on_click=lambda e: self.view.node_media.open_editor(self.selection.active)
+                        if self.selection.active else None),
+                    self.export_button], spacing=APP_PADDING * 2)
+        self.layout = AnimaticWorkspace(self, self.header)
+        self.content, self.surface = self.layout.body, self.layout.content
 
     def open(self, e=None):
-        if not self.view.editable() or not self.view.board.frames or self.opened or self.dismiss_pending:
+        if not self.view.editable() or not self.view.board.frames or self.opened:
             return
-        self.timeline = Timeline(self.view.board, self.view.workspace.navigation.selected)
-        if not self.timeline.frames:
-            self.view.notify('Esta cena não tem quadros ativos. Conecte quadros ou desmute os nodes para reproduzir.' if self.timeline.root
-                else 'Selecione um Node Principal ou um quadro conectado a ele para reproduzir a cena.', 'warning')
-            return
+        previous = self.timeline
+        active = self.view.workspace.navigation.selected
+        scene = resolve_scene(self.view.board, active, fallback=self.scene_anchor)
+        reusable = (previous is not None and previous.board is self.view.board
+            and (previous.root.id if previous.root else None) == (scene.id if scene else None))
+        self.timeline = previous if reusable else Timeline(self.view.board, scene.id if scene else active)
         self.title.value = self.timeline.root.title or 'Cena' if self.timeline.root else 'Prévia'
         self.scene_anchor = self.timeline.root.id if self.timeline.root else None
-        self.position, self.current = 0, -1
-        self.layout.apply(self.view.page, self.content, self.preview_slot)
-        if self.preview_splitter.user_resized:
-            self.preview_slot.expand = False
+        same_scope = previous is not None and (previous.root.id if previous.root else None) == self.scene_anchor
+        self.position = max(0, min(self.position, self.timeline.total)) if same_scope else 0
+        active_index = next((index for index, frame in enumerate(self.timeline.frames) if frame.id == active), None)
+        if active_index is not None:
+            self.position = self.timeline.starts[active_index]
+        if not reusable:
+            self.current = -1
+        self.view.properties.end_adjust()
+        self.view.workspace.cancel_gestures()
         self.opened = True
+        self.suspended = False
+        identifiers = {frame.id for frame in self.timeline.frames}
+        selected = active if active in identifiers else self.selection.active
+        selected = selected if selected in identifiers else (self.timeline.frames[0].id
+            if self.timeline.frames else self.scene_anchor)
+        self.selection.replace({selected} if selected else set(), selected)
+        self.inspector_key = None
         self.media.cancelled.clear()
         self.playing = False
-        self.strip.reset()
+        if same_scope:
+            self.strip.sync()
+        else:
+            self.strip.reset()
         self.render(update=False)
-        self.view.page.show_dialog(self.popup)
+        self.view.work_modes.show(True, retain_timeline=reusable)
         self.focus_timeline()
 
     def focus_timeline(self):
-        if self.opened and not self.view.closing:
-            self.view.page.run_task(self.keyboard.focus)
+        self.view.focus.request(self.keyboard,
+            lambda: self.opened and self.view.active and not self.view.closing)
+
+    def sync_scenes(self):
+        scenes = tuple((frame.id, frame.title or 'Cena') for frame in self.view.board.frames if frame.node_type.starts_scene)
+        if scenes != self.scenes_key:
+            self.scenes_key = scenes
+            self.scene_choice.options = [ft.DropdownOption(identifier, title) for identifier, title in scenes]
+        self.scene_choice.visible = bool(scenes)
+        self.title.visible = not bool(scenes)
+        self.scene_choice.value = self.scene_anchor
+        self.scene_choice.disabled = self.editing or not self.view.editable()
+        self.title.value = 'Animatic' if scenes else self.view.board.title
+
+    def choose_scene(self, e=None):
+        identifier = self.scene_choice.value
+        if not self.view.editable() or self.editing or not any(
+                frame.id == identifier and frame.node_type.starts_scene for frame in self.view.board.frames):
+            return
+        self.playing = False
+        self.audio_transport.stop()
+        self.video_preview.clear()
+        self.drawing.clear_selection()
+        self.view.properties.release_field_focus()
+        self.timeline = Timeline(self.view.board, identifier)
+        self.scene_anchor, self.position, self.current = identifier, 0, -1
+        self.selection.replace({self.timeline.frames[0].id} if self.timeline.frames else {identifier})
+        self.strip.reset()
+        self.render()
+        self.focus_timeline()
+
+    def suspend(self):
+        if self.opened:
+            self.drawing_surface.close_picker()
+            self.dismissed()
+            self.suspended = True
+
+    def resume(self):
+        if not self.suspended or not self.view.editable():
+            return
+        self.suspended = False
+        self.opened = True
+        self.media.cancelled.clear()
+        self.rebuild_timeline()
+        self.render(update=False)
+        self.view.work_modes.show(True)
+        self.focus_timeline()
 
     def fit_preview(self):
         self.screen.aspect_ratio = self.view.board.frame_format.aspect_ratio
         if self.preview_bounds:
             self.screen.width, self.screen.height = self.view.board.frame_format.fit(*self.preview_bounds)
 
+    @property
+    def presenting(self):
+        return self.opened and self.view.active and not self.view.closing
+
+    @explicit_updates
     def preview_resized(self, e):
+        if not self.presenting:
+            return
         if e.width > 0 and e.height > 0 and self.preview_bounds != (e.width, e.height):
             self.preview_bounds = (e.width, e.height)
-            self.preview_slot.height = e.height
             self.fit_preview()
             if self.opened:
                 self.view.page.update(self.screen)
@@ -134,17 +210,67 @@ class AnimaticPlayer:
         self.position = max(0, min(self.position, self.timeline.total))
         self.current = -1
 
+    def select_node(self, identifier, *, seek=False):
+        if not self.opened or self.editing or not self.view.editable():
+            return
+        if not any(frame.id == identifier for frame in self.view.board.frames):
+            return
+        if self.selection.active == identifier and not seek:
+            self.focus_timeline()
+            return
+        self.selection.replace({identifier}, identifier)
+        self.sync_inspector()
+        controls = self.strip.sync_selection()
+        if controls:
+            self.view.page.update(*controls)
+        if seek:
+            index = next((i for i, frame in enumerate(self.timeline.frames) if frame.id == identifier), None)
+            if index is not None:
+                self.playing = False
+                self.position = self.timeline.starts[index]
+        self.render_position()
+        self.focus_timeline()
+
+    def sync_inspector(self, *, update=True):
+        if not self.opened:
+            return
+        previous = self.selection.active
+        identifiers = {frame.id for frame in self.view.board.frames}
+        self.selection.replace(self.selection.ids & identifiers)
+        if not self.selection.ids and self.timeline and self.timeline.frames:
+            self.selection.replace({self.timeline.frames[0].id})
+        if previous != self.selection.active:
+            controls = self.strip.sync_selection()
+            if controls and self.view.active and not self.view.closing:
+                self.view.page.update(*controls)
+        frame = next((frame for frame in self.view.board.frames if frame.id == self.selection.active), None)
+        key = (self.selection.active, id(frame), self.view.busy, self.editing)
+        if key == self.inspector_key or self.view.workspace.navigation.editing_fields:
+            return
+        self.inspector_key = key
+        self.view.properties.sync()
+        if update and self.view.active and not self.view.closing:
+            self.view.page.update(self.view.properties.content)
+
+    def document_changed(self):
+        if self.opened and not self.editing and self.timeline.board is not self.view.board:
+            self.timeline = self.timeline.with_board(self.view.board)
+            self.position = max(0, min(self.position, self.timeline.total))
+            self.current = -1
+            self.render()
+
     @property
     def editing(self):
         return bool(self.duration_editor.drag or self.duration_editor.committing
             or self.marker_editor.drag or self.marker_editor.committing
             or self.drawing.drag or self.drawing.committing
-            or self.strip.audio_lane.drag.snapshot)
+            or self.strip.audio_lane.drag.snapshot or self.strip.audio_controls.gain.snapshot)
 
     def render(self, update=True):
         if self.timeline is None:
             return
         self.fit_preview()
+        self.sync_scenes()
         if self.duration_editor.drag is None and self.timeline.board is not self.view.board:
             self.rebuild_timeline()
         if self.drawing.drag and (not self.timeline.frames or
@@ -157,7 +283,9 @@ class AnimaticPlayer:
         if not self.timeline.frames:
             self.playing = False
             self.current = -1
+            self.subtitles.set_text('')
             self.caption.value = 'Nenhum quadro ativo nesta cena.'
+            self.caption.tooltip = None
             self.position = 0
         index = self.timeline.index_at(self.position)
         if self.timeline.frames and index != self.current:
@@ -177,21 +305,41 @@ class AnimaticPlayer:
         self.loop.tooltip = 'Repetir ligado · clique para desligar' if self.loop.selected else 'Repetir desligado · clique para ligar'
         self.previous_button.disabled = self.next_button.disabled = editing or not self.timeline.frames
         self.strip.sync()
+        self.sync_inspector(update=update)
         self.drawing_surface.sync()
+        self.sync_video()
         self.audio_transport.update(self.timeline, self.view.store, self.playing and self.opened, self.position)
         if self.audio_transport.error:
             self.view.notify(self.audio_transport.error, 'warning')
             self.audio_transport.error = ''
         if update and self.opened and not self.view.closing:
-            self.view.page.update(self.content, self.popup.title)
+            self.view.chrome.sync()
+            self.view.page.update(self.content, self.layout.timeline, self.view.chrome.content)
 
     def render_duration_preview(self, frame):
         """Update timing controls without resending the large preview or canvas."""
+        self.play.disabled = self.previous_button.disabled = self.next_button.disabled = self.editing
+        self.export_button.disabled = self.editing or not self.view.editable()
         self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
         self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
         self.strip.sync()
         if self.opened and not self.view.closing:
-            self.view.page.update(self.strip.content, self.controls, self.caption)
+            with retain_children(self.strip.audio_lane.canvas,
+                    *(block.thumbnail.canvas for block in self.strip.blocks.values())):
+                self.view.page.update(self.strip.content, self.controls, self.caption, self.export_button)
+
+    def set_gesture_locked(self, locked):
+        """Publish a logical gesture lock without touching preview or tracks."""
+        self.controls.disabled = locked
+        self.scene_choice.disabled = locked or not self.view.editable()
+        self.export_button.disabled = locked or not self.view.editable() or not self.timeline.frames
+        self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
+        if self.presenting:
+            self.view.page.update(self.controls, self.scene_choice, self.export_button)
+
+    def pause_for_edit(self):
+        self.playing = False
+        self.audio_transport.stop()
 
     def render_position(self):
         """Seek/playback update only transport and the frames that actually change."""
@@ -211,12 +359,20 @@ class AnimaticPlayer:
                     for i in {old_index, index} if 0 <= i < len(self.timeline.frames)]]
         else:
             self.strip.sync_cursor()
+            self.sync_video()
             self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
             self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
             self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
             self.audio_transport.update(self.timeline, self.view.store, self.playing, self.position)
             controls = []
         self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls)
+
+    def sync_video(self):
+        if self.timeline and 0 <= self.current < len(self.timeline.frames):
+            self.video_preview.request(self.timeline.frames[self.current],
+                self.position - self.timeline.starts[self.current])
+        else:
+            self.video_preview.clear()
 
     def toggle_subtitles(self, e=None):
         self.show_subtitles.selected = not self.show_subtitles.selected
@@ -283,10 +439,25 @@ class AnimaticPlayer:
         self.step(-1)
         self.focus_timeline()
 
+    @explicit_updates
+    def key_up(self, e):
+        self.modifiers.discard(key_name(e.key))
+
+    @explicit_updates
     async def key_down(self, e):
         modifiers = {name for field, name in (('ctrl', 'Ctrl'), ('alt', 'Alt'),
             ('shift', 'Shift'), ('meta', 'Meta')) if getattr(e, field, False)}
+        self.modifiers = modifiers
+        if key_name(e.key) in ('Ctrl', 'Alt', 'Shift', 'Meta'):
+            self.modifiers.add(key_name(e.key))
         action = self.view.keymap.resolve(e.key, modifiers, 'timeline')
+        if self.view.workspace.navigation.editing_fields:
+            if action == Action.CANCEL:
+                self.view.properties.release_field_focus()
+                self.inspector_key = None
+                self.sync_inspector()
+                self.focus_timeline()
+            return
         if self.drawing_surface.picker is not None:
             if action == Action.CANCEL:
                 self.drawing_surface.close_picker()
@@ -328,6 +499,7 @@ class AnimaticPlayer:
             editing = self.editing
             self.drawing.cancel()
             self.strip.audio_lane.drag.cancel()
+            self.strip.audio_controls.gain.cancel()
             self.duration_editor.cancel()
             self.marker_editor.cancel()
             if editing:
@@ -339,6 +511,8 @@ class AnimaticPlayer:
             return
         if action == Action.DRAWING_TOOLS:
             await self.drawing_surface.toggle_tools()
+        elif action == Action.PROPERTIES:
+            self.view.properties.toggle()
         elif action == Action.PLAY:
             self.toggle()
         elif action == Action.ADD_MARKER:
@@ -384,12 +558,15 @@ class AnimaticPlayer:
 
     def dismissed(self, e=None):
         self.opened = False
+        self.modifiers.clear()
+        self.video_preview.clear()
         self.drawing_surface.tool_menu.close()
         self.drawing.cancel(update=False)
         self.drawing.clear_selection()
         self.drawing_surface.reset_inputs()
         self.drawing_surface.focused = False
         self.strip.audio_lane.drag.cancel(update=False)
+        self.strip.audio_controls.gain.cancel(update=False)
         self.media.cancelled.set()
         self.audio_transport.stop()
         self.strip.audio_controls.focused = False
@@ -399,16 +576,17 @@ class AnimaticPlayer:
         self.strip.navigator.end()
         self.strip.duration_input.cancel()
         self.duration_editor.cancel(update=False)
-        self.subtitles.clear()
-        self.dismiss_pending = False
         self.opened = self.playing = False
         if self.task is not None:
             self.task.cancel()
             self.task = None
 
     def close(self, e=None):
+        if not self.opened and not self.suspended:
+            return
+        self.suspended = False
         self.drawing_surface.close_picker()
         self.drawing_surface.tool_menu.close()
         self.dismissed()
-        self.dismiss_pending = True
-        self.view.page.pop_dialog()
+        self.view.work_modes.show(False)
+        self.view.focus_editor()

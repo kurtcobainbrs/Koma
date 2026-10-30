@@ -28,6 +28,7 @@ class Action(StrEnum):
     DUPLICATE = 'storyboard.node.duplicate'
     DELETE = 'storyboard.node.delete'
     GROUP = 'storyboard.node.group'
+    SEQUENCE = 'storyboard.node.sequence'
     PASTE = 'storyboard.image.paste'
     UNDO = 'storyboard.undo'
     REDO = 'storyboard.redo'
@@ -57,6 +58,7 @@ class Action(StrEnum):
     DELETE_MARKER = DELETE_SELECTION
     IMPORT_AUDIO = 'timeline.audio.import'
     DRAWING_TOOLS = 'timeline.drawing.tools'
+    RIPPLE_DURATION = 'timeline.duration.ripple'
 
 
 ACTIONS = (
@@ -83,10 +85,11 @@ ACTIONS = (
     ShortcutAction(Action.DUPLICATE, 'Duplicar', ('Ctrl+D', 'Shift+D')),
     ShortcutAction(Action.DELETE, 'Excluir', ('Delete', 'Backspace')),
     ShortcutAction(Action.GROUP, 'Criar moldura', ('Ctrl+G',)),
+    ShortcutAction(Action.SEQUENCE, 'Criar sequência', ('Ctrl+Shift+G',)),
     ShortcutAction(Action.PASTE, 'Colar nodes ou imagem', ('Ctrl+V',)),
     ShortcutAction(Action.UNDO, 'Desfazer', ('Ctrl+Z',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.REDO, 'Refazer', ('Ctrl+Shift+Z', 'Ctrl+Y'), contexts=('canvas', 'timeline')),
-    ShortcutAction(Action.PROPERTIES, 'Propriedades', ('N',)),
+    ShortcutAction(Action.PROPERTIES, 'Propriedades', ('N',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.FOCUS, 'Enquadrar seleção / timeline', ('F',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.FIT, 'Enquadrar tudo', ('Home',)),
     ShortcutAction(Action.ALL, 'Selecionar todos', ('A', 'Ctrl+A')),
@@ -110,6 +113,8 @@ ACTIONS = (
     ShortcutAction(Action.DELETE_SELECTION, 'Excluir seleção no animatic', ('Delete',), contexts=('timeline',)),
     ShortcutAction(Action.IMPORT_AUDIO, 'Importar áudio', ('Ctrl+I',), contexts=('timeline',)),
     ShortcutAction(Action.DRAWING_TOOLS, 'Ferramentas de desenho', ('Tab',), contexts=('timeline',)),
+    ShortcutAction(Action.RIPPLE_DURATION, 'Empurrar quadros ao ajustar duração', ('Shift',),
+        contexts=('duration_drag',), trigger='modifier'),
 )
 
 

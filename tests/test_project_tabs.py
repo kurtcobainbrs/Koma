@@ -66,6 +66,34 @@ class ProjectTabsTests(unittest.TestCase):
             [self.app.tabs.targets[self.view], self.app.tabs.targets[second], self.app.tabs.end_target])
         self.assertIs(self.app.tabs.end_target.content, self.app.tabs.add)
 
+    def test_disconnect_cancels_focus_and_reconnect_targets_only_active_tab(self):
+        second = self.second()
+        second.focus_editor()
+        self.app.disconnected()
+        for view in (self.view, second):
+            self.assertFalse(view.focus.connected)
+            self.assertIsNone(view.focus.target)
+        self.app.reconnected()
+        self.assertIsNone(self.view.focus.target)
+        self.assertIs(second.focus.target, second.workspace.navigation.keyboard)
+
+    def test_project_switch_remains_available_after_animatic_roundtrips(self):
+        first = self.view
+        finish(first.add_frame())
+        board, history = first.board, tuple(first.history.past)
+        for _ in range(3):
+            first.player.open()
+            first.player.close()
+            self.assertTrue(first.editable())
+            self.assertFalse(first.work_modes.animatic.visible)
+        second = self.second()
+        self.assertIs(self.app.view, second)
+        self.assertTrue(finish(self.app.select_view(first)))
+        self.assertIs(self.app.view, first)
+        self.assertTrue(first.editable())
+        self.assertEqual(first.board, board)
+        self.assertEqual(tuple(first.history.past), history)
+
     def test_drag_reorders_tabs_without_switching_or_changing_documents(self):
         first = self.view
         finish(first.add_frame())
@@ -207,6 +235,7 @@ class ProjectTabsTests(unittest.TestCase):
             self.assertTrue(view.history.past)
             self.assertFalse(view.closing)
             self.assertFalse(view.busy)
+            self.assertTrue(view.focus.enabled)
         self.assertIs(self.app.view, second)
 
     def test_failed_save_while_closing_tab_keeps_it_open(self):
@@ -291,4 +320,5 @@ class ProjectTabsTests(unittest.TestCase):
         self.page.window.destroy.assert_awaited_once()
         for view in (first, second):
             self.assertTrue(view.closing)
+            self.assertFalse(view.focus.enabled)
             self.assertFalse(view.session.directory.exists())

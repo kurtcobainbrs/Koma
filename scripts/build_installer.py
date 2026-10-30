@@ -92,8 +92,8 @@ Use a variante portable para executar sem instalar; extraia a pasta inteira ante
 
 ## Observações desta prévia
 
-- O MP4 exige Blender instalado separadamente; PDF e edição funcionam sem Blender.
-- Projetos antigos abrem; novos salvamentos usam o formato 2, que clientes antigos não abrem.
+- O MP4 é gerado pelo próprio aplicativo, sem instalar programas adicionais.
+- Projetos antigos abrem; novos salvamentos usam o formato atual, que clientes antigos podem não abrir.
 - O instalador ainda não tem assinatura digital de publicação.
 - A homologação em uma máquina Windows limpa permanece pendente.
 - O arraste da própria trilha de áudio ainda não faz parte desta versão; use Início (frames).

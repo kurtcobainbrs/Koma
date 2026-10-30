@@ -15,8 +15,6 @@ async def dispatch(application, e):
         return False
     if application.transitioning or application.closing_attempt or any(v.busy for v in application.views):
         return True
-    if view.player.opened and action != Action.SAVE:
-        view.player.close()
     handlers = {Action.NEW: application.new_document, Action.OPEN: view.files.open_document,
         Action.SAVE: view.files.save_document, Action.SAVE_AS: view.files.save_as,
         Action.CLOSE_TAB: lambda: application.close_tab(view),

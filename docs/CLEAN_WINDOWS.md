@@ -2,7 +2,7 @@
 
 ## Ambiente e objetivo
 
-Use Windows 10/11 x64 padrão, atualizado, com conta comum. Não instale Python, Java, Visual Studio, Flet ou runtimes de depuração. O teste inicial deve ocorrer sem acesso à Internet, para comprovar o uso do cliente desktop incluído. O Blender é opcional no primeiro teste e necessário somente na etapa MP4.
+Use Windows 10/11 x64 padrão, atualizado, com conta comum. Não instale Python, Java, Visual Studio, Flet ou runtimes de depuração. O teste inicial deve ocorrer sem acesso à Internet, para comprovar o uso do cliente desktop incluído. O MP4 usa os codecs incluídos no aplicativo e dispensa Blender.
 
 Edições Windows N sem Media Feature Pack precisam de avaliação separada: o cliente Flet inclui plugins que importam Media Foundation. Essa variante não é coberta pela aprovação deste roteiro padrão.
 
@@ -87,20 +87,20 @@ Não use documentos pessoais no ensaio de interrupção.
 
 ## Segunda etapa: MP4
 
-Instale separadamente o Blender validado (5.0.1) ou disponibilize uma cópia confiável. Isso não é um requisito para abrir ou editar documentos. Execute:
+Inclua a exportação MP4 no diagnóstico, sem instalar outro programa:
 
 ```powershell
-.\validate_clean_windows.ps1 -Blender 'C:\Program Files\Blender Foundation\Blender 5.0\blender.exe'
+.\validate_clean_windows.ps1 -Video
 ```
 
-Use um destino novo se a execução anterior ocorreu no mesmo segundo. O JSON deve informar `mp4: passed`, com `exemplo.mp4` gerado por um **processo iniciado pelo executável empacotado**. A amostra tem 1280 × 720, 24 FPS e 30 frames (1,25 s). Abra o vídeo e confira cortes, enquadramento, acentos e legendas. O MP4 não contém áudio.
+Use um destino novo se a execução anterior ocorreu no mesmo segundo. O JSON deve informar `mp4: passed`, com `exemplo.mp4` gerado pelo exportador interno do executável empacotado. A amostra tem 1280 × 720, 24 FPS e 30 frames (1,25 s). Abra o vídeo e confira cortes, enquadramento, acentos e legendas. Essa amostra não contém áudio.
 
-Na interface, configure o Blender, exporte a cena, teste cancelamento e confirme que um vídeo anterior é preservado. Também teste Blender ausente/inválido: o erro deve ser claro e o editor deve continuar utilizável.
+Na interface, exporte uma cena com áudio, teste cancelamento e confirme que um vídeo anterior é preservado. Não deve haver solicitação para configurar programas externos.
 
 ## Evidências para devolver
 
 - Versão/edição do Windows, arquitetura, escala de tela e se o teste estava offline.
-- Hash do ZIP, `ambiente.json`, `diagnostics.json`, relatório da etapa Blender e logs dentro das amostras.
+- Hash do ZIP, `ambiente.json`, `diagnostics.json`, relatório da etapa MP4 e logs dentro das amostras.
 - Resultados da tabela, PDF/MP4 de teste e capturas de eventuais erros.
 - Indicação explícita de qualquer runtime que já estava instalado ou foi instalado durante o teste.
 

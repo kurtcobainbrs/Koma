@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 import math
 
-from koma.editor.timeline import snap_duration
 from koma.editor.timing import parse_duration
+from koma.editor.duration_trim import DurationTrim
 
 
 @dataclass
@@ -19,6 +19,9 @@ class DurationDrag:
     position: float
     previous_position: float
     timeline: object
+    trim: DurationTrim
+    ripple: bool
+    values: dict
 
 
 class TimelineEditor:
@@ -46,7 +49,7 @@ class TimelineEditor:
             if self.player.opened:
                 self.player.render()
 
-    def begin(self, identifier, pointer_x, scale):
+    def begin(self, identifier, pointer_x, scale, *, ripple=False):
         player, view = self.player, self.view
         if (self.drag or self.committing or not player.opened or not view.editable() or
                 not math.isfinite(pointer_x)):
@@ -55,12 +58,15 @@ class TimelineEditor:
         if index is None:
             return None
         frame = player.timeline.frames[index]
+        trim = DurationTrim.at(player.timeline, index)
         self.drag = DurationDrag(identifier, view.board, view.session, pointer_x, scale,
-            frame.duration, frame.duration, player.timeline.starts[index], player.position, player.timeline)
+            frame.duration, frame.duration, player.timeline.starts[index], player.position, player.timeline,
+            trim, ripple, {identifier: frame.duration} if ripple else trim.originals)
         player.playing = False
         player.position = self.drag.position
-        view.lock(True)
-        player.render()
+        view.lock(True, update=False)
+        player.render_position()
+        player.render_duration_preview(frame)
         return self.drag
 
     def move(self, token, pointer_x):
@@ -71,29 +77,35 @@ class TimelineEditor:
             self.cancel()
             return
         delta = pointer_x - drag.pointer_x
-        value = drag.duration if delta == 0 else snap_duration(
-            drag.duration + drag.scale.seconds(delta), drag.board.fps)
-        if value == drag.value:
+        values = drag.trim.resolve(drag.duration + drag.scale.seconds(delta), ripple=drag.ripple)
+        if values == drag.values:
             return
-        drag.value = value
-        self.player.timeline = drag.timeline.with_duration(drag.identifier, value)
+        drag.values = values
+        drag.value = values[drag.identifier]
+        self.player.timeline = drag.timeline.with_durations(values)
         frame = next(frame for frame in self.player.timeline.frames if frame.id == drag.identifier)
-        self.view.cards[drag.identifier].sync_duration(frame)
+        for item in self.player.timeline.frames:
+            if item.id in values and item.id in self.view.cards:
+                self.view.cards[item.id].sync_duration(item)
         self.player.render_duration_preview(frame)
 
     def restore_card(self, drag):
-        frame = next((frame for frame in self.view.board.frames if frame.id == drag.identifier), None)
-        if frame and drag.identifier in self.view.cards:
-            self.view.cards[drag.identifier].sync(frame)
-            if not self.view.closing:
-                self.view.page.update(self.view.cards[drag.identifier].content)
+        controls = []
+        identifiers = drag.trim.originals.keys()
+        for frame in self.view.board.frames:
+            if frame.id in identifiers and frame.id in self.view.cards:
+                card = self.view.cards[frame.id]
+                card.sync_duration(frame)
+                controls.append(card.duration)
+        if controls and not self.view.closing:
+            self.view.page.update(*controls)
 
     def cancel(self, e=None, *, update=True):
         if self.drag is None:
             return
         drag, self.drag = self.drag, None
         self.restore_card(drag)
-        self.view.lock(False)
+        self.view.lock(False, update=False)
         self.player.position = drag.previous_position
         self.player.rebuild_timeline()
         if update and self.player.opened:
@@ -104,14 +116,16 @@ class TimelineEditor:
             return
         drag, self.drag = self.drag, None
         self.committing = True
-        self.restore_card(drag)
-        self.view.lock(False)
+        self.view.lock(False, update=False)
         try:
             if (self.view.session is not drag.session or self.view.board is not drag.board or
                     not self.view.editable()):
+                self.restore_card(drag)
                 return
             if drag.value != drag.duration:
-                await self.view.set_frame_properties(drag.identifier, duration=drag.value)
+                await self.view.set_frames_properties({key: {'duration': seconds}
+                    for key, seconds in drag.values.items()},
+                    label='Ajustar corte' if len(drag.values) > 1 else 'Alterar duração')
                 self.view.properties.sync()
                 self.view.page.update(self.view.properties.content)
         finally:

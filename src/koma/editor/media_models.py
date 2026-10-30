@@ -8,6 +8,7 @@ from uuid import uuid4
 MAX_AUDIO_TRACKS = 32
 MAX_MARKERS = 2000
 MAX_AUDIO_SECONDS = 3600
+MAX_AUDIO_VOLUME = 2
 MARKER_PREFIX = 'M'
 
 
@@ -49,7 +50,7 @@ class AudioTrack:
             raise ValueError('Duração ou posição da trilha de áudio inválida.')
         if not isinstance(self.scene_id, str) or (self.scene_id and self.scene_id not in scenes):
             raise ValueError('Cena da trilha de áudio indisponível.')
-        if type(self.muted) is not bool or not finite_range(self.volume, 0, 2):
+        if type(self.muted) is not bool or not finite_range(self.volume, 0, MAX_AUDIO_VOLUME):
             raise ValueError('Volume ou estado da trilha de áudio inválido.')
 
 

@@ -13,6 +13,7 @@ VERSION = '1.0.5'
 SOURCES = {
     'lib/src/controls/base_controls.dart': '60467718ed47200631c2a000d48c7744d48d7d9f87cb1a3dde3ff2c1bdf6e86e',
     'lib/src/controls/slider.dart': '1dde0d65ef71e65dcec20829783f72b0ca4f289714e732cd4ba43f1219405a28',
+    'lib/src/controls/container.dart': '0b79bba5c58286695351ddfb8dbb8b0d6e3d8d088949da3aff760ee8887c8e31',
 }
 
 
@@ -33,12 +34,16 @@ def prepare(root, source=None):
     helper = (root / 'flutter/compat/overlay_boundary.dart').read_text(encoding='utf-8')
     (destination / 'lib/src/utils/koma_overlay.dart').write_text(helper, encoding='utf-8', newline='\n')
     for name, content in verified.items():
-        content = "import '../utils/koma_overlay.dart';\n" + content
-        if name.endswith('base_controls.dart'):
+        if name.endswith('container.dart'):
+            old = 'if (ignoreInteractions) {\n      container = IgnorePointer(child: container);\n    }'
+            new = 'container = IgnorePointer(ignoring: ignoreInteractions, child: container);'
+        elif name.endswith('base_controls.dart'):
+            content = "import '../utils/koma_overlay.dart';\n" + content
             old = 'return parseTooltip(control.get("tooltip"), context, widget) ?? widget;'
             new = ('final tooltip = parseTooltip(control.get("tooltip"), context, widget);\n'
                 '  return tooltip == null ? widget : isolateTooltip(tooltip);')
         else:
+            content = "import '../utils/koma_overlay.dart';\n" + content
             old = 'return LayoutControl(control: widget.control, child: slider);'
             new = 'return LayoutControl(control: widget.control, child: isolateOverlay(slider));'
         if content.count(old) != 1:

@@ -4,12 +4,16 @@ import struct
 from dataclasses import replace
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.ui.design import DRAG_INTERVAL_MS, MUTED, RADIUS
 from koma.editor.geometry import NODE_WIDTH
 from koma.editor.shortcuts import Action
 from koma.editor.frame_format import FrameFormat
 from koma.ui.drawing_overlay import DrawingOverlay
+from koma.ui.image_source import thumbnail_source
+from koma.ui.node_layout import NODE_LAYOUT
+from koma.ui.retained_container import RetainedContainer
 
 
 def png_size(data):
@@ -30,21 +34,29 @@ def placement(source, viewport, fit, x=0, y=0):
 
 
 class ImageViewport:
+    @property
+    def presentation_key(self):
+        frame = self.frame
+        return (self.format, self.width, self.height, id(self.image_data),
+            (frame.image, frame.image_fit, frame.crop_x, frame.crop_y, id(frame.drawing)) if frame else None)
+
     def __init__(self, view, identifier=None, height=180, *, show_drawing=True):
         self.view, self.identifier = view, identifier
-        self.width, self.height = NODE_WIDTH-18, height
+        self.width, self.height = NODE_LAYOUT.image_width(NODE_WIDTH), height
         self.maximum_height = height
         self.format = None
         self.frame = None
         self.source = FrameFormat().size
         self.drag = None
         self.image = None
+        self.image_data = None
         self.drawing = DrawingOverlay() if show_drawing else None
         self.stack = ft.Stack(expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE)
         self.gesture = ft.GestureDetector(content=self.stack, drag_interval=DRAG_INTERVAL_MS,
             on_tap_down=self.select, on_pan_start=self.begin, on_pan_update=self.move,
             on_pan_end=self.end, on_pan_cancel=self.cancel)
-        self.content = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=self.gesture, border_radius=RADIUS,
+        self.content = RetainedContainer(hold_updates=lambda: False,
+            aspect_ratio=view.board.frame_format.aspect_ratio, content=self.gesture, border_radius=RADIUS,
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW, clip_behavior=ft.ClipBehavior.HARD_EDGE,
             on_size_change=self.resized)
 
@@ -54,14 +66,16 @@ class ImageViewport:
             self.format = format
             self.content.aspect_ratio = format.aspect_ratio
             if self.identifier is not None:
-                self.width, self.height = format.fit(NODE_WIDTH-18, self.maximum_height)
+                self.width, self.height = format.fit(NODE_LAYOUT.image_width(NODE_WIDTH), self.maximum_height)
                 self.content.width, self.content.height = self.width, self.height
-        changed_image = self.frame is None or self.frame.image != frame.image
+        data = self.view.thumbnails.get(frame.image)
+        changed_image = self.frame is None or self.frame.image != frame.image or self.image_data is not data
         self.frame = frame
         if changed_image:
-            data = self.view.thumbnails.get(frame.image)
+            self.image_data = data
             self.source = png_size(data)
-            self.image = ft.Image(src=data, fit=ft.BoxFit.FILL, gapless_playback=True) if data else None
+            self.image = ft.Image(src=thumbnail_source(self.view, frame.image),
+                fit=ft.BoxFit.FILL, gapless_playback=True) if data else None
             self.stack.controls = [self.image] if data else [ft.Container(left=0, top=0,
                 width=self.width, height=self.height, alignment=ft.Alignment.CENTER,
                 content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=28, color=MUTED))]
@@ -84,17 +98,22 @@ class ImageViewport:
         return bool(self.identifier and self.image and self.frame
             and self.frame.image_fit == 'cover' and self.view.editable())
 
+    @explicit_updates
     def resized(self, e):
-        if e.width > 0 and e.height > 0:
+        if not self.view.active or self.view.closing or (self.identifier is None and not self.view.player.presenting):
+            return
+        if e.width > 0 and e.height > 0 and (e.width, e.height) != (self.width, self.height):
             self.width, self.height = e.width, e.height
             self.layout()
             if not self.view.closing:
                 self.view.page.update(self.stack)
 
+    @explicit_updates
     def select(self, e):
         if self.identifier:
             self.view.workspace.navigation.node_click(self.identifier)
 
+    @explicit_updates
     def begin(self, e):
         if not self.can_adjust() or self.view.workspace.navigation.effective_mode != 'select':
             return
@@ -102,8 +121,9 @@ class ImageViewport:
         self.view.properties.adjusting = self.identifier
         self.drag = self.frame, e.global_position.x, e.global_position.y, self.view.workspace.zoom
         self.view.workspace.viewer.scale_enabled = False
-        self.view.page.update(self.view.workspace.viewer)
+        self.view.workspace.update_interaction()
 
+    @explicit_updates
     def move(self, e):
         if not self.drag:
             return

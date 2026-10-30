@@ -4,6 +4,7 @@ import asyncio
 import math
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.editor.shortcuts import Action
 from koma.ui import drop_runtime
@@ -35,6 +36,7 @@ class SecondaryPointer:
                 and not ws.box_selection.active and not ws.box_zoom.active and not ws.focusing_region)
             self.native.reserved_modifiers = list(ws.view.keymap.bindings(Action.CUT_DRAG))
 
+    @explicit_updates
     async def native_navigation(self, e):
         ws = self.workspace
         if ws.view.closing or not ws.view.active:
@@ -49,6 +51,7 @@ class SecondaryPointer:
         else:
             await ws.scene_secondary_click(e)
 
+    @explicit_updates
     def begin(self, e):
         ws = self.workspace
         if ws.grab.active:
@@ -71,6 +74,7 @@ class SecondaryPointer:
             ws.viewer.pan_enabled = ws.viewer.scale_enabled = False
             ws.page.update(ws.viewer)
 
+    @explicit_updates
     async def move(self, e):
         async with self.lock:
             await self._move(e)
@@ -97,6 +101,7 @@ class SecondaryPointer:
         await ws.pan_by((x - previous[0]) / ws.zoom, (y - previous[1]) / ws.zoom)
         ws.camera_memory.remember()
 
+    @explicit_updates
     async def end(self, e):
         async with self.lock:
             if self.press is None:

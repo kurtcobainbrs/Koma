@@ -1,5 +1,6 @@
 """Immediate draggable dividers, separate from editor commands."""
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 from koma.ui.design import BORDER, APP_PADDING, DRAG_INTERVAL_MS
 
 
@@ -15,10 +16,12 @@ class Splitter:
             content=ft.Container(bgcolor=BORDER, height=APP_PADDING if horizontal else None,
                 width=None if horizontal else APP_PADDING))
 
+    @explicit_updates
     def begin(self, e):
         self.origin = e.global_position.y if self.horizontal else e.global_position.x
         self.value = (self.target.height if self.horizontal else self.target.width) or self.minimum
 
+    @explicit_updates
     def move(self, e):
         if self.origin is None:
             return
@@ -36,11 +39,13 @@ class Splitter:
             self.target.width = value
         self.page.update(self.target)
 
+    @explicit_updates
     def end(self, e=None):
         # The release position may be newer than the last throttled update.
         if e is not None:
             self.move(e)
         self.cancel()
 
+    @explicit_updates
     def cancel(self, e=None):
         self.origin = self.value = None

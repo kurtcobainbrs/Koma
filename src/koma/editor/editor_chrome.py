@@ -1,4 +1,5 @@
 """Menus e barras do editor; não contém regras de nodes ou persistência."""
+from koma.ui.event_updates import explicit_updates
 
 import flet as ft
 
@@ -8,6 +9,8 @@ from koma.ui.menus import menu_item, popup_menu, submenu, menu_separator, MENU_I
 from koma.editor.editor_menu import EditorMenuBar
 from koma.editor.node_types import NODE_TYPES
 from koma.editor.shortcuts import Action
+from koma.ui.node_icons import node_icon
+from koma.ui.workspace_style import WORKSPACE_STYLE
 
 
 def item(label, handler, icon=None):
@@ -49,9 +52,12 @@ class StoryboardChrome:
         self.snap_item = item('Ajustar à grade', self.workspace.toggle_snap, ft.Icons.GRID_ON)
         self.tools_item = item('Ferramentas', self.toggle_tools, ft.Icons.BUILD_OUTLINED)
         self.props_item = self.shortcut_item('Propriedades', Action.PROPERTIES, view.properties.toggle, ft.Icons.TUNE)
-        self.view_menu = menu('Exibir', [self.shortcut_item('Enquadrar tudo', Action.FIT, self.workspace.fit, ft.Icons.FIT_SCREEN),
-            self.shortcut_item('Enquadrar seleção', Action.FOCUS, self.nav.focus_selected, ft.Icons.CENTER_FOCUS_STRONG),
-            item('Zoom 100%', self.workspace.reset, ft.Icons.ZOOM_IN), menu_separator(),
+        self.fit_all = self.shortcut_item('Enquadrar tudo', Action.FIT, self.fit_active, ft.Icons.FIT_SCREEN)
+        self.fit_selection = self.shortcut_item('Enquadrar seleção', Action.FOCUS, self.nav.focus_selected, ft.Icons.CENTER_FOCUS_STRONG)
+        self.reset_zoom = item('Zoom 100%', self.workspace.reset, ft.Icons.ZOOM_IN)
+        self.canvas_view_commands = (self.fit_selection, self.reset_zoom, self.snap_item, self.tools_item)
+        self.view_menu = menu('Exibir', [self.fit_all, self.fit_selection,
+            self.reset_zoom, menu_separator(),
             self.snap_item, menu_separator(),
             submenu('Painéis', [self.props_item, self.tools_item,
                 item('Mídias…', self.open_media, ft.Icons.PERM_MEDIA_OUTLINED)], icon=ft.Icons.VIEW_SIDEBAR_OUTLINED),
@@ -65,11 +71,11 @@ class StoryboardChrome:
             item('Áudio…', self.import_audio, ft.Icons.AUDIO_FILE_OUTLINED),
             item('Projeto…', self.import_project, ft.Icons.FILE_OPEN_OUTLINED)]
         self.add_menu = menu('Inserir', [
-            *[item(spec.label, view.node_handler(spec.kind),
-                ft.Icons.MOVIE_OUTLINED if spec.starts_scene else ft.Icons.ADD)
+            *[item(spec.label, view.node_handler(spec.kind), node_icon(spec))
               for spec in NODE_TYPES.values()],
             menu_separator(), submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED)])
         self.track_shortcut(view.graph.commands['group'], 'Criar moldura…', Action.GROUP)
+        self.track_shortcut(view.graph.commands['sequence'], 'Criar sequência', Action.SEQUENCE)
         self.node_menu = view.graph.menu
         self.node_menu.icon = None
         self.node_menu.content = menu_label('Fluxo')
@@ -100,21 +106,28 @@ class StoryboardChrome:
             submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED),
             submenu('Exportar', [commands['pdf'], commands['mp4']], icon=ft.Icons.FILE_UPLOAD_OUTLINED),
             menu_separator(),
-            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED), commands['blender']]
+            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED)]
         for entry in files.items:
             entry.height = MENU_ITEM_HEIGHT
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
         self.menus = EditorMenuBar([(files, True),
             *[(source, False) for source in self.toolbar.controls]])
-        self.play = ft.FilledButton('Animatic', icon=ft.Icons.PLAY_ARROW,
+        self.play = ft.OutlinedButton('Animatic', width=WORKSPACE_STYLE.mode_button_width,
             tooltip='Abrir animatic da cena ativa', height=COMPACT_CONTROL_HEIGHT,
             on_click=view.player.open)
+        self.canvas_mode = ft.OutlinedButton('Canvas', width=WORKSPACE_STYLE.mode_button_width,
+            tooltip='Modo Canvas', height=COMPACT_CONTROL_HEIGHT, on_click=view.player.close)
+        self.modes = ft.Row([self.canvas_mode, self.play], tight=True, spacing=0)
         view.properties.toggle_button.width = view.properties.toggle_button.height = COMPACT_CONTROL_HEIGHT
-        self.content = ft.Container(bgcolor=SURFACE, border=ft.Border.all(1, BORDER), border_radius=RADIUS,
+        view.properties.toggle_button.visible = False
+        self.content = ft.Container(bgcolor=SURFACE, border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
             padding=ft.Padding.symmetric(horizontal=4, vertical=2), on_size_change=self.resized,
             content=ft.Row([
-                ft.Row([self.menus.content], expand=True, scroll=ft.ScrollMode.AUTO, spacing=0),
-                self.play, view.properties.toggle_button,
+                ft.Container(expand=True, content=ft.Row([self.menus.content],
+                    scroll=ft.ScrollMode.AUTO, spacing=0)),
+                self.modes,
+                ft.Container(expand=True, content=ft.Row([view.properties.toggle_button],
+                    alignment=ft.MainAxisAlignment.END, spacing=0)),
             ], spacing=4, height=COMPACT_CONTROL_HEIGHT))
         # A seleção ocupa o rodapé; ações de edição ficam nos menus.
         selection = self.nav.selection_bar
@@ -194,15 +207,22 @@ class StoryboardChrome:
         self.view.graph.redo_button.tooltip = self.view.keymap.describe('Refazer', Action.REDO)
         self.view.properties.toggle_button.tooltip = self.view.keymap.describe('Propriedades', Action.PROPERTIES)
 
+    async def fit_active(self, e=None):
+        if self.view.player.opened:
+            self.view.player.strip.fit()
+        else:
+            await self.workspace.fit(e)
+
     def sync(self):
         if self.view.loaded and not self.view.closing and self.view.on_state:
             self.view.on_state(self.view)
         edit = self.edit_commands
-        edit[Action.UNDO].disabled = self.view.graph.undo_button.disabled
-        edit[Action.REDO].disabled = self.view.graph.redo_button.disabled
+        edit[Action.UNDO].disabled = self.view.graph.undo_button.disabled or self.view.player.editing
+        edit[Action.REDO].disabled = self.view.graph.redo_button.disabled or self.view.player.editing
         edit[Action.UNDO].content = self.view.keymap.describe(self.view.history.undo_description, Action.UNDO)
         edit[Action.REDO].content = self.view.keymap.describe(self.view.history.redo_description, Action.REDO)
-        selected = bool(self.nav.selection.ids)
+        selected = bool(self.view.edit_selection.ids)
+        self.nav.selection_count.value = f'{len(self.view.edit_selection.ids)} selecionados'
         for action in (Action.CUT_NODES, Action.COPY, Action.DUPLICATE, Action.MOVE, Action.DELETE):
             edit[action].disabled = not selected
         active = next((frame for frame in self.view.board.frames if frame.id == self.nav.selected), None)
@@ -216,6 +236,22 @@ class StoryboardChrome:
         self.view.count.visible = self.wide and not selected
         self.nav.selection_bar.visible = selected
         self.play.disabled = not self.view.editable() or not self.view.board.frames
+        self.canvas_mode.disabled = not self.view.editable()
+        for button, active in ((self.canvas_mode, not self.view.player.opened), (self.play, self.view.player.opened)):
+            button.style = ft.ButtonStyle(animation_duration=0,
+                bgcolor=ft.Colors.PRIMARY_CONTAINER if active else None,
+                side=ft.BorderSide(1, ft.Colors.PRIMARY if active else BORDER))
+        self.workspace.controls.visible = not self.view.player.opened
+        for command in self.canvas_view_commands:
+            command.disabled = self.view.player.opened
+        self.fit_all.content = self.view.keymap.describe(
+            'Enquadrar timeline' if self.view.player.opened else 'Enquadrar tudo',
+            Action.FOCUS if self.view.player.opened else Action.FIT)
+        if self.view.player.opened:
+            for action in (Action.CUT_NODES, Action.COPY, Action.PASTE, Action.DUPLICATE, Action.MOVE, Action.DELETE):
+                edit[action].disabled = True
+        for source in (self.selection_menu, self.add_menu, self.node_menu):
+            source.disabled = self.view.player.opened or self.toolbar.disabled
         self.menus.sync(self.toolbar.disabled)
         self.sync_status()
 
@@ -226,10 +262,12 @@ class StoryboardChrome:
         locked = busy or bool(self.view.load_error)
         self.toolbar.disabled = self.right_tools.disabled = locked
         self.play.disabled = locked or not self.view.board.frames
+        self.canvas_mode.disabled = locked
         self.view.properties.toggle_button.disabled = locked
         self.view.files.menu.disabled = busy
         self.menus.sync(self.toolbar.disabled)
 
+    @explicit_updates
     def resized(self, e):
         if e.width <= 0 or self.view.closing:
             return
@@ -263,7 +301,7 @@ class StoryboardChrome:
         self.page.update(self.nav.tools, self.content)
 
     def select_all(self, e=None):
-        self.nav.apply_selection(set(self.view.cards))
+        self.nav.apply_selection({key for key, card in self.view.cards.items() if card.content.visible})
         self.nav.focus_keyboard()
 
     def select_none(self, e=None):
@@ -271,5 +309,5 @@ class StoryboardChrome:
         self.nav.focus_keyboard()
 
     def invert(self, e=None):
-        self.nav.apply_selection(set(self.view.cards)-self.nav.selection.ids)
+        self.nav.apply_selection({key for key, card in self.view.cards.items() if card.content.visible} - self.nav.selection.ids)
         self.nav.focus_keyboard()

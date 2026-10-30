@@ -11,6 +11,7 @@ from flet.controls.exceptions import FletException, FletUnsupportedPlatformExcep
 from koma.documents.images import IMAGE_EXTENSIONS, import_image, import_image_bytes
 from koma.editor.models import MAX_CARDS, StoryFrame
 from koma.editor.geometry import coordinate
+from koma.editor.node_media import with_image
 
 
 class StoryboardImageInput:
@@ -21,6 +22,10 @@ class StoryboardImageInput:
         """Destino capturado no drop, validado antes de qualquer alteração."""
         view = self.view
         if not view.editable():
+            return
+        from koma.editor.node_media import VIDEO_EXTENSIONS
+        if any(Path(path).suffix.lower().lstrip('.') in VIDEO_EXTENSIONS for path in paths):
+            await view.node_media.import_paths(identifier, paths, position=position)
             return
         if len(paths) != 1:
             view.notify('Solte uma imagem por vez sobre um quadro ou no canvas.', 'warning')
@@ -47,11 +52,12 @@ class StoryboardImageInput:
             if view.closing or not view.active or view.session is not session or view.revision != revision:
                 return
             if identifier is not None:
-                updated = view.board.change(identifier, image=name, crop_x=0, crop_y=0)
+                changed = with_image(frame, name, source.name)
+                updated = view.board.change(identifier, media=changed.media, active_media_id=changed.active_media_id)
             else:
                 x, y = (coordinate(n, snap=view.workspace.snap_enabled) for n in position)
-                frame = StoryFrame(title=source.stem, image=name, x=x, y=y)
-                updated = replace(view.board, frames=(*view.board.frames, frame))
+                frame = with_image(StoryFrame(title=source.stem, x=x, y=y), name, source.name)
+                updated = view.workspace.scope.attach_new(replace(view.board, frames=(*view.board.frames, frame)), (frame.id,))
                 updated.validate()
                 identifier = frame.id
             view.thumbnails[name] = data
@@ -114,7 +120,9 @@ class StoryboardImageInput:
             if view.closing or identifier not in view.cards:
                 return
             view.thumbnails[name] = data
-            view.changed(view.board.change(identifier, image=name, crop_x=0, crop_y=0))
+            frame = view.node_media.target(identifier)
+            changed = with_image(frame, name, source.name if isinstance(source, Path) else 'Colada')
+            view.changed(view.board.change(identifier, media=changed.media, active_media_id=changed.active_media_id))
             view.refresh()
             view.page.update(view.content)
             if await view.persist():

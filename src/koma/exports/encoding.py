@@ -19,5 +19,4 @@ DEFAULT_ENCODING = VideoEncoding()
 def video_progress(event):
     total = max(1, event.get('total', 1))
     done = event.get('done', 0)
-    encoding = event.get('phase') == 'Codificando MP4'
-    return min(1.0, max(0.0, (0.5 if encoding else 0.0) + 0.5 * done / total))
+    return min(1.0, max(0.0, done / total))

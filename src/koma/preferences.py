@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass, replace
 from uuid import uuid4
 
 from pathlib import Path
-from koma.blender import detect_blender
 from koma.editor.shortcuts import default_keymap
 from koma.paths import atomic_json
 
@@ -16,21 +15,17 @@ class AppPreferences:
         self.directory = Path(directory)
         self.path = self.directory / 'settings.json'
         self.shortcuts = default_keymap()
-        self.blender = ''
         try:
             raw = json.loads(self.path.read_text(encoding='utf-8'))
             if not isinstance(raw, dict):
                 raise ValueError('Preferências inválidas.')
-            self.blender = raw.get('blender', '') if isinstance(raw.get('blender', ''), str) else ''
             self.shortcuts.restore(raw.get('shortcuts', {}))
         except (OSError, ValueError, TypeError, KeyError):
             pass
-        if not self.blender:
-            self.blender = detect_blender()
         self.shortcuts.listeners.append(self.save)
 
     def save(self):
-        atomic_json(self.path, {'version': 1, 'blender': self.blender, 'shortcuts': self.shortcuts.export()})
+        atomic_json(self.path, {'version': 1, 'shortcuts': self.shortcuts.export()})
 
 
 @dataclass(frozen=True)

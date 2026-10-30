@@ -52,6 +52,7 @@ class DocumentTools:
                     if self.app.view is not view or not view.editable():
                         return
                     self.app.page.pop_dialog()
+                    await view.sequences.reveal({identifier})
                     view.workspace.navigation.set_mode('select')
                     view.workspace.navigation.select_node(identifier, focus=True)
                     await view.workspace.focus_nodes({identifier})
@@ -69,33 +70,41 @@ class DocumentTools:
         board, session, store = view.board, view.session, view.store
         assets = {}
         for frame in board.frames:
-            if frame.image:
-                assets.setdefault(frame.image, []).append(frame)
+            for media in frame.media:
+                key = media.folder, media.asset
+                if key not in assets:
+                    assets[key] = (media, [])
+                assets[key][1].append(frame)
         controls = []
         def inspect_assets():
             from PIL import Image
             dimensions = {}
-            for asset in assets:
+            for key, (media, _) in assets.items():
+                if media.kind == 'video':
+                    dimensions[key] = f'{media.width} × {media.height} · {media.duration:g} s'
+                    continue
                 try:
-                    with Image.open(store.images / asset) as image:
-                        dimensions[asset] = f'{image.width} × {image.height}'
+                    with Image.open(store.images / media.asset) as image:
+                        dimensions[key] = f'{image.width} × {image.height}'
                 except (OSError, ValueError):
-                    dimensions[asset] = 'Arquivo indisponível'
+                    dimensions[key] = 'Arquivo indisponível'
             return dimensions
         dimensions = await asyncio.to_thread(inspect_assets)
         if self.app.view is not view or view.board is not board or view.session is not session or not view.editable():
             return
-        for asset, frames in assets.items():
+        for key, (media, frames) in assets.items():
             async def locate(e=None, ids=frozenset(f.id for f in frames)):
                 if self.app.view is not view or not view.editable():
                     return
                 self.app.page.pop_dialog()
                 view.workspace.navigation.set_mode('select')
+                await view.sequences.reveal(ids)
                 view.workspace.navigation.apply_selection(set(ids))
                 await view.workspace.focus_nodes(ids)
-            controls.append(ft.ListTile(title=ft.Text(frames[0].title or 'Imagem'),
-                subtitle=ft.Text(f'{dimensions[asset]} · {len(frames)} usos · {asset}', size=12),
-                leading=ft.Icon(ft.Icons.IMAGE_OUTLINED), dense=True, on_click=locate))
+            controls.append(ft.ListTile(title=ft.Text(media.label or frames[0].title or 'Mídia'),
+                subtitle=ft.Text(f'{dimensions[key]} · {len(frames)} usos', size=12),
+                leading=ft.Icon(ft.Icons.VIDEOCAM_OUTLINED if media.kind == 'video' else ft.Icons.IMAGE_OUTLINED),
+                dense=True, on_click=locate))
         for track in board.audio_tracks:
             controls.append(ft.ListTile(title=ft.Text(track.title),
                 subtitle=ft.Text(f'{track.duration:g} s · {track.asset}', size=12),

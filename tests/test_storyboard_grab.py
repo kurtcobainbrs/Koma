@@ -181,7 +181,7 @@ class GrabTests(TestCase):
         nav.apply_selection({a.id})
         original = self.view.store.path.read_bytes()
         for cancel in (lambda: fixtures.finish(nav.key_down(fixtures.Data(key='Escape'))),
-                       lambda: ws.pointer_surface.on_secondary_tap_down(None), ws.content.will_unmount):
+                       lambda: ws.pointer_surface.on_right_pan_start(None), ws.content.will_unmount):
             ws.hover(self.pointer(50, 50))
             fixtures.finish(nav.key_down(fixtures.Data(key='g')))
             ws.hover(self.pointer(150, 150))

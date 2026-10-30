@@ -35,7 +35,7 @@ class TimelineMedia:
     def track(self):
         return next((track for track in self.view.board.audio_tracks if track.scene_id == self.scope), None)
 
-    async def commit(self, board, *, pause=True, label=None):
+    async def commit(self, board, *, pause=True, label=None, render=True):
         if not self.view.editable() or not self.player.opened:
             return
         board.validate()
@@ -43,7 +43,8 @@ class TimelineMedia:
             self.player.playing = False
         self.view.changed(board, label=label)
         self.player.rebuild_timeline()
-        self.player.render()
+        if render:
+            self.player.render()
         await self.view.persist()
 
     async def pick_audio(self, e=None):

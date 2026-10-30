@@ -20,6 +20,6 @@ Os desenhos pertencem ao node e acompanham duplicação, copiar/colar e importa�
 
 Os dados ficam no manifesto como vetores validados, sem alterar o arquivo de imagem. Modelo e geometria ficam em `drawing_models`, os comandos em `drawing_editor`, a entrada e os controles em `drawing_surface`, a apresentação compartilhada em `drawing_overlay` e a composição das exportações em `exports/drawings`.
 
-O salvamento passa a usar o formato de documento 4; documentos de versões 1, 2 e 3 continuam abrindo com uma camada vazia. Aplicativos anteriores não abrem o novo formato. Preserve uma cópia se precisar continuar usando a release v0.2.0.
+Desenhos foram introduzidos no formato de documento 4; documentos de versões 1, 2 e 3 continuam abrindo com uma camada vazia. O salvamento atual usa o formato 6, descrito em [Mídias por quadro](NODE_MEDIA.md), preservando as camadas existentes. Preserve uma cópia anterior se precisar usar um cliente antigo.
 
 Há limites por camada para conter o tamanho dos documentos: 2.048 traços, 8.192 pontos por traço e 65.536 pontos no total. Os traços concluídos são reaproveitados na apresentação; durante o movimento não há gravação em disco. Fechar o player, trocar de quadro, perder o foco da janela ou redimensionar a superfície cancela um gesto ainda em andamento.

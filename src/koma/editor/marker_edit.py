@@ -60,10 +60,11 @@ class MarkerEditor:
             pointer_x, scale, self.player.position, tuple(sorted(candidates)))
         self.position = marker.position
         self.selected = identifier
-        self.player.playing = False
+        self.player.pause_for_edit()
         self.player.strip.navigator.end()
-        self.view.lock(True)
-        self.player.render()
+        self.view.lock(True, update=False)
+        self.player.set_gesture_locked(True)
+        self.refresh_lane()
         return self.drag
 
     def move(self, token, pointer_x):
@@ -73,36 +74,52 @@ class MarkerEditor:
                 or self.player.scene_anchor != token.scope):
             self.cancel()
             return
-        self.position = marker_position(token.marker.position + token.scale.seconds(pointer_x - token.pointer_x),
+        position = marker_position(token.marker.position + token.scale.seconds(pointer_x - token.pointer_x),
             self.player.timeline, token.board.fps, token.scale,
             token.candidates if self.snap_enabled else (), self.player.strip.style.snap_distance)
-        self.player.position = self.position
-        self.player.render()
+        if position != self.position:
+            self.position = position
+            self.player.strip.marker_lane.preview(token.marker.id)
+
+    def refresh_lane(self):
+        self.player.strip.marker_lane.sync()
+        if self.player.presenting:
+            self.view.page.update(self.player.strip.marker_lane.content, self.player.strip.marker_lane.guides)
 
     def cancel(self, *, update=True):
         token, self.drag = self.drag, None
         self.position = None
         if token:
             self.player.position = token.previous_position
-            self.view.lock(False)
+            self.view.lock(False, update=False)
             if update and self.player.opened:
-                self.player.render()
+                self.player.set_gesture_locked(False)
+                self.refresh_lane()
+            else:
+                self.player.controls.disabled = False
 
     async def finish(self, token):
         if token is None or token is not self.drag:
             return
         position, self.position, self.drag = self.position, None, None
         self.committing = True
-        self.view.lock(False)
+        self.view.lock(False, update=False)
+        changed = False
         try:
             if (self.view.board is not token.board or self.view.session is not token.session
                     or self.player.scene_anchor != token.scope or not self.player.opened):
                 return
             if position != token.marker.position:
                 markers = tuple(replace(item, position=position) if item.id == token.marker.id else item for item in token.board.markers)
-                await self.player.media.commit(replace(token.board, markers=markers))
+                await self.player.media.commit(replace(token.board, markers=markers), render=False, label='Mover marcador')
+                changed = True
         finally:
             self.committing = False
+            self.player.controls.disabled = False
             if self.player.opened:
-                self.player.render()
+                if changed:
+                    self.player.render()
+                else:
+                    self.player.set_gesture_locked(False)
+                    self.refresh_lane()
                 self.player.focus_timeline()

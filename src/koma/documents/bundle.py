@@ -15,6 +15,7 @@ from koma.documents.store import document, parse_document
 from koma.editor.models import MAX_CARDS
 from koma.editor.media_models import MAX_AUDIO_TRACKS
 from koma.documents.audio import validate_audio, MAX_AUDIO_BYTES
+from koma.editor.node_media import board_assets, MAX_MEDIA_ITEMS, MAX_VIDEO_BYTES
 
 EXTENSION = '.koma'
 MAX_IMAGE_BYTES = 80_000_000
@@ -58,7 +59,12 @@ def export_bundle(board, store, destination, *, expected_stamp=Ellipsis):
     initial = destination_stamp(destination)
     if expected_stamp is not Ellipsis and initial != expected_stamp:
         raise ValueError('O arquivo mudou fora do Koma. Use Salvar como para preservar as duas versões.')
-    images = {frame.image for frame in board.frames if frame.image}
+    assets = board_assets(board)
+    images = {name for kind, name in assets if kind == 'images'}
+    videos = {name for kind, name in assets if kind == 'videos'}
+    from koma.documents.videos import inspect_video
+    for name in videos:
+        inspect_video(store.videos / name, decode=False)
     for name in images:
         validate_image(store.images / name)
     audio = {track.asset for track in board.audio_tracks}
@@ -66,7 +72,8 @@ def export_bundle(board, store, destination, *, expected_stamp=Ellipsis):
         validate_audio(store.audio / track.asset, track.duration)
     manifest = json.dumps(document(board, store.document_id), ensure_ascii=False).encode('utf-8')
     if len(manifest) > MAX_MANIFEST_BYTES or (sum((store.images / name).stat().st_size for name in images)
-            + sum((store.audio / name).stat().st_size for name in audio) + len(manifest)) > MAX_BUNDLE_BYTES:
+            + sum((store.audio / name).stat().st_size for name in audio)
+            + sum((store.videos / name).stat().st_size for name in videos) + len(manifest)) > MAX_BUNDLE_BYTES:
         raise ValueError('O documento ultrapassa os limites do formato Koma (2 GB).')
     temporary = destination.with_name(f'.{uuid4().hex}.tmp')
     backup_tmp = destination.with_name(f'.{uuid4().hex}.bak.tmp')
@@ -78,6 +85,8 @@ def export_bundle(board, store, destination, *, expected_stamp=Ellipsis):
                     archive.write(store.images / name, f'images/{name}')
                 for name in sorted(audio):
                     archive.write(store.audio / name, f'audio/{name}')
+                for name in sorted(videos):
+                    archive.write(store.videos / name, f'videos/{name}')
             if output.tell() > MAX_BUNDLE_BYTES:
                 raise ValueError('O pacote Koma ultrapassa 2 GB.')
             output.flush()
@@ -104,11 +113,12 @@ def restore_bundle(source, store):
     store.images.mkdir(parents=True, exist_ok=True)
     store.thumbnails.mkdir(exist_ok=True)
     store.audio.mkdir(exist_ok=True)
+    store.videos.mkdir(exist_ok=True)
     try:
         with ZipFile(source) as archive:
             entries = archive.infolist()
             names = [entry.filename for entry in entries]
-            if len(names) != len(set(names)) or len(names) > MAX_CARDS + MAX_AUDIO_TRACKS + 1:
+            if len(names) != len(set(names)) or len(names) > MAX_MEDIA_ITEMS * 2 + MAX_AUDIO_TRACKS + 1:
                 raise ValueError('Arquivos duplicados ou em excesso no documento.')
             if sum(entry.file_size for entry in entries) > MAX_BUNDLE_BYTES:
                 raise ValueError('O documento ultrapassa 2 GB.')
@@ -116,9 +126,12 @@ def restore_bundle(source, store):
             if manifest.file_size > MAX_MANIFEST_BYTES:
                 raise ValueError('Manifesto Koma muito grande.')
             board, identifier = parse_document(json.loads(archive.read(manifest)))
-            images = {frame.image for frame in board.frames if frame.image}
+            assets = board_assets(board)
+            images = {name for kind, name in assets if kind == 'images'}
+            videos = {name for kind, name in assets if kind == 'videos'}
             audio = {track.asset for track in board.audio_tracks}
-            if set(names) != {'manifest.json', *(f'images/{name}' for name in images), *(f'audio/{name}' for name in audio)}:
+            if set(names) != {'manifest.json', *(f'images/{name}' for name in images),
+                    *(f'audio/{name}' for name in audio), *(f'videos/{name}' for name in videos)}:
                 raise ValueError('O documento contém arquivos inesperados ou imagens ausentes.')
             for name in images:
                 info = archive.getinfo(f'images/{name}')
@@ -139,6 +152,15 @@ def restore_bundle(source, store):
                 for track in board.audio_tracks:
                     if track.asset == name:
                         validate_audio(target, track.duration)
+            from koma.documents.videos import inspect_video
+            for name in videos:
+                info = archive.getinfo(f'videos/{name}')
+                if not 0 < info.file_size <= MAX_VIDEO_BYTES:
+                    raise ValueError('Vídeo vazio ou muito grande no documento.')
+                target = store.videos / name
+                with archive.open(info) as incoming, target.open('xb') as output:
+                    shutil.copyfileobj(incoming, output)
+                inspect_video(target, decode=False)
         store.document_id = identifier
         store.save(board)
         return board

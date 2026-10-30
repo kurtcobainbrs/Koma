@@ -1,6 +1,9 @@
 """Comandos do fluxo e histórico; a interface não contém regras de conexões."""
 
 from dataclasses import replace
+import asyncio
+from koma.documents.images import load_thumbnails
+from koma.editor.models import Storyboard, StoryLink
 
 import flet as ft
 
@@ -21,13 +24,15 @@ class GraphActions:
         self.commands = {
             'group': menu_item(view.keymap.describe('Criar moldura…', Action.GROUP),
                 icon=ft.Icons.CROP_FREE, on_click=lambda e: self.group_dialog()),
+            'sequence': menu_item(view.keymap.describe('Criar sequência', Action.SEQUENCE),
+                icon=ft.Icons.VIEW_TIMELINE_OUTLINED, on_click=view.node_handler('sequence')),
             'organize': menu_item('Organizar', icon=ft.Icons.ACCOUNT_TREE_OUTLINED, on_click=self.organize),
             'disconnect': menu_item('Desconectar', icon=ft.Icons.LINK_OFF, on_click=self.disconnect_selected),
             'remove_preserving': menu_item('Remover e reconectar', icon=ft.Icons.DELETE_OUTLINE,
                 on_click=self.remove_preserving),
         }
         self.menu = popup_menu(icon=ft.Icons.ACCOUNT_TREE_OUTLINED, tooltip='Fluxo e cenas', items=[
-            self.commands['group'], menu_separator(), self.commands['organize'], menu_separator(),
+            self.commands['group'], self.commands['sequence'], menu_separator(), self.commands['organize'], menu_separator(),
             self.commands['disconnect'], self.commands['remove_preserving']])
 
     def sync_history(self):
@@ -40,9 +45,10 @@ class GraphActions:
     async def commit(self, board, *, label=None):
         if not self.view.editable():
             return
-        self.view.changed(graph.ordered(board), label=label)
+        previous = self.view.snapshot_presentations()
+        self.view.changed(board, label=label)
         self.view.refresh()
-        self.page.update(self.view.content)
+        self.view.publish(previous)
         await self.view.workspace.compensate_origin()
         await self.view.persist()
 
@@ -55,20 +61,43 @@ class GraphActions:
             self.view.notify(str(exc), 'warning')
 
     async def cut(self, edges):
-        await self.commit(graph.disconnect(self.view.board, edges))
+        try:
+            await self.commit(graph.disconnect(self.view.board, edges))
+        except ValueError as exc:
+            self.view.notify(str(exc), 'warning')
 
     async def disconnect_selected(self, e=None):
         selected = self.view.workspace.navigation.selection.ids
-        await self.cut({edge for edge in self.view.board.links if edge.source in selected or edge.target in selected})
+        index = self.view.sequences.index
+        containers = {key for key in selected if index.nodes[key].node_type.contains_frames}
+        selected = index.closure(selected)
+        edges = {edge for edge in self.view.board.links if edge.source in selected or edge.target in selected}
+        edges.update(edge for edge, _, _ in self.view.workspace.scope.edges()
+            if edge.source in selected or edge.target in selected)
+        if containers:
+            edges = {edge for edge in edges if not containers.intersection(index.ancestors(edge.source)).intersection(
+                index.ancestors(edge.target))}
+        await self.cut(edges)
 
     def disconnect_port(self, identifier, output):
         async def disconnected(e):
-            await self.cut({edge for edge in self.view.board.links
-                if (edge.source if output else edge.target) == identifier})
+            try:
+                endpoint = self.view.sequences.index.endpoint(identifier, output)
+            except ValueError:
+                return
+            await self.cut({edge for edge, _, _ in self.view.workspace.scope.edges()
+                if (edge.source if output else edge.target) == endpoint})
         return disconnected
 
     async def organize(self, e=None):
-        await self.commit(graph.organize(self.view.board))
+        board = self.view.board
+        visible = self.view.workspace.scope.visible
+        projection = self.view.workspace.scope
+        placed = graph.layout_positions(tuple(frame for frame in board.frames if frame.id in visible),
+            tuple(StoryLink(source, target) for _, source, target in projection.edges()
+                if source in visible and target in visible))
+        await self.commit(replace(board, frames=tuple(replace(frame, x=placed[frame.id][0], y=placed[frame.id][1])
+            if frame.id in placed else frame for frame in board.frames)))
 
     def remove_preserving(self, e=None):
         selected = self.view.workspace.navigation.selection.ids
@@ -120,6 +149,15 @@ class GraphActions:
         if board == self.view.board:
             return
         self.view.board = board
+        missing = tuple(frame for frame in board.frames if frame.image and frame.image not in self.view.thumbnails)
+        if missing:
+            self.view.lock(True)
+            try:
+                self.view.thumbnails.update(await asyncio.to_thread(load_thumbnails, Storyboard(frames=missing), self.view.store))
+            except (OSError, ValueError) as exc:
+                self.view.notify(f'Não foi possível carregar a prévia: {exc}', 'warning')
+            finally:
+                self.view.lock(False)
         self.view.revision += 1
         self.view.title.value = board.title
         self.view.refresh()

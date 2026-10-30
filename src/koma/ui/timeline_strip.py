@@ -4,12 +4,14 @@ from dataclasses import dataclass
 import math
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.editor.timeline import TimeScale
 from koma.editor.timing import duration_text
 from koma.editor.timeline_navigation import TimelineNavigator, ruler_ticks
 from koma.ui.duration_input import DurationInput
 from koma.editor.shortcuts import Action
+from koma.editor.modifier_state import pressed_modifiers
 from koma.ui.timeline_audio import AudioLane, AudioControls
 from koma.ui.marker_lane import MarkerLane
 from koma.ui.design import APP_PADDING, BORDER, CONTROL_HEIGHT, COMPACT_CONTROL_HEIGHT, DRAG_INTERVAL_MS, MUTED, PAGE_PADDING, RADIUS, SURFACE
@@ -17,24 +19,37 @@ from koma.ui.typography import TEXT_SMALL
 from koma.editor.timeline_order import reorder
 from koma.ui.components import drag_feedback
 from koma.ui.timeline_thumbnail import TimelineThumbnail
+from koma.ui.image_source import thumbnail_source
+from koma.ui.workspace_style import WORKSPACE_STYLE
+from koma.ui.sequence_lane import SequenceLane
 
 
 @dataclass(frozen=True)
 class TimelineStyle:
-    track_height: float = CONTROL_HEIGHT + PAGE_PADDING
+    track_height: float = WORKSPACE_STYLE.picture_height
     handle_width: float = PAGE_PADDING
     zoom_factor: float = 2
-    ruler_height: float = TEXT_SMALL + APP_PADDING * 2
+    ruler_height: float = WORKSPACE_STYLE.ruler_height
     label_spacing: float = CONTROL_HEIGHT * 3
     wheel_zoom_distance: float = 240
-    marker_height: float = TEXT_SMALL + APP_PADDING * 2
-    audio_height: float = CONTROL_HEIGHT
+    marker_height: float = WORKSPACE_STYLE.marker_height
+    sequence_height: float = WORKSPACE_STYLE.sequence_height
+    audio_height: float = WORKSPACE_STYLE.audio_height
     snap_distance: float = PAGE_PADDING
     marker_label_width: float = CONTROL_HEIGHT * 4
     marker_line_width: float = 1
     marker_line_opacity: float = .3
     selected_marker_line_opacity: float = .55
     thumbnail_label_minimum: float = CONTROL_HEIGHT * 2
+    caption_height: float = WORKSPACE_STYLE.picture_caption_height
+
+    @property
+    def marker_top(self):
+        return self.ruler_height
+
+    @property
+    def frames_top(self):
+        return self.ruler_height + self.marker_height
 
 
 class TimelineBlock:
@@ -45,25 +60,27 @@ class TimelineBlock:
         self.title = ft.Text(size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         self.duration = ft.Text(size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         self.thumbnail = TimelineThumbnail()
-        self.labels = ft.Column([self.title, self.duration], spacing=2, tight=True, expand=True)
+        self.title.expand = True
+        self.labels = ft.Row([self.title, self.duration], spacing=APP_PADDING, height=strip.style.caption_height)
         self.reorder_target = None
         body = ft.GestureDetector(on_tap_down=self.seek, mouse_cursor=ft.MouseCursor.CLICK,
-            content=ft.Container(padding=APP_PADDING,
-                content=ft.Row([self.thumbnail.content, self.labels], spacing=APP_PADDING)))
+            content=ft.Stack([self.thumbnail.content,
+                ft.Container(left=APP_PADDING, right=strip.style.handle_width + APP_PADDING,
+                    bottom=0, height=strip.style.caption_height, content=self.labels)]))
         self.handle = ft.GestureDetector(on_pan_down=self.duration_pointer_down,
             on_pan_start=self.begin, on_pan_update=self.move,
             on_pan_end=self.finish, on_pan_cancel=self.cancel, drag_interval=DRAG_INTERVAL_MS,
             mouse_cursor=ft.MouseCursor.RESIZE_LEFT_RIGHT,
-            tooltip='Arraste para ajustar a duração em frames',
+            tooltip=self.duration_hint(),
             content=ft.Container(width=strip.style.handle_width, height=strip.style.track_height,
-                bgcolor=ft.Colors.PRIMARY_CONTAINER,
-                alignment=ft.Alignment.CENTER, content=ft.Icon(ft.Icons.DRAG_INDICATOR, size=TEXT_SMALL)))
+                bgcolor=ft.Colors.TRANSPARENT,
+                alignment=ft.Alignment.CENTER, content=ft.Icon(ft.Icons.DRAG_INDICATOR, size=TEXT_SMALL, color=MUTED)))
         body = ft.DragTarget(group=strip.drag_group, on_accept=self.reorder_drop,
             content=ft.Draggable(group=strip.drag_group, data=identifier,
                 on_drag_start=self.reorder_start, max_simultaneous_drags=1,
                 content_feedback=drag_feedback(ft.Container(width=CONTROL_HEIGHT * 3,
                     height=strip.style.track_height, content=ft.Icon(ft.Icons.VIEW_TIMELINE_OUTLINED))), content=body))
-        self.box = ft.Container(top=strip.style.marker_height + strip.style.ruler_height, height=strip.style.track_height,
+        self.box = ft.Container(top=strip.frames_top, height=strip.style.track_height,
             bgcolor=SURFACE, border=ft.Border.all(1, BORDER), border_radius=RADIUS,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=ft.Stack([ft.Container(left=0, top=0, right=0, bottom=0, content=body),
@@ -75,9 +92,7 @@ class TimelineBlock:
         player = self.strip.player
         index = next((i for i, frame in enumerate(player.timeline.frames) if frame.id == self.identifier), None)
         if index is not None:
-            player.playing = False
-            player.position = player.timeline.starts[index]
-            player.render()
+            player.select_node(self.identifier, seek=True)
 
     def reorder_start(self, e=None):
         self.strip.reorder_snapshot = None
@@ -97,15 +112,26 @@ class TimelineBlock:
             await reorder(self.strip.player, e.src.data, self.identifier,
                 after=e.local_position.x > self.box.width / 2, expected=snapshot)
 
+    @explicit_updates
     def duration_pointer_down(self, e):
         self.duration_pointer_x = e.global_position.x
 
+    def duration_hint(self):
+        key = self.strip.player.view.keymap.label(Action.RIPPLE_DURATION)
+        return 'Ajustar corte' + (f' · {key}: empurrar' if key else '')
+
     def begin(self, e):
         if self.strip.scale:
+            self.strip.player.view.properties.release_field_focus()
+            self.strip.player.select_node(self.identifier)
             origin = e.global_position.x if self.duration_pointer_x is None else self.duration_pointer_x
-            self.token = self.strip.editor.begin(self.identifier, origin, self.strip.scale)
+            physical = pressed_modifiers()
+            modifiers = self.strip.player.modifiers if physical is None else physical
+            ripple = self.strip.player.view.keymap.modifier_active(Action.RIPPLE_DURATION, modifiers)
+            self.token = self.strip.editor.begin(self.identifier, origin, self.strip.scale, ripple=ripple)
             self.strip.editor.move(self.token, e.global_position.x)
 
+    @explicit_updates
     def move(self, e):
         self.strip.editor.move(self.token, e.global_position.x)
 
@@ -131,30 +157,33 @@ class TimelineStrip:
         self.navigator = TimelineNavigator(player)
         self.duration_input = DurationInput(player)
         self.style = style or TimelineStyle()
+        self.sequence_lane = SequenceLane(self)
         self.width = None
         self.scale = None
         self.fit_requested = True
         self.blocks = {}
         self.geometry_key = None
         self.active = None
+        self.selected = None
         self.offset = 0
         self.ruler_key = None
         self.ruler_marks = ft.Stack(fit=ft.StackFit.EXPAND)
         self.marker_lane = MarkerLane(self)
         self.marker_layer = self.marker_lane.content
-        self.ruler = ft.Container(left=0, top=self.style.marker_height, height=self.style.ruler_height,
+        self.ruler = ft.Container(left=0, top=0, height=self.style.ruler_height,
             content=ft.GestureDetector(content=ft.Container(bgcolor=SURFACE, content=self.ruler_marks),
                 on_tap_down=self.ruler_seek, on_pan_start=self.ruler_begin,
                 on_pan_update=self.scrub_move, on_pan_end=self.navigator.end,
                 on_pan_cancel=self.navigator.end, drag_interval=DRAG_INTERVAL_MS,
                 mouse_cursor=ft.MouseCursor.CLICK))
-        self.playhead = ft.Container(top=0, bottom=0, width=2, bgcolor=ft.Colors.PRIMARY, ignore_interactions=True)
-        self.needle = ft.Container(top=self.style.marker_height, width=self.style.handle_width, height=self.style.ruler_height,
+        self.playhead = ft.Container(top=0, bottom=0, width=1, bgcolor=ft.Colors.ON_SURFACE, ignore_interactions=True)
+        self.needle = ft.Container(top=0, width=self.style.handle_width, height=self.style.ruler_height,
             content=ft.GestureDetector(on_pan_start=self.needle_begin, on_pan_update=self.scrub_move,
                 on_pan_end=self.navigator.end, on_pan_cancel=self.navigator.end,
                 drag_interval=DRAG_INTERVAL_MS, mouse_cursor=ft.MouseCursor.RESIZE_LEFT_RIGHT,
                 tooltip='Arraste a agulha para percorrer os frames',
-                content=ft.Container(bgcolor=ft.Colors.PRIMARY, border_radius=RADIUS)))
+                content=ft.Container(alignment=ft.Alignment.BOTTOM_CENTER,
+                    content=ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=18, color=ft.Colors.ON_SURFACE))))
         self.track = ft.Stack(height=self.style.marker_height + self.style.track_height + self.style.ruler_height + self.style.audio_height,
             width=0, clip_behavior=ft.ClipBehavior.HARD_EDGE)
         self.audio_lane = AudioLane(self)
@@ -174,14 +203,36 @@ class TimelineStrip:
         self.zoom_in = ft.IconButton(icon=ft.Icons.ADD, tooltip='Aumentar zoom da timeline',
             on_click=lambda e: self.zoom(self.style.zoom_factor),
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT)
+        self.zoom_slider = ft.Slider(min=0, max=1, value=0, tooltip='Zoom da timeline',
+            width=WORKSPACE_STYLE.slider_width, height=COMPACT_CONTROL_HEIGHT,
+            on_change=self.slide_zoom)
         self.history_tools = ft.Row([self.undo, self.redo], spacing=0, tight=True)
-        self.zoom_tools = ft.Row([self.fit_button, self.zoom_out, self.zoom_in], spacing=0, tight=True)
+        self.zoom_tools = ft.Row([self.fit_button, self.zoom_out, self.zoom_slider, self.zoom_in], spacing=0, tight=True)
         self.footer_context = ft.Container(expand=True, alignment=ft.Alignment.CENTER_RIGHT)
         footer = ft.Row([self.audio_controls.content, self.footer_context],
             spacing=APP_PADDING * 2, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-        self.content = ft.Container(on_size_change=self.resized,
-            content=ft.Column([ft.GestureDetector(content=self.scroller, on_scroll=self.wheel_zoom), footer],
+        self.track_host = ft.Container(expand=True, on_size_change=self.resized,
+            content=ft.GestureDetector(content=self.scroller, on_scroll=self.wheel_zoom))
+        self.sequence_label = self.track_label('Sequências', 0)
+        self.sequence_label.visible = False
+        self.track_labels = ft.Column([self.track_label('', self.style.ruler_height),
+            self.track_label('Marcas', self.style.marker_height), self.sequence_label, self.track_label('Quadros', self.style.track_height),
+            self.track_label('Áudio', self.style.audio_height)], spacing=0)
+        self.content = ft.Container(
+            content=ft.Column([ft.Row([self.track_labels, self.track_host], spacing=0,
+                vertical_alignment=ft.CrossAxisAlignment.START), footer],
                 spacing=APP_PADDING, tight=True))
+
+    @staticmethod
+    def track_label(text, height):
+        return ft.Container(width=WORKSPACE_STYLE.track_label_width, height=height,
+            alignment=ft.Alignment.CENTER_LEFT, padding=ft.Padding.only(left=APP_PADDING * 2),
+            border=ft.Border(right=ft.BorderSide(1, BORDER), bottom=ft.BorderSide(1, BORDER)),
+            content=ft.Text(text, size=TEXT_SMALL, color=MUTED))
+
+    @property
+    def frames_top(self):
+        return self.style.frames_top + self.sequence_lane.height
 
     def reset(self):
         self.reorder_snapshot = None
@@ -209,10 +260,14 @@ class TimelineStrip:
         if self.scale:
             self.navigator.begin(e.global_position.x, self.scale)
 
+    @explicit_updates
     def scrub_move(self, e):
         self.navigator.move(e.global_position.x)
 
+    @explicit_updates
     def scrolled(self, e):
+        if not self.player.presenting:
+            return
         self.offset = max(0, e.pixels)
         self.sync_ruler()
         self.audio_lane.sync()
@@ -238,7 +293,10 @@ class TimelineStrip:
             border=ft.Border(left=ft.BorderSide(1, BORDER)), padding=ft.Padding.only(left=4))
             for seconds, x in ticks]
 
+    @explicit_updates
     def resized(self, e):
+        if not self.player.presenting:
+            return
         if e.width > 0 and e.width != self.width:
             self.width = e.width
             if self.editor.drag is None:
@@ -292,6 +350,20 @@ class TimelineStrip:
         self.player.view.page.update(self.content)
         self.player.view.page.run_task(self.scroll_to, self.offset)
 
+    def zoom_limits(self):
+        timeline = self.player.timeline
+        if not timeline or timeline.total <= 0 or not self.width:
+            return None
+        return (TimeScale.fit(self.width, timeline.total).pixels_per_second,
+            self.width * self.player.view.board.fps)
+
+    def slide_zoom(self, e):
+        limits = self.zoom_limits()
+        if limits and self.scale:
+            minimum, maximum = limits
+            target = minimum * (maximum / minimum) ** max(0, min(1, e.control.value))
+            self.zoom(target / self.scale.pixels_per_second)
+
     def sync(self):
         player, view = self.player, self.player.view
         timeline = player.timeline
@@ -300,9 +372,17 @@ class TimelineStrip:
         if self.scale is None and self.width and timeline.total > 0:
             self.scale = TimeScale.fit(self.width, timeline.total)
         identifiers = tuple(frame.id for frame in timeline.frames)
-        if tuple(self.blocks) != identifiers:
+        self.sequence_lane.sync(identifiers)
+        self.sequence_label.height = self.sequence_lane.height
+        self.sequence_label.visible = bool(self.sequence_lane.height)
+        height = self.frames_top + self.style.track_height + self.style.audio_height
+        if self.track.height != height:
+            self.track.height = height
+            if hasattr(player, 'layout'):
+                player.layout.sync_height()
+        if tuple(self.blocks) != identifiers or not self.track.controls:
             self.blocks = {key: self.blocks.get(key) or TimelineBlock(self, key) for key in identifiers}
-            self.track.controls = [self.marker_layer, self.ruler, *(block.box for block in self.blocks.values()),
+            self.track.controls = [self.marker_layer, self.ruler, self.sequence_lane.content, *(block.box for block in self.blocks.values()),
                 self.audio_lane.content, self.marker_lane.guides, self.playhead, self.needle]
             self.geometry_key = None
         fps = view.board.fps
@@ -311,25 +391,28 @@ class TimelineStrip:
         if self.scale and key != self.geometry_key:
             for index, frame in enumerate(timeline.frames):
                 block = self.blocks[frame.id]
+                block.box.top = self.frames_top
+                block.handle.tooltip = block.duration_hint()
                 block.box.left = self.scale.pixels(timeline.starts[index])
                 block.box.width = self.scale.pixels(frame.duration)
-                available = max(0, block.box.width - self.style.handle_width - APP_PADDING * 2)
-                height = max(0, self.style.track_height - APP_PADDING * 2)
-                natural_width = height * view.board.frame_format.aspect_ratio
-                block.labels.visible = available >= natural_width + APP_PADDING + self.style.thumbnail_label_minimum
-                width = min(natural_width, available)
-                block.thumbnail.sync(frame, view.thumbnails, width, height)
+                width = max(0, block.box.width - 2)
+                height = max(0, self.style.track_height - self.style.caption_height)
+                block.labels.visible = width >= self.style.thumbnail_label_minimum
+                block.thumbnail.sync(frame, view.thumbnails, width, height,
+                    image_source=thumbnail_source(view, frame.image), frame_format=view.board.frame_format)
                 block.title.value = f'{index + 1:02d} · {frame.title or "Sem título"}'
                 block.duration.value = f'{duration_text(frame.duration, fps, frames=True)} f'
                 block.box.tooltip = f'{block.title.value} · {block.duration.value} · {duration_text(frame.duration, fps)} s'
             self.track.width = max(self.width or 0, self.scale.pixels(timeline.total))
             self.ruler.width = self.track.width
             self.geometry_key = key
+        self.sequence_lane.content.width = self.track.width
         current = timeline.frames[player.current].id if 0 <= player.current < len(timeline.frames) else None
         for identifier in {self.active, current} - {None}:
             if identifier in self.blocks:
-                self.blocks[identifier].box.bgcolor = ft.Colors.PRIMARY_CONTAINER if identifier == current else SURFACE
+                self.blocks[identifier].box.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGH if identifier == current else SURFACE
         self.active = current
+        self.sync_selection()
         self.sync_cursor()
         self.sync_ruler()
         self.audio_lane.sync()
@@ -341,8 +424,25 @@ class TimelineStrip:
         self.redo.disabled = editing or not view.editable() or not view.history.future
         self.undo.tooltip = view.keymap.describe(view.history.undo_description, Action.UNDO)
         self.redo.tooltip = view.keymap.describe(view.history.redo_description, Action.REDO)
-        for control in (self.fit_button, self.zoom_out, self.zoom_in):
+        limits = self.zoom_limits()
+        if limits and self.scale and limits[1] > limits[0]:
+            self.zoom_slider.value = max(0, min(1, math.log(self.scale.pixels_per_second / limits[0]) /
+                math.log(limits[1] / limits[0])))
+        for control in (self.fit_button, self.zoom_out, self.zoom_in, self.zoom_slider):
             control.disabled = editing or not timeline.frames
+
+    def sync_selection(self):
+        selected = self.player.selection.active
+        if selected == self.selected:
+            return []
+        controls = []
+        for identifier in {self.selected, selected} - {None}:
+            if identifier in self.blocks:
+                self.blocks[identifier].box.border = ft.Border.all(1,
+                    ft.Colors.PRIMARY if identifier == selected else BORDER)
+                controls.append(self.blocks[identifier].box)
+        self.selected = selected
+        return controls
 
     def sync_cursor(self):
         """Playback changes only these positions, not track geometry or waveform."""
@@ -357,12 +457,8 @@ class TimelineStrip:
         if not self.undo.disabled:
             self.player.playing = False
             await self.player.view.graph.undo()
-            self.player.rebuild_timeline()
-            self.player.render()
 
     async def redo_edit(self, e=None):
         if not self.redo.disabled:
             self.player.playing = False
             await self.player.view.graph.redo()
-            self.player.rebuild_timeline()
-            self.player.render()

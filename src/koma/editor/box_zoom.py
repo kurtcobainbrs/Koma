@@ -1,6 +1,7 @@
 """Enquadramento por retângulo; não altera seleção nem o documento."""
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.editor.selection import rectangle
 
@@ -18,11 +19,13 @@ class BoxZoom:
     def active(self):
         return self.start is not None
 
+    @explicit_updates
     def press(self, e):
         if self.workspace.navigation.effective_mode == 'zoom' and self.workspace.view.editable() and not self.workspace.focusing_region:
             self.workspace.cancel_camera_transition()
             self.pending = e.local_position.x, e.local_position.y
 
+    @explicit_updates
     def begin(self, e):
         if self.workspace.navigation.effective_mode != 'zoom' or not self.workspace.view.editable() or self.workspace.focusing_region:
             return
@@ -30,9 +33,10 @@ class BoxZoom:
         self.pending = None
         self.workspace.navigation.focus_keyboard()
         self.workspace.viewer.scale_enabled = False
-        self.workspace.page.update(self.workspace.viewer)
+        self.workspace.update_interaction()
         self.update(e)
 
+    @explicit_updates
     def update(self, e):
         if not self.active or self.workspace.view.closing:
             return
@@ -43,6 +47,7 @@ class BoxZoom:
         self.overlay.visible = True
         self.workspace.page.update(self.overlay)
 
+    @explicit_updates
     async def end(self, e=None):
         bounds = self.bounds if self.active else None
         self.cancel()
@@ -50,9 +55,12 @@ class BoxZoom:
         if bounds and min(bounds[2] - bounds[0], bounds[3] - bounds[1]) * self.workspace.zoom >= 8:
             await self.workspace.focus_region(bounds)
 
+    @explicit_updates
     def cancel(self, e=None):
+        if self.start is None and self.pending is None and self.bounds is None:
+            return
         self.start = self.pending = self.bounds = None
         self.overlay.visible = False
         self.workspace.navigation.sync(update=False)
         if not self.workspace.view.closing:
-            self.workspace.page.update(self.overlay, self.workspace.viewer)
+            self.workspace.update_interaction(self.overlay)

@@ -37,7 +37,6 @@ try {
         throw 'O PyInstaller encontrou dependências nativas ausentes.'
     }
     foreach ($resource in @(
-        '_internal\koma\exports\blender_probe.py',
         '_internal\koma\assets\fonts\Archivo-Regular.ttf',
         '_internal\koma\assets\storyboard-subtitles.json',
         '_internal\desktop\flet\flet.exe',
@@ -46,10 +45,13 @@ try {
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $resource) -PathType Leaf)) { throw "Recurso ausente: $resource" }
     }
+    if (-not (Test-Path -LiteralPath (Join-Path $package '_internal\av.libs') -PathType Container)) {
+        throw 'As bibliotecas de vídeo do PyAV estão ausentes.'
+    }
     & $Python scripts\windows_native.py --directory $package
     if ($LASTEXITCODE -ne 0) { throw 'A auditoria das DLLs falhou.' }
     $diagnosticsReport = Join-Path $PWD 'build\packaged-diagnostics.json'
-    $diagnosticsProcess = Start-Process -FilePath (Join-Path $package 'Koma.exe') -ArgumentList @('--diagnostics', ('"' + $diagnosticsReport + '"')) -WorkingDirectory $package -WindowStyle Hidden -PassThru
+    $diagnosticsProcess = Start-Process -FilePath (Join-Path $package 'Koma.exe') -ArgumentList @('--diagnostics', ('"' + $diagnosticsReport + '"'), '--video') -WorkingDirectory $package -WindowStyle Hidden -PassThru
     if (-not $diagnosticsProcess.WaitForExit(60000)) {
         Stop-Process -Id $diagnosticsProcess.Id
         throw 'O diagnóstico do executável excedeu 60 segundos.'

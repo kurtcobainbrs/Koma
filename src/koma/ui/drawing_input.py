@@ -1,4 +1,5 @@
 """Pointer streams share drawing commands while owning only their own gesture."""
+from koma.ui.event_updates import explicit_updates
 
 
 class DrawingInput:
@@ -13,9 +14,11 @@ class DrawingInput:
         if self.token is not None and self.token is not self.editor.drag:
             self.reset()
 
+    @explicit_updates
     def down(self, e):
         self.origin = self.point(e)
 
+    @explicit_updates
     def begin(self, e):
         if self.token is not None and self.token is self.editor.drag:
             return
@@ -25,6 +28,7 @@ class DrawingInput:
             self.token = self.editor.begin(point, hit_radius=self.radius(), tool=self.tool)
             self.move(e)
 
+    @explicit_updates
     def move(self, e):
         self.sync()
         if self.token is not None:
@@ -32,6 +36,7 @@ class DrawingInput:
             if point is not None:
                 self.editor.move(point)
 
+    @explicit_updates
     async def finish(self, e=None):
         self.sync()
         token = self.token
@@ -44,10 +49,12 @@ class DrawingInput:
         else:
             self.reset()
 
+    @explicit_updates
     async def tap(self, e):
         self.begin(e)
         await self.finish(e)
 
+    @explicit_updates
     def cancel(self, e=None):
         token = self.token
         self.reset()

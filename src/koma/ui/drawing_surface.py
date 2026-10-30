@@ -1,5 +1,6 @@
 """Compact drawing tools and normalized input on the actual preview rectangle."""
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.ui.color_picker import ColorPicker
 from koma.ui.drawing_overlay import DrawingOverlay
@@ -67,9 +68,9 @@ class DrawingSurface:
             on_change=self.change_width, on_change_end=self.change_width)
         self.visibility = self.button(ft.Icons.LAYERS_OUTLINED, 'Ocultar desenho deste quadro', self.editor.toggle_visibility)
         self.options = ft.Row([self.select, self.pencil, self.eraser, self.shapes, self.color, self.width, self.width_slider],
-            tight=True, wrap=True, alignment=ft.MainAxisAlignment.CENTER, spacing=APP_PADDING)
+            tight=True, wrap=True, alignment=ft.MainAxisAlignment.START, spacing=APP_PADDING)
         self.tools = ft.Row([self.options, self.visibility], wrap=True,
-            alignment=ft.MainAxisAlignment.CENTER, spacing=APP_PADDING, run_spacing=APP_PADDING)
+            alignment=ft.MainAxisAlignment.START, spacing=APP_PADDING, run_spacing=APP_PADDING)
         choices = [(SELECT, 'Selecionar', ft.Icon(ft.Icons.NEAR_ME_OUTLINED, size=MENU_ICON_SIZE)),
             (PENCIL, 'Lápis', ft.Icon(ft.Icons.EDIT_OUTLINED, size=MENU_ICON_SIZE)),
             (ERASER, 'Borracha', eraser_icon(MENU_ICON_SIZE, MUTED)),
@@ -113,8 +114,11 @@ class DrawingSurface:
         for pointer in self.inputs:
             pointer.sync()
 
+    @explicit_updates
     def resized(self, e):
-        if e.width > 0 and e.height > 0:
+        if not self.player.presenting:
+            return
+        if e.width > 0 and e.height > 0 and self.bounds != (e.width, e.height):
             cancelled = self.editor.drag is not None and self.bounds != (e.width, e.height)
             if self.bounds and self.bounds != (e.width, e.height):
                 self.editor.cancel(update=False)
@@ -171,12 +175,17 @@ class DrawingSurface:
         if not self.player.opened or not self.player.view.editable() or self.player.editing:
             return
         self.editor.set_tool(tool)
-        self.player.playing = False
-        self.player.render_position()
-        self.sync()
-        self.player.view.page.update(self.tools, self.selection_box, self.gesture)
+        self.player.pause_for_edit()
+        self.player.set_gesture_locked(False)
+        self.refresh()
         self.tool_menu.close()
         self.player.focus_timeline()
+
+    def refresh(self):
+        """Publish drawing changes without touching images, tracks or the canvas."""
+        self.sync()
+        if self.player.presenting:
+            self.player.view.page.update(self.tools, self.overlay.canvas, self.selection_box, self.gesture)
 
     def set_width(self, e=None):
         self.focused = False
@@ -196,8 +205,8 @@ class DrawingSurface:
 
     def focus_width(self, e=None):
         self.focused = True
-        self.player.playing = False
-        self.player.render()
+        self.player.pause_for_edit()
+        self.player.set_gesture_locked(False)
 
     def submit_width(self, e=None):
         self.set_width(e)
@@ -213,8 +222,8 @@ class DrawingSurface:
             self.player.view.page.update(self.tools)
         def cancelled():
             self.picker = None
-        self.player.playing = False
-        self.player.render()
+        self.player.pause_for_edit()
+        self.player.set_gesture_locked(False)
         self.picker = ColorPicker(self.player.view.page, 'Cor do lápis', self.editor.color,
             apply, on_cancel=cancelled)
         self.picker.open()

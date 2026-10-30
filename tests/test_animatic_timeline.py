@@ -263,7 +263,8 @@ class TimelineEditingTests(TestCase):
             self.assertIs(view.board, before)
             self.assertEqual(player.timeline.frames[0].duration, 2.5)
             self.assertEqual(player.timeline.starts[1], 2.5)
-            self.assertEqual(player.timeline.total, 4.5)
+            self.assertEqual(player.timeline.total, 4)
+            self.assertEqual(player.timeline.frames[1].duration, 1.5)
             self.assertIn('60 f', view.cards[first.id].duration.value)
             self.assertIn('2.5 s', player.caption.tooltip)
             self.assertFalse(player.playing)
@@ -273,10 +274,10 @@ class TimelineEditingTests(TestCase):
             fixtures.finish(player.duration_editor.finish(token))
             saved.assert_called_once()
         self.assertEqual(view.board.frames[0].duration, 3)
-        self.assertEqual(view.board.frames[1], second)
+        self.assertEqual(view.board.frames[1], replace(second, duration=1))
         self.assertEqual(len(view.history.past), history + 1)
         self.assertEqual(view.store.load(), view.board)
-        self.assertEqual(frame_counts(view.board.frames, view.board.fps), [72, 48])
+        self.assertEqual(frame_counts(view.board.frames, view.board.fps), [72, 24])
 
     def test_cancel_restores_preview_position_and_leaves_file_and_history_unchanged(self):
         view, player = self.editor()
@@ -315,7 +316,7 @@ class TimelineEditingTests(TestCase):
         self.assertEqual(player.timeline.total, 4)
         fixtures.finish(player.key_down(Data(key='z', ctrl=True, shift=True)))
         self.assertEqual(view.board.frames[0].duration, 3)
-        self.assertEqual(player.timeline.total, 5)
+        self.assertEqual(player.timeline.total, 4)
 
     def test_dragging_uses_fixed_scale_even_when_total_duration_changes(self):
         view, player = self.editor()
@@ -377,10 +378,10 @@ class TimelineEditingTests(TestCase):
     def test_serialized_timeline_remains_mutable_during_resize_and_playhead_updates(self):
         view, player = self.editor()
         encoder = configure_encode_object_for_msgpack(BaseControl)
-        patch_, _, _ = ObjectPatch.from_diff(None, player.popup, BaseControl)
+        patch_, _, _ = ObjectPatch.from_diff(None, player.surface, BaseControl)
         msgpack.packb(patch_.to_message(), default=encoder)
         token = player.duration_editor.begin(view.board.frames[0].id, 0, TimeScale(100))
         player.duration_editor.move(token, 100)
-        patch_, _, _ = ObjectPatch.from_diff(player.popup, player.popup, BaseControl)
+        patch_, _, _ = ObjectPatch.from_diff(player.surface, player.surface, BaseControl)
         msgpack.packb(patch_.to_message(), default=encoder)
         player.duration_editor.cancel()

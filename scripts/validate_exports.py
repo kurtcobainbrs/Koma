@@ -1,4 +1,4 @@
-"""Gera amostras de integração com Blender real, sem depender do AppAkira."""
+"""Gera amostras de integração usando o exportador interno."""
 
 import argparse
 import asyncio
@@ -15,9 +15,10 @@ from koma.editor.models import Storyboard, StoryFrame, StoryLink
 from koma.exports.pdf_export import export_pdf
 from koma.exports.video_export import frame_counts, prepare_frames
 from koma.exports.video_runner import VideoRunner
+from koma.exports.video_frames import FileFrames
 
 
-async def validate(blender, output):
+async def validate(output):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     session = DocumentSession(output / 'data')
@@ -45,8 +46,8 @@ async def validate(blender, output):
         paths = prepare_frames(timeline.frames, session.store, prepared, (1280, 720))
         counts = frame_counts(timeline.frames, 24)
         runner = VideoRunner(output / 'logs')
-        video = await runner.run(blender, paths, output / 'validation.mp4', 24, 'HIGH', 1280,
-            lambda event: None, frame_durations=counts)
+        video = await runner.run(FileFrames(tuple(paths), tuple(counts)), output / 'validation.mp4',
+            24, 'HIGH', 1280, lambda event: None)
         if video is None:
             raise RuntimeError('A exportação foi cancelada.')
         # Reabre o pacote em outra sessão e compara os dados completos.
@@ -65,7 +66,6 @@ async def validate(blender, output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--blender', required=True, type=Path)
     parser.add_argument('--output', type=Path, default=Path('build/validation'))
     args = parser.parse_args()
-    asyncio.run(validate(args.blender, args.output))
+    asyncio.run(validate(args.output))

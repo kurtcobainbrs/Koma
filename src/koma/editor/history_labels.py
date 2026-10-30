@@ -24,7 +24,15 @@ def change_label(before, after):
         'subtitle': 'Editar legenda', 'action': 'Editar ação', 'audio': 'Editar diálogo',
         'notes': 'Editar notas', 'scene_color': 'Alterar cor da cena'}
     for identifier in old.keys() & new.keys():
+        if old[identifier].active_media_id != new[identifier].active_media_id:
+            if len(new[identifier].media) > len(old[identifier].media):
+                return 'Adicionar mídia'
+            return 'Trocar mídia'
+        if len(new[identifier].media) != len(old[identifier].media):
+            return 'Remover mídia' if len(new[identifier].media) < len(old[identifier].media) else 'Adicionar mídia'
         previous, current = old[identifier].drawing, new[identifier].drawing
+        if old[identifier].sequence != new[identifier].sequence:
+            return 'Editar sequência'
         if previous != current:
             if previous.visible != current.visible:
                 return 'Mostrar desenho' if current.visible else 'Ocultar desenho'

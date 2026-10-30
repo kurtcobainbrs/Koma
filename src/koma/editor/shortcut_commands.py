@@ -28,8 +28,9 @@ class ShortcutCommands:
             Action.PROPERTIES: view.properties.toggle,
             Action.UNDO: view.graph.undo, Action.REDO: view.graph.redo,
             Action.GROUP: view.graph.group_dialog,
+            Action.SEQUENCE: lambda: view.add_node('sequence'),
             Action.FOCUS: nav.focus_selected if nav.selection.ids else ws.fit,
-            Action.FIT: ws.fit, Action.ALL: lambda: nav.apply_selection(set(view.cards)),
+            Action.FIT: ws.fit, Action.ALL: view.chrome.select_all,
             Action.NONE: lambda: nav.apply_selection(set()),
             Action.DUPLICATE: nav.duplicate_selected, Action.DELETE: nav.delete_selected,
             Action.CONFIRM: ws.grab.confirm, Action.CANCEL: self.cancel,
@@ -40,7 +41,7 @@ class ShortcutCommands:
             if isawaitable(result):
                 await result
 
-    def cancel(self):
+    async def cancel(self):
         nav, ws, view = self.nav, self.nav.workspace, self.nav.view
         ws.cancel_camera_transition()
         if ws.context_menu.is_open:
@@ -61,6 +62,8 @@ class ShortcutCommands:
             ws.cancel_drag(ws.drag.identifier)
         elif ws.box_selection.active:
             ws.box_selection.cancel()
+        elif ws.scope.active is not None:
+            await ws.scope.back()
         else:
             nav.set_mode('select')
             nav.select_node(None)

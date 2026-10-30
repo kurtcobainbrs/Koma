@@ -23,9 +23,10 @@ from koma.exports.pdf_export import export_pdf
 from koma.exports.subtitles import render_subtitle
 from koma.exports.video_export import frame_counts, prepare_frames
 from koma.exports.video_runner import VideoRunner
+from koma.exports.video_frames import FileFrames
 
 
-async def check(report_path, blender=None):
+async def check(report_path, *, video=False):
     report_path = Path(report_path).resolve()
     work = report_path.parent / f'artifacts-{uuid4().hex[:8]}'
     work.mkdir(parents=True)
@@ -36,7 +37,7 @@ async def check(report_path, blender=None):
     try:
         for relative in ('assets/fonts/Archivo-Regular.ttf', 'assets/fonts/Archivo-Medium.ttf',
                          'assets/fonts/Archivo-SemiBold.ttf', 'assets/storyboard-print.json',
-                         'assets/storyboard-subtitles.json', 'themes/koma-dark.json', 'exports/blender_probe.py'):
+                         'assets/storyboard-subtitles.json', 'themes/koma-dark.json'):
             if not files('koma').joinpath(relative).is_file():
                 raise ValueError(f'Recurso ausente: {relative}')
         if report['frozen']:
@@ -87,10 +88,10 @@ async def check(report_path, blender=None):
         prepared = prepare_frames((a, b), session.store, frames, (1280, 720))
         report['checks']['framing_subtitles'] = 'passed'
         report['checks']['mp4'] = 'not_requested'
-        if blender is not None:
+        if video:
             runner = VideoRunner(work / 'logs')
-            result = await runner.run(Path(blender).resolve(), prepared, work / 'exemplo.mp4',
-                24, 'HIGH', 1280, lambda event: None, frame_durations=frame_counts((a, b), 24))
+            result = await runner.run(FileFrames(tuple(prepared), tuple(frame_counts((a, b), 24))),
+                work / 'exemplo.mp4', 24, 'HIGH', 1280, lambda event: None)
             if result is None:
                 raise ValueError('MP4 cancelado.')
             report['checks']['mp4'] = 'passed'
@@ -104,5 +105,5 @@ async def check(report_path, blender=None):
     return 0 if report['ok'] else 1
 
 
-def run(report_path, blender=None):
-    return asyncio.run(check(report_path, blender))
+def run(report_path, *, video=False):
+    return asyncio.run(check(report_path, video=video))

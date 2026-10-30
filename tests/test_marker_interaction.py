@@ -80,7 +80,7 @@ class MarkerInteractionTests(TestCase):
         self.assertEqual(view.store.path.read_bytes(), stored)
         self.assertEqual(len(view.history.past), history)
         self.assertEqual(editor.position, 2)
-        self.assertEqual(player.position, 2)
+        self.assertEqual(player.position, marker.position)
         fixtures.finish(editor.finish(token))
         self.assertFalse(view.busy)
         self.assertEqual(player.timeline.markers[0].position, 2)
@@ -88,6 +88,61 @@ class MarkerInteractionTests(TestCase):
         self.assertEqual(view.store.load(), view.board)
         fixtures.finish(player.strip.undo_edit())
         self.assertEqual(player.timeline.markers[0], marker)
+
+    def test_drag_patches_only_marker_and_guide_without_rendering_preview_or_canvas(self):
+        from flet.controls.base_control import BaseControl
+        from flet.controls.object_patch import ObjectPatch, DiffBuilder
+        view, player = self.editor()
+        marker = self.marker(player)
+        player.position = .25
+        player.render_position()
+        lane = player.strip.marker_lane
+        flag = lane.flags[marker.id]
+        before = view.board
+        ObjectPatch.from_diff(None, view.content, BaseControl)
+        original = DiffBuilder._compare_dataclasses
+        forbidden = [player.preview.stack, player.strip.audio_lane.canvas,
+            *(card.viewport.stack for card in view.cards.values())]
+        def compare(instance, parent, path, src, dst, frozen):
+            if any(dst is control for control in forbidden):
+                raise AssertionError('Marker drag traversed stable media/canvas')
+            return original(instance, parent, path, src, dst, frozen)
+        def update(*roots):
+            for root in roots:
+                ObjectPatch.from_diff(root, root, BaseControl)
+        with patch.object(DiffBuilder, '_compare_dataclasses', compare), \
+                patch.object(player, 'render', side_effect=AssertionError('Full player render during drag')), \
+                patch.object(player.strip, 'sync', side_effect=AssertionError('Full track sync during drag')):
+            view.page.update.side_effect = update
+            token = player.marker_editor.begin(marker.id, 100, TimeScale(100))
+            view.page.update.reset_mock()
+            for x in (120, 145, 190, 195, 195):
+                player.marker_editor.move(token, x)
+            self.assertTrue(view.page.update.called)
+            for call in view.page.update.call_args_list:
+                self.assertEqual(call.args, (flag.box, flag.guide))
+            self.assertEqual(player.position, .25)
+            self.assertIs(view.board, before)
+            player.marker_editor.cancel()
+        view.page.update.side_effect = None
+        self.assertFalse(player.controls.disabled)
+        self.assertFalse(view.busy)
+
+    def test_release_includes_final_marker_position_without_moving_playhead(self):
+        view, player = self.editor()
+        marker = self.marker(player)
+        flag = player.strip.marker_lane.flags[marker.id]
+        position = player.position
+        history = len(view.history.past)
+        flag.pointer_down(Data(global_position=Data(x=100)))
+        flag.begin(Data(global_position=Data(x=100)))
+        flag.move(Data(global_position=Data(x=100 + player.strip.scale.pixels(.5))))
+        fixtures.finish(flag.finish(Data(global_position=Data(x=100 + player.strip.scale.pixels(1)))))
+        self.assertEqual(player.timeline.markers[0].position, 2)
+        self.assertEqual(player.position, position)
+        self.assertEqual(len(view.history.past), history + 1)
+        self.assertFalse(player.controls.disabled)
+        self.assertEqual(view.store.load(), view.board)
 
     def test_escape_cancels_drag_without_closing_preview_or_touching_history(self):
         view, player = self.editor()
@@ -144,7 +199,7 @@ class MarkerInteractionTests(TestCase):
         self.assertEqual(player.timeline.markers[0].title, 'Corte principal')
         self.assertIsNone(lane.renaming)
         self.assertFalse(lane.saving)
-        self.assertEqual(view.page.run_task.call_args.args[0], player.keyboard.focus)
+        self.assertIs(view.focus.target, player.keyboard)
         self.assertEqual(view.page.show_dialog.call_count, calls)
         self.key(player, 'Delete')
         self.assertEqual(player.timeline.markers, ())

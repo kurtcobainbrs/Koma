@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from dataclasses import replace
 from types import SimpleNamespace as Data
 import msgpack
+import flet.canvas as cv
 from flet.controls.base_control import BaseControl
 from flet.controls.object_patch import ObjectPatch
 from flet.messaging.protocol import configure_encode_object_for_msgpack
@@ -34,11 +35,11 @@ class FlowInteractionTests(unittest.TestCase):
         self.workspace.update_drag(self.b.id, Data(global_position=Data(x=124, y=148)))
         after = links.port(self.b.id, False)
         self.assertEqual((after[0] - before[0], after[1] - before[1]), (24, 48))
-        expected = card.content.top + 612 - card.layout.socket_bottom
+        expected = card.content.top + card.layout.socket_y(612)
         self.assertEqual(after[1], expected)
         self.assertIs(self.view.board, board)
         self.workspace.node_resized(self.b.id, Data(height=720))
-        self.assertEqual(links.port(self.b.id, False)[1], expected + 108)
+        self.assertEqual(links.port(self.b.id, False)[1], expected + 54)
         self.workspace.cancel_drag(self.b.id)
 
     def setUp(self):
@@ -58,15 +59,15 @@ class FlowInteractionTests(unittest.TestCase):
         self.workspace, self.nav = self.view.workspace, self.view.workspace.navigation
 
     def test_click_sockets_connect(self):
-        output = self.view.cards[self.a.id].sockets.controls[-1]
-        target = self.view.cards[self.b.id].sockets.controls[0]
+        output = self.view.cards[self.a.id].output_socket.content
+        target = self.view.cards[self.b.id].input_socket.content
         output.on_tap_down(None)
         finish(target.on_tap_down(None))
         self.assertEqual(self.view.board.links, (StoryLink(self.a.id, self.b.id),))
         self.assertIsNone(self.workspace.links.pending)
         self.assertEqual(self.view.store.load(), self.view.board)
 
-    def test_drag_draws_curve_and_connects_on_node_body_at_any_zoom(self):
+    def test_drag_draws_straight_preview_and_connects_on_node_body_at_any_zoom(self):
         links = self.workspace.links
         self.workspace.zoom = .5
         source = links.port(self.a.id, True)
@@ -77,7 +78,10 @@ class FlowInteractionTests(unittest.TestCase):
             x=100 + (endpoint[0] - source[0]) * .5,
             y=100 + (endpoint[1] - source[1]) * .5)))
         self.assertIsNotNone(links.preview_shape)
-        self.assertIn(links.preview_shape, links.canvas.shapes)
+        self.assertIsInstance(links.preview_shape, cv.Line)
+        self.assertEqual((links.preview_shape.x1, links.preview_shape.y1), source)
+        self.assertEqual((links.preview_shape.x2, links.preview_shape.y2), endpoint)
+        self.assertIn(links.preview_shape, links.gesture_canvas.shapes)
         self.assertFalse(self.view.board.links)
         finish(links.drag_end())
         self.assertEqual(self.view.board.links, (StoryLink(self.a.id, self.b.id),))

@@ -3,9 +3,9 @@
 from dataclasses import dataclass, field
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.ui.design import DRAG_INTERVAL_MS
-from koma.editor.geometry import NODE_HEIGHT, NODE_WIDTH
 from koma.editor.shortcuts import Action
 
 
@@ -43,11 +43,13 @@ class BoxSelection:
     def active(self):
         return self.start is not None
 
+    @explicit_updates
     def press(self, e):
         nav = self.workspace.navigation
         if nav.effective_mode == 'select' and not self.view.busy:
             self.pending = (e.local_position.x, e.local_position.y), set(nav.selection.ids), nav.selected
 
+    @explicit_updates
     def begin(self, e):
         nav = self.workspace.navigation
         if nav.effective_mode != 'select' or not self.view.editable() or self.workspace.drag:
@@ -60,6 +62,7 @@ class BoxSelection:
         nav.focus_keyboard()
         self.update(e)
 
+    @explicit_updates
     def update(self, e):
         if not self.active or self.view.closing:
             return
@@ -69,14 +72,16 @@ class BoxSelection:
         self.overlay.visible = True
         hits = set()
         for identifier, card in self.view.cards.items():
-            node = card.content
-            bounds = node.left, node.top, node.left + NODE_WIDTH, node.top + self.workspace.node_heights.get(identifier, NODE_HEIGHT)
+            if not card.content.visible:
+                continue
+            bounds = self.workspace.links.bounds(identifier)
             if intersects(rect, bounds):
                 hits.add(identifier)
         identifiers = self.base | hits if self.operation == 'add' else self.base - hits if self.operation == 'subtract' else hits
         self.workspace.navigation.apply_selection(identifiers)
         self.view.page.update(self.overlay)
 
+    @explicit_updates
     def end(self, e=None):
         if not self.active:
             self.pending = None
@@ -85,8 +90,9 @@ class BoxSelection:
         self.overlay.visible = False
         self.workspace.navigation.sync(update=False)
         if not self.view.closing:
-            self.view.page.update(self.overlay, self.workspace.viewer)
+            self.workspace.update_interaction(self.overlay)
 
+    @explicit_updates
     def cancel(self, e=None):
         if self.active:
             self.workspace.navigation.apply_selection(self.base, self.active_before)

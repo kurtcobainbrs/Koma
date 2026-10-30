@@ -1,6 +1,7 @@
 """Passive vector display shared by preview, nodes and timeline thumbnails."""
 import flet as ft
 import flet.canvas as cv
+from koma.ui.retained_container import RetainedContainer
 
 
 class DrawingOverlay:
@@ -9,7 +10,7 @@ class DrawingOverlay:
         self.layer = None
         self.shapes = {}
         self.canvas = cv.Canvas(shapes=[])
-        self.content = ft.Container(left=0, right=0, top=0, bottom=0,
+        self.content = RetainedContainer(hold_updates=lambda: False, left=0, right=0, top=0, bottom=0,
             bgcolor=ft.Colors.TRANSPARENT, ignore_interactions=True, content=self.canvas)
 
     def sync(self, layer, width, height):

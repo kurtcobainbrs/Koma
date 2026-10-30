@@ -6,6 +6,8 @@ import flet as ft
 
 from koma.editor.geometry import NODE_HEIGHT, NODE_WIDTH, coordinate
 from koma.editor.shortcuts import Action
+from koma.editor.node_types import NODE_TYPES
+from koma.ui.node_icons import node_icon
 from koma.ui.design import MUTED
 from koma.ui.menus import DesktopContextMenu, menu_item, MENU_ICON_SIZE
 
@@ -59,6 +61,7 @@ class CanvasContextMenu:
                     coordinate(point.y - ws.extent.origin_y, snap=ws.snap_enabled))
         hit = next((identifier for identifier in reversed(ws.z_order)
             if identifier in view.cards and
+            view.cards[identifier].content.visible and
             view.cards[identifier].content.left <= point.x <= view.cards[identifier].content.left + NODE_WIDTH and
             view.cards[identifier].content.top <= point.y <= view.cards[identifier].content.top + ws.node_heights.get(identifier, NODE_HEIGHT)), None)
         items = []
@@ -66,7 +69,8 @@ class CanvasContextMenu:
             if hit not in ws.navigation.selection.ids:
                 ws.navigation.select_node(hit, focus=True)
             selected = frozenset(ws.navigation.selection.ids)
-            muted = all(frame.muted for frame in view.board.frames if frame.id in selected)
+            members = view.sequences.index.closure(selected)
+            muted = all(frame.muted for frame in view.board.frames if frame.id in members and not frame.node_type.contains_frames)
             async def toggle(e=None):
                 await view.toggle_muted(selected)
             async def duplicate(e=None):
@@ -78,14 +82,15 @@ class CanvasContextMenu:
             ])
         def insert(kind):
             async def add(e=None):
-                count = len(view.board.frames)
+                previous = set(view.cards)
                 await view.add_node(kind, position=position)
-                if len(view.board.frames) > count:
-                    ws.navigation.select_node(view.board.frames[-1].id, focus=True)
+                added = next((frame.id for frame in view.board.frames if frame.id not in previous
+                    and frame.id in ws.scope.visible), None)
+                if added:
+                    ws.navigation.select_node(added, focus=True)
             return add
         items.extend([
-            self.item('Início de cena', ft.Icons.MOVIE_OUTLINED, insert('main')),
-            self.item('Quadro', ft.Icons.ADD, insert('frame')),
+            *[self.item(spec.label, node_icon(spec), insert(spec.kind)) for spec in NODE_TYPES.values()],
             self.item('Importar imagens…', ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED, view.pick_images),
         ])
         self.items = items

@@ -22,14 +22,14 @@ Depois da instalação, também é possível usar `koma` ou `python -m koma cami
 - Os projetos ficam em abas no topo, logo abaixo dos menus. Use **+** ou **Arquivo → Novo** para criar outra aba; **Abrir** também abre em uma nova aba.
 - Cada aba mantém documento, histórico, seleção, câmera e imagens próprios. O asterisco na aba indica alterações ainda não salvas no `.koma`.
 - Clique no nome para alternar; dê dois cliques para renomear ou use **Arquivo → Renomear**. O **×** fecha a aba, com Salvar/Descartar/Cancelar quando necessário.
-- O painel de propriedades mantém título e duração visíveis, com seções **Imagem** e **Roteiro** recolhíveis sem animação. Ao recolher o painel inteiro, use a seta na borda direita para reabri-lo; o atalho de Propriedades continua disponível.
+- O painel de propriedades mantém título e duração visíveis, com seções **Mídias** e **Roteiro** recolhíveis sem animação. Ao recolher o painel inteiro, use a seta na borda direita para reabri-lo; o atalho de Propriedades continua disponível.
 - Abrir um arquivo já presente seleciona sua aba, preservando as alterações em memória. Salvar como não pode sobrescrever um arquivo aberto em outra aba.
 - Ao fechar a janela, todos os projetos com alterações são verificados antes de descartar qualquer sessão. Fechar a última aba cria um projeto vazio.
 - Salvar mantém uma cópia da versão anterior em `<nome>.koma.bak`. Para abrir esse backup, copie-o para um nome terminado em `.koma`.
 - Se outro programa ou outra janela modificar o arquivo, o salvamento é recusado. Use Salvar como para preservar ambas as versões.
 - Um documento novo permanece sem caminho até o primeiro salvamento.
 
-O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 3), `images/<uuid>.png` e áudio em `audio/<uuid>.wav`. Inclui título, nodes, conexões, grupos, textos, duração, legenda, cor, posições, enquadramento, trilhas e marcadores. Projetos das versões 1 e 2 continuam abrindo em 1920 × 1080; clientes antigos rejeitam a versão 3 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote.
+O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 7), imagens e prévias em `images/`, vídeos em `videos/` e áudio em `audio/`. Inclui os dados dos nodes, alternativas de mídia, escolha ativa, sequências com Entrada/Saída próprias, desenhos, conexões, roteiro, duração, formato, trilhas e marcadores. Projetos das versões 1 a 6 continuam abrindo por migração explícita; clientes antigos rejeitam a versão 7 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote. Veja [Mídias por quadro](docs/NODE_MEDIA.md) e [Sequências](docs/SEQUENCES.md).
 
 Não há compatibilidade com `.akira-storyboard`.
 
@@ -47,9 +47,17 @@ Use **M** para mutar/desmutar os nodes selecionados ou a opção no menu do node
 
 Edições confirmadas atualizam uma recuperação local, sem sobrescrever o `.koma`. Após interrupção, use **Arquivo → Recuperar sessão**. A recuperação permanece disponível até a resolução explícita da sessão. Sessões em uso em outra janela não são oferecidas para recuperação.
 
-Dados locais ficam no diretório do usuário definido por `platformdirs` para `Koma`. A variável `KOMA_DATA_DIR` permite substituí-lo. Preferências do Blender e atalhos ficam em `settings.json`; opções de legendas em `options.json`; câmera em `viewports/`; recuperação em `recovery/`; logs em `logs/`.
+Dados locais ficam no diretório do usuário definido por `platformdirs` para `Koma`. A variável `KOMA_DATA_DIR` permite substituí-lo. Atalhos ficam em `settings.json`; opções de legendas em `options.json`; câmera em `viewports/`; recuperação em `recovery/`; logs em `logs/`.
 
 Seleção e câmera não alteram o documento. Imagens antigas são mantidas durante a sessão para permitir desfazer. O histórico possui até 100 snapshots e não é gravado no `.koma`.
+
+## Sequências
+
+Selecione quadros e use **Inserir → Sequência** ou `Ctrl+Shift+G` para criar um bloco recolhível com duração total. **Acessar conteúdo** expande e enquadra seus membros; **Dissolver sequência** mantém os quadros. O conteúdo continua participando normalmente do animatic e das exportações. Consulte [Sequências](docs/SEQUENCES.md) para os comandos, a estrutura dos dados e a compatibilidade do formato 5.
+
+## Modos de trabalho
+
+Use **Canvas** e **Animatic** na barra superior. São duas visualizações do mesmo projeto, com os mesmos nodes e histórico. O animatic ocupa a área principal; o divisor horizontal ajusta o espaço da prévia e da timeline, e o inspetor lateral pode ser redimensionado ou recolhido. Clicar em um bloco seleciona o node para editar suas propriedades. A reprodução e a agulha mudam a prévia sem trocar essa seleção. Câmera, painéis e seleção são preservados ao alternar os modos na sessão. Veja [Modo Animatic](docs/ANIMATIC_WORKSPACE.md).
 
 ## Exportações
 
@@ -61,21 +69,21 @@ Em **Arquivo → Projeto…**, **FPS** define a taxa de 24, 25, 30 ou 60 FPS, sa
 
 **Timeline e áudio:** a prévia permite importar WAV, MP3, FLAC ou OGG por cena, visualizar a waveform, ajustar o início em frames, mutar e substituir/remover áudio. Marcadores têm nome e posição; clique para navegar e duplo clique para editar. Zoom, régua e agulha são compartilhados. Veja [arquitetura, limites e validação](docs/TIMELINE_AUDIO.md).
 
-**MP4:** configure o executável em **Arquivo → Preferências do Blender**. O Blender é instalado separadamente. Selecione uma cena ou um quadro pertencente a ela antes de exportar. O resultado usa cortes diretos, inclui a trilha ativa da cena e legendas opcionais; suporta 24/25/30/60 FPS e usa o formato definido no projeto, preservando suas dimensões.
+**MP4:** use **Arquivo → Exportar → MP4** ou o botão no animatic. O PyAV incluído no aplicativo codifica H.264/AAC, sem instalar programas adicionais. A exportação preserva as mídias ativas, desenhos, enquadramentos, áudio e legendas habilitadas; suporta 24/25/30/60 FPS e o formato definido no projeto. Veja [Exportação MP4](docs/MP4_EXPORT.md).
 
-A exportação com áudio foi validada com **Blender 5.2 no Windows**; a exportação anterior sem áudio também foi validada com Blender 5.0.1. Outras versões precisam de validação. Não instala `bpy` no Python do aplicativo e não abre arquivos `.blend`.
+A exportação usa a mesma composição de desenhos, enquadramentos e legendas do restante do projeto. Trabalha em segundo plano, com memória limitada, cancelamento e publicação atômica.
 
-O runner usa um processo cancelável e um arquivo temporário. Falhas e cancelamento preservam o MP4 anterior. A preparação das imagens e o PDF trabalham fora do loop da interface.
+O runner usa um worker cancelável e um arquivo temporário. Falhas e cancelamento preservam o MP4 anterior. A codificação, a composição das imagens e o PDF trabalham fora do loop da interface.
 
 ## Testes e validação real
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -q
-.venv\Scripts\python.exe scripts\validate_exports.py --blender 'C:\Program Files\Blender Foundation\Blender 5.0\blender.exe'
-& 'C:\Program Files\Blender Foundation\Blender 5.0\blender.exe' --background --factory-startup --python-exit-code 1 --python scripts\check_video.py -- build\validation\validation.mp4
+.venv\Scripts\python.exe scripts\validate_exports.py
+.venv\Scripts\python.exe scripts\check_video.py build\validation\validation.mp4
 ```
 
-Os testes verificam grafo, gestos, controles Flet, histórico, documentos, falhas de gravação, conflitos externos, recuperação e fechamento cancelável. A validação real gera `.koma`, PDF e MP4 em `build/validation`. O segundo script verifica resolução, duração em frames e FPS do vídeo por leitura no Blender.
+Os testes verificam grafo, gestos, controles Flet, histórico, documentos, falhas de gravação, conflitos externos, recuperação e fechamento cancelável. A validação real gera `.koma`, PDF e MP4 em `build/validation`. O segundo script verifica resolução, duração em frames e FPS do vídeo por leitura no PyAV.
 
 ## Distribuição Windows
 
@@ -92,7 +100,7 @@ Atualize a versão em `pyproject.toml` e registre as mudanças antes de executar
 .\scripts\build_windows.ps1
 ```
 
-O build produz o wheel/sdist Python e `dist/Koma/Koma.exe`. Distribua **a pasta `dist/Koma` inteira**: ela inclui Python, bibliotecas, fontes, estilos, script de exportação e cliente Flet. O Blender continua externo. Não é necessário instalar Python na máquina de destino.
+O build produz o wheel/sdist Python e `dist/Koma/Koma.exe`. Distribua **a pasta `dist/Koma` inteira**: ela inclui Python, bibliotecas, codecs de vídeo, fontes, estilos e cliente Flet. Não é necessário instalar Python ou Blender na máquina de destino.
 
 A compilação requer Flutter 3.44.8 e Visual Studio Build Tools 2022 com ferramentas C++ para desktop. `scripts/build_flet_client.py` executa análise, testes Flutter e build Release, usando as versões dos arquivos `pubspec.lock`. O build Windows inclui esse cliente para inicialização offline. O executável portátil ainda requer uma conferência em uma máquina Windows limpa antes de publicação; não há instalador assinado nem associação automática de extensão nesta etapa.
 
@@ -104,7 +112,7 @@ O arquivo `dist/Koma-windows-x64-validation.zip` contém a distribuição, hashe
 Start-Process .\dist\Koma\Koma.exe -ArgumentList '--diagnostics', 'C:\Testes\diagnostics.json' -PassThru -Wait
 ```
 
-Use `--blender <executável>` junto de `--diagnostics` para incluir a exportação MP4 no ensaio. A conferência da interface e a homologação em Windows limpo continuam necessárias.
+Use `--video` junto de `--diagnostics` para incluir a exportação MP4 no ensaio. A conferência da interface e a homologação em Windows limpo continuam necessárias.
 
 ## Organização e origem
 

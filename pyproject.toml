@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koma-app"
-version = "0.2.0"
+version = "0.3.0"
 description = "Editor desktop independente de storyboard e animatic"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["flet[desktop]==1.0.5", "platformdirs>=4,<5", "reportlab>=4.4,<5", "pillow>=11,<14", "miniaudio>=1.71,<2"]
+dependencies = ["flet[desktop]==1.0.5", "platformdirs>=4,<5", "reportlab>=4.4,<5", "pillow>=11,<14", "miniaudio>=1.71,<2", "av==17.1.0"]
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6,<7", "build>=1,<2", "pefile>=2024.8.26"]

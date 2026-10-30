@@ -11,7 +11,6 @@ from koma.ui.design import CONTROL_HEIGHT, MUTED, dialog, input_style
 from koma.paths import initial_directory
 from koma.ui.operation_feedback import OperationFeedback
 from koma.ui.typography import TEXT_BODY, TEXT_SMALL
-from koma.ui.components import list_surface
 from koma.editor.card import StoryCard
 from koma.editor.canvas import StoryboardCanvas
 from koma.editor.geometry import GRID_STEP, group_delta, next_position, place_missing, make_insertion_space
@@ -31,6 +30,17 @@ from koma.editor.editor_chrome import StoryboardChrome
 from koma.editor.node_types import node_type
 from koma.preferences import StoryboardPreferences
 from koma.editor.shortcuts import default_keymap
+from koma.editor.sequence_actions import SequenceActions
+from koma.editor.sequences import remap_frame
+from koma.editor.node_media_actions import NodeMediaActions
+from koma.ui.image_source import trim_thumbnails
+from koma.editor.node_media import with_image
+from koma.editor.work_modes import WorkModes
+from koma.ui.workspace_style import WORKSPACE_STYLE
+from koma.ui.focus_requests import FocusRequests
+from koma.ui.retained_container import RetainedColumn, retain_children
+
+CARD_BUILD_BATCH = 32
 from koma.ui.splitter import Splitter
 
 
@@ -50,8 +60,11 @@ class StoryboardView:
         self.board = Storyboard()
         self.history = StoryHistory()
         self.graph = GraphActions(self)
+        self.sequences = SequenceActions(self)
+        self.node_media = NodeMediaActions(self)
         self.cards, self.thumbnails = {}, {}
         self.busy = self.closing = self.loaded = False
+        self.focus = FocusRequests(page)
         self.load_error = ''
         self.revision = 0
         self.save_lock = asyncio.Lock()
@@ -74,7 +87,8 @@ class StoryboardView:
         self.image_input = StoryboardImageInput(self)
         self.project_properties = ProjectProperties(self)
         self.properties = FrameProperties(self)
-        self.properties_splitter = Splitter(page, self.properties.content, minimum=240, maximum=600, reverse=True)
+        self.properties_splitter = Splitter(page, self.properties.content,
+            minimum=WORKSPACE_STYLE.inspector_minimum, maximum=WORKSPACE_STYLE.inspector_maximum, reverse=True)
         self.empty = ft.Container(left=64, right=56, top=24, padding=16, content=ft.Column([
             ft.Icon(ft.Icons.VIEW_MODULE_OUTLINED, size=36, color=MUTED),
             ft.Text('Comece com um quadro vazio ou importe imagens.', size=TEXT_BODY, color=MUTED),
@@ -97,14 +111,29 @@ class StoryboardView:
         self.feedback.add_notice(self.files.actions)
         self.chrome = StoryboardChrome(self)
         self.toolbar = self.chrome.toolbar
-        self.content = ft.Column([
+        self.work_modes = WorkModes(self)
+        self.content = RetainedColumn(hold_updates=lambda: False, controls=[
             self.chrome.content,
-            ft.Row([list_surface([self.board_area]), self.properties_splitter.content,
-                self.properties.content, self.properties.reopen_rail], expand=True, spacing=6,
-                vertical_alignment=ft.CrossAxisAlignment.STRETCH), self.chrome.status,
+            self.work_modes.content, self.chrome.status,
         ], expand=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.refresh()
         self.keymap.listeners.append(self.shortcuts_changed)
+
+    @property
+    def edit_selection(self):
+        return self.player.selection if self.player.opened else self.workspace.navigation.selection
+
+    def field_focus(self, identifier, key, focused):
+        nav = self.workspace.navigation
+        if not self.player.opened:
+            nav.field_focus(identifier, key, focused)
+        elif focused:
+            nav.editing_fields.add((identifier, key))
+        else:
+            nav.editing_fields.discard((identifier, key))
+
+    def focus_editor(self):
+        self.work_modes.focus()
 
     def shortcuts_changed(self):
         self.workspace.navigation.refresh_shortcuts()
@@ -119,8 +148,10 @@ class StoryboardView:
         if not self.closing and self.active:
             self.page.update(self.feedback.content)
 
-    def lock(self, busy):
+    def lock(self, busy, *, update=True):
         self.busy = busy
+        if not update:
+            return
         if busy:
             self.feedback.set_state('working')
         elif self.feedback.state == 'working':
@@ -141,11 +172,15 @@ class StoryboardView:
             self.page.update(self.content)
 
     async def activate(self):
+        self.focus.resume()
         if self.closing or self.busy:
             return
         if self.loaded:
             if not self.load_error:
-                await self.workspace.resume()
+                if self.player.suspended:
+                    self.player.resume()
+                else:
+                    await self.workspace.resume()
             return
         self.lock(True)
         try:
@@ -159,6 +194,15 @@ class StoryboardView:
                 return
             self.board, self.thumbnails = place_missing(graph.ordered(board)), thumbnails
             self.title.value = board.title
+            # Loading owns the busy state. Yield between bounded UI batches so
+            # other application events are not starved by a large document.
+            for index, frame in enumerate(self.board.frames, 1):
+                card = self.cards[frame.id] = StoryCard(self, frame)
+                card.sync(frame)
+                if index % CARD_BUILD_BATCH == 0:
+                    await asyncio.sleep(0)
+                    if self.closing:
+                        return
             self.loaded = True
             self.refresh()
             self.notify('Conecte Saída → Entrada para ordenar o fluxo. Arraste um quadro sobre um fio para inseri-lo. Use Cancelar para interromper.')
@@ -169,9 +213,22 @@ class StoryboardView:
         finally:
             self.lock(False)
 
+    def snapshot_presentations(self):
+        return {identifier: card.viewport.presentation_key for identifier, card in self.cards.items()}
+
+    def publish(self, previous=None):
+        """Publish document/layout changes while retaining unchanged image/vector bodies."""
+        previous = previous or {}
+        stable = [card.viewport.content for identifier, card in self.cards.items()
+            if identifier in previous and previous[identifier] == card.viewport.presentation_key]
+        with retain_children(*stable):
+            self.page.update(self.content)
+
     def refresh(self):
+        trim_thumbnails(self)
         ids = {frame.id for frame in self.board.frames}
         self.cards = {key: card for key, card in self.cards.items() if key in ids}
+        self.workspace.scope.sync()
         number = 0
         for frame in self.board.frames:
             if frame.node_type.timed:
@@ -179,14 +236,19 @@ class StoryboardView:
             if frame.id not in self.cards:
                 self.cards[frame.id] = StoryCard(self, frame)
             self.cards[frame.id].sync(frame)
-            self.cards[frame.id].number.value = (f'{frame.node_type.header} {number:02d}'
+            self.cards[frame.id].content.visible = frame.id in self.workspace.scope.visible
+            self.cards[frame.id].number.value = (f'{number:02d}'
                 if frame.node_type.timed else frame.node_type.header)
         self.graph.sync_history()
         self.workspace.refresh()
         self.properties.sync()
         self.project_properties.sync()
         scenes = sum(frame.node_type.starts_scene for frame in self.board.frames)
-        self.count.value = f'{number} quadros · {scenes} cenas · {len(self.board.links)} ligações'
+        sequences = sum(frame.node_type.contains_frames for frame in self.board.frames)
+        parts = [f'{number} quadros', f'{scenes} cenas', f'{len(self.board.links)} ligações']
+        if sequences:
+            parts.insert(1, f'{sequences} ' + ('sequência' if sequences == 1 else 'sequências'))
+        self.count.value = ' · '.join(parts)
         self.empty.visible = not self.board.frames
         self.external_drop.sync()
         self.export_button.disabled = not number
@@ -194,6 +256,8 @@ class StoryboardView:
         self.chrome.sync()
         if self.active and self.loaded and self.board.frames and not self.workspace.initial_view_done:
             self.page.run_task(self.workspace.ensure_initial_view)
+        if hasattr(self, 'work_modes'):
+            self.player.document_changed()
 
     def editable(self):
         return self.active and self.loaded and not self.busy and not self.closing and not self.load_error
@@ -260,13 +324,24 @@ class StoryboardView:
             await self.persist()
 
     async def set_frame_properties(self, identifier, coalesce_key=None, *, label=None, **values):
-        if not self.editable() or identifier not in self.cards:
+        await self.set_frames_properties({identifier: values}, coalesce_key, label=label)
+
+    async def set_frames_properties(self, changes, coalesce_key=None, *, label=None):
+        """One model/history/save operation, regardless of the number of affected nodes."""
+        if not self.editable() or not changes or not changes.keys() <= self.cards.keys():
             return
         try:
-            self.changed(self.board.change(identifier, **values), coalesce_key, label=label)
-            frame = next(frame for frame in self.board.frames if frame.id == identifier)
-            self.cards[identifier].sync(frame)
-            self.page.update(self.cards[identifier].content)
+            board = replace(self.board, frames=tuple(replace(frame, **changes[frame.id])
+                if frame.id in changes else frame for frame in self.board.frames))
+            self.changed(board, coalesce_key, label=label)
+            for frame in self.board.frames:
+                if frame.id in changes:
+                    self.cards[frame.id].sync(frame)
+                    self.sequences.sync_ancestors(frame.id)
+            self.page.update(*(self.cards[key].content for key in changes))
+            if self.properties.sync_path():
+                self.page.update(self.properties.scene_info)
+            self.player.document_changed()
             await self.persist()
         except ValueError as exc:
             self.notify(str(exc), 'warning')
@@ -287,14 +362,20 @@ class StoryboardView:
         if not self.editable():
             return
         spec = node_type(kind)
+        if spec.starts_scene and self.workspace.scope.active is not None:
+            self.notify('Crie cenas no canvas principal.', 'warning')
+            return
+        if spec.contains_frames:
+            await self.sequences.create(spec=spec, position=position)
+            return
         if len(self.board.frames) >= MAX_CARDS:
             self.notify(f'O storyboard aceita até {MAX_CARDS} nodes.', 'warning')
             return
-        x, y = next_position(self.board.frames) if position is None else position
+        x, y = self.workspace.scope.next_position() if position is None else position
         number = sum(frame.kind == kind for frame in self.board.frames) + 1
         title = f'{spec.title_prefix} {number:02d}' if spec.title_prefix else ''
         frame = StoryFrame(kind=kind, title=title, x=x, y=y)
-        self.changed(replace(self.board, frames=(*self.board.frames, frame)))
+        self.changed(self.workspace.scope.attach_new(replace(self.board, frames=(*self.board.frames, frame)), (frame.id,)))
         self.refresh()
         if spec.starts_scene:
             self.workspace.navigation.select_node(frame.id, focus=True)
@@ -305,9 +386,11 @@ class StoryboardView:
         if not self.editable():
             return
         identifiers = self.workspace.navigation.selection.ids if identifiers is None else identifiers
-        targets = [frame for frame in self.board.frames if frame.id in identifiers]
+        identifiers = self.sequences.index.closure(identifiers)
+        targets = [frame for frame in self.board.frames if frame.id in identifiers and not frame.node_type.contains_frames]
         if not targets:
             return
+        identifiers = {frame.id for frame in targets}
         muted = not all(frame.muted for frame in targets)
         await self.graph.commit(replace(self.board, frames=tuple(
             replace(frame, muted=muted) if frame.id in identifiers else frame for frame in self.board.frames)))
@@ -323,6 +406,7 @@ class StoryboardView:
     async def duplicate_frames(self, identifiers):
         if not self.editable():
             return
+        identifiers = self.sequences.index.closure(identifiers)
         originals = [frame for frame in self.board.frames if frame.id in identifiers]
         if not originals:
             return
@@ -332,17 +416,19 @@ class StoryboardView:
         positions = {frame.id: (frame.x, frame.y) for frame in originals}
         dx, dy = group_delta(positions, GRID_STEP * 2, GRID_STEP * 2,
                             anchor=(originals[0].x, originals[0].y))
-        copies = tuple(replace(frame, id=uuid4().hex, x=frame.x + dx, y=frame.y + dy) for frame in originals)
+        mapping = {frame.id: uuid4().hex for frame in originals}
+        roots = set(self.sequences.index.roots(identifiers))
+        copies = tuple(remap_frame(frame, mapping, x=frame.x + (dx if frame.id in roots else 0),
+            y=frame.y + (dy if frame.id in roots else 0)) for frame in originals)
         frames = list(self.board.frames)
         index = max(i for i, frame in enumerate(frames) if frame.id in identifiers) + 1
         frames[index:index] = copies
-        mapping = {original.id: copy.id for original, copy in zip(originals, copies)}
         links = tuple(StoryLink(mapping[edge.source], mapping[edge.target]) for edge in self.board.links
                       if edge.source in mapping and edge.target in mapping)
         groups = tuple(StoryGroup(title=group.title, members=tuple(mapping[key] for key in group.members))
                        for group in self.board.groups if set(group.members) <= mapping.keys())
-        self.changed(replace(self.board, frames=tuple(frames), links=(*self.board.links, *links),
-                             groups=(*self.board.groups, *groups)))
+        self.changed(self.workspace.scope.attach_new(replace(self.board, frames=tuple(frames),
+            links=(*self.board.links, *links), groups=(*self.board.groups, *groups)), (frame.id for frame in copies)))
         self.refresh()
         self.workspace.navigation.apply_selection({frame.id for frame in copies}, copies[0].id)
         self.page.update(self.content)
@@ -389,7 +475,7 @@ class StoryboardView:
             if frame.id in placed else frame for frame in self.board.frames))
         candidate = self.workspace.links.candidate
         if detach_flow:
-            updated = graph.detach(updated, positions)
+            updated = graph.detach(updated, self.sequences.index.closure(positions))
         elif (insert_flow and len(positions) == 1 and candidate
                 and not any(key in (edge.source, edge.target) for key in positions for edge in self.board.links)):
             try:
@@ -459,12 +545,14 @@ class StoryboardView:
                 name, data = await asyncio.to_thread(import_image, source, self.store)
                 self.thumbnails[name] = data
                 if identifier:
-                    self.changed(self.board.change(identifier, image=name, crop_x=0, crop_y=0))
+                    original = self.node_media.target(identifier)
+                    updated = with_image(original, name, source.name)
+                    self.changed(self.board.change(identifier, media=updated.media, active_media_id=updated.active_media_id))
                     self.cards[identifier].set_image(name)
                 else:
-                    x, y = next_position(self.board.frames)
-                    frame = StoryFrame(title=source.stem, image=name, x=x, y=y)
-                    self.changed(replace(self.board, frames=(*self.board.frames, frame)))
+                    x, y = self.workspace.scope.next_position()
+                    frame = with_image(StoryFrame(title=source.stem, x=x, y=y), name, source.name)
+                    self.changed(self.workspace.scope.attach_new(replace(self.board, frames=(*self.board.frames, frame)), (frame.id,)))
                 self.image_directory = str(source.parent)
                 imported += 1
             except (OSError, ValueError) as exc:
@@ -500,21 +588,15 @@ class StoryboardView:
 
     async def deactivate(self):
         """Suspende gestos/player ao sair da aba, preservando documento e histórico."""
-        self.workspace.context_menu.dismiss(refocus=False)
+        self.focus.suspend()
         self.workspace.camera_memory.remember()
-        self.workspace.grab.cancel(update=False)
-        if self.workspace.drag:
-            self.workspace.cancel_drag(self.workspace.drag.identifier, update=False)
-        self.workspace.box_selection.cancel()
-        self.workspace.box_zoom.cancel()
-        self.workspace.links.cancel()
-        self.workspace.links.cancel_cut()
+        self.workspace.cancel_gestures()
         self.properties.end_adjust()
+        self.node_media.close_editor()
         if self.player.opened:
-            self.player.close()
+            self.player.suspend()
         else:
             self.player.dismissed()
-        self.workspace.cancel_camera_transition()
         nav = self.workspace.navigation
         nav.reset_keys()
         nav.editing_fields.clear()
@@ -523,6 +605,9 @@ class StoryboardView:
         self.active = False
 
     async def shutdown(self):
+        self.focus.suspend()
+        self.node_media.close_editor()
+        self.workspace.measurements.cancel()
         if self.shortcuts_changed in self.keymap.listeners:
             self.keymap.listeners.remove(self.shortcuts_changed)
         self.workspace.grab.cancel(update=False)
@@ -539,6 +624,7 @@ class StoryboardView:
         await self.workspace.camera_memory.flush()
         await self.files.shutdown()
         await self.player.media.shutdown()
+        await self.player.video_preview.shutdown()
         await asyncio.to_thread(self.player.audio_transport.close)
         # Aguarda qualquer gravação de recuperação antes de limpar a sessão.
         async with self.save_lock:

@@ -36,8 +36,8 @@ def finish(coroutine):
     raise AssertionError('Suspensão inesperada')
 
 
-async def immediate(function, *args):
-    return function(*args)
+async def immediate(function, *args, **kwargs):
+    return function(*args, **kwargs)
 
 
 class StoryboardTests(unittest.TestCase):
@@ -485,7 +485,7 @@ class StoryboardTests(unittest.TestCase):
         finish(view.graph.undo())
         self.assertEqual(view.board, before)
 
-    def test_native_picker_callbacks_are_async_and_replace_image(self):
+    def test_native_picker_callbacks_are_async_and_add_node_media(self):
         view = self.view()
         picker = Mock()
         picker.pick_files = AsyncMock(return_value=[Data(path=str(self.source))])
@@ -496,11 +496,13 @@ class StoryboardTests(unittest.TestCase):
             card = view.cards[first.id]
             view.workspace.navigation.select_node(first.id)
             self.assertTrue(inspect.iscoroutinefunction(view.properties.image_button.on_click))
-            self.assertTrue(inspect.iscoroutinefunction(card.box.content.controls[0].controls[-2].on_click))
+            self.assertTrue(inspect.iscoroutinefunction(card.duplicate))
             finish(view.properties.image_button.on_click(None))
             self.assertEqual(len(view.board.frames), 1)
             self.assertNotEqual(view.board.frames[0].image, first.image)
-            self.assertFalse(picker.pick_files.call_args.kwargs['allow_multiple'])
+            self.assertTrue(picker.pick_files.call_args.kwargs['allow_multiple'])
+            self.assertEqual(len(view.board.frames[0].media), 2)
+            self.assertEqual(view.board.frames[0].media[0].asset, first.media[0].asset)
         self.assertFalse(view.busy)
         self.assertEqual(self.source.read_bytes(), self.original)
 

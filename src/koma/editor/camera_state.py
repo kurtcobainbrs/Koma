@@ -56,6 +56,9 @@ class CameraMemory:
             (ws.viewport_height / 2 - ws.translation_y) / ws.zoom - ws.extent.origin_y)
         if state.valid():
             self.state = state
+            if ws.scope.active is not None:
+                ws.scope.cameras[ws.scope.active] = state
+                return
             self.schedule()
 
     def clear(self):
@@ -91,7 +94,8 @@ class CameraMemory:
 
     async def flush(self):
         async with self.lock:
-            state = self.state
+            state = (self.workspace.scope.cameras.get(None, self.state)
+                if self.workspace.scope.active is not None else self.state)
             if state == self.saved:
                 return
             try:

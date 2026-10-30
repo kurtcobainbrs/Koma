@@ -26,6 +26,43 @@ from tests.test_workflow_integration import inline, immediate
 
 
 class DrawingTests(unittest.TestCase):
+    @inline
+    async def test_tool_switch_and_first_stroke_use_local_real_patches_only(self):
+        from flet.controls.base_control import BaseControl
+        from flet.controls.object_patch import ObjectPatch, DiffBuilder
+        frame = StoryFrame(x=0, y=0, drawing=DrawingLayer((DrawingStroke(((.2, .3), (.5, .6))),)))
+        view = await self.view((frame, StoryFrame(x=480, y=0)))
+        player, surface = view.player, view.player.drawing_surface
+        ObjectPatch.from_diff(None, view.content, BaseControl)
+        forbidden = [player.preview.stack, player.strip.track, player.strip.audio_lane.canvas,
+            *(card.viewport.stack for card in view.cards.values())]
+        original = DiffBuilder._compare_dataclasses
+        def compare(instance, parent, path, src, dst, frozen):
+            if any(dst is control for control in forbidden):
+                raise AssertionError('Drawing start traversed stable preview/timeline/canvas')
+            return original(instance, parent, path, src, dst, frozen)
+        def update(*roots):
+            for root in roots:
+                ObjectPatch.from_diff(root, root, BaseControl)
+        before, history = view.board, tuple(view.history.past)
+        with patch.object(DiffBuilder, '_compare_dataclasses', compare), \
+                patch.object(player, 'render', side_effect=AssertionError('Full player render at drawing start')), \
+                patch.object(player, 'render_position', side_effect=AssertionError('Unnecessary preview update')):
+            view.page.update.side_effect = update
+            for tool in (PENCIL, 'rectangle', ERASER, SELECT):
+                surface.choose_tool(tool)
+                player.drawing.begin((.2, .3), hit_radius=.02)
+                self.assertIsNotNone(player.drawing.drag)
+                surface.redraw()
+                view.page.update.reset_mock()
+                player.drawing.move((.2, .3))
+                view.page.update.assert_not_called()
+                player.drawing.cancel()
+                self.assertFalse(player.controls.disabled)
+        view.page.update.side_effect = None
+        self.assertIs(view.board, before)
+        self.assertEqual(tuple(view.history.past), history)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -172,7 +209,7 @@ class DrawingTests(unittest.TestCase):
         player.drawing_surface.pick_color()
         view.page.pop_dialog.reset_mock()
         player.close()
-        self.assertEqual(view.page.pop_dialog.call_count, 2)
+        self.assertEqual(view.page.pop_dialog.call_count, 1)
         self.assertFalse(player.opened)
 
     @inline
@@ -243,13 +280,13 @@ class DrawingTests(unittest.TestCase):
             self.assertEqual(len(view.board.frames[0].drawing.strokes), history + 1)
 
     @inline
-    async def test_expanded_centered_tools_and_width_controls_share_one_value(self):
+    async def test_toolbar_tools_and_width_controls_share_one_value(self):
         import flet as ft
         view = await self.view((StoryFrame(x=0, y=0),))
         surface = view.player.drawing_surface
         self.assertTrue(surface.options.visible)
-        self.assertEqual(surface.tools.alignment, ft.MainAxisAlignment.CENTER)
-        self.assertIs(view.player.popup.title.controls[-1], surface.tools)
+        self.assertEqual(surface.tools.alignment, ft.MainAxisAlignment.START)
+        self.assertIs(view.player.drawing_slot.content, surface.tools)
         self.assertEqual(surface.color.bgcolor, view.player.drawing.color)
         surface.width_slider.value = 12
         surface.width_slider.on_change(Data(control=surface.width_slider))
@@ -466,14 +503,14 @@ class DrawingTests(unittest.TestCase):
         self.assertTrue(menu.opened)
         self.assertTrue(menu.content.open_at_pointer)
         menu.content.open.assert_awaited_once()
-        self.assertIs(player.popup.title.controls[-1], surface.tools)
+        self.assertIs(player.drawing_slot.content, surface.tools)
         self.assertEqual(len(menu.content.items), len(SHAPE_TOOLS) + 3)
         self.assertTrue(all(not isinstance(item.content, str) and item.tooltip for item in menu.content.items))
         self.assertLess(menu.content.size_constraints.max_width, surface.width.width)
         self.assertIs(view.board, before)
         await player.key_down(Data(key='Escape'))
         self.assertFalse(menu.opened)
-        self.assertIs(player.popup.title.controls[-1], surface.tools)
+        self.assertIs(player.drawing_slot.content, surface.tools)
         self.assertIs(view.board, before)
         self.assertFalse(view.history.past)
 
@@ -500,7 +537,7 @@ class DrawingTests(unittest.TestCase):
         await eraser.on_click(None)
         self.assertFalse(surface.tool_menu.opened)
         self.assertEqual(player.drawing.tool, ERASER)
-        self.assertIs(player.popup.title.controls[-1], surface.tools)
+        self.assertIs(player.drawing_slot.content, surface.tools)
 
     @inline
     async def test_menu_dismiss_and_player_close_preserve_toolbar(self):
@@ -519,5 +556,5 @@ class DrawingTests(unittest.TestCase):
         self.assertFalse(menu.opened)
         view.page.update.reset_mock()
         menu.content.on_dismiss(None)
-        self.assertIs(player.popup.title.controls[-1], surface.tools)
+        self.assertIs(player.drawing_slot.content, surface.tools)
         view.page.update.assert_not_called()

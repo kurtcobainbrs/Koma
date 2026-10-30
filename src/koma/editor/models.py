@@ -2,12 +2,14 @@
 
 import re
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, fields, MISSING
 from uuid import uuid4
 from koma.editor.frame_format import FrameFormat
 from koma.editor.node_types import node_type
 from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACKS, MAX_MARKERS
 from koma.editor.drawing_models import DrawingLayer
+from koma.editor.sequence_models import SequenceState
+from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
 
 MAX_CARDS = 500
 TEXT_LIMIT = 20000
@@ -31,32 +33,115 @@ class StoryGroup:
     members: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class StoryFrame:
     id: str = field(default_factory=lambda: uuid4().hex)
     title: str = ''
-    image: str = ''
     action: str = ''
     audio: str = ''
     notes: str = ''
     x: float | None = None
     y: float | None = None
     duration: float = 2.0
-    image_fit: str = 'cover'
-    crop_x: float = 0.0
-    crop_y: float = 0.0
     kind: str = 'frame'
     scene_color: str = ''
     subtitle: str = ''
     muted: bool = False
     drawing: DrawingLayer = field(default_factory=DrawingLayer)
+    sequence: SequenceState | None = None
+    media: tuple[NodeMedia, ...] = ()
+    active_media_id: str = ''
+    image_defaults: MediaTransform = field(default_factory=MediaTransform)
+
+    def __init__(self, **values):
+        # Old constructors and replace(..., image/crop_*=...) remain adapters;
+        # only canonical node-owned media fields are serialized or stored.
+        image_given = 'image' in values
+        image = values.pop('image', '')
+        active_given = 'active_media_id' in values
+        transform_values = {('fit' if key == 'image_fit' else key): values.pop(key)
+            for key in ('image_fit', 'crop_x', 'crop_y') if key in values}
+        for item in fields(type(self)):
+            if item.name in values:
+                value = values.pop(item.name)
+            elif item.default is not MISSING:
+                value = item.default
+            else:
+                value = item.default_factory()
+            object.__setattr__(self, item.name, value)
+        if values:
+            raise TypeError(f'Propriedades de node desconhecidas: {", ".join(values)}')
+        media = self.media
+        active = self.active_media_id
+        if image_given:
+            if not image:
+                media, active = (), ''
+            else:
+                existing = next((entry for entry in media if entry.image == image), None)
+                if existing is None:
+                    previous = next((entry for entry in media if entry.id == active), None)
+                    stem = image.removesuffix('.png') if isinstance(image, str) else ''
+                    existing = NodeMedia(id=stem if re.fullmatch(r'[a-f0-9]{32}', stem) else uuid4().hex,
+                        asset=image, transform=previous.transform if previous else self.image_defaults)
+                    media = (*media, existing)
+                active = existing.id
+        elif media and not active_given:
+            active = media[0].id
+        selected = next((entry for entry in media if isinstance(entry, NodeMedia) and entry.id == active), None)
+        if transform_values:
+            if selected is not None:
+                selected = replace(selected, transform=replace(selected.transform, **transform_values))
+                media = tuple(selected if entry.id == active else entry for entry in media)
+            else:
+                object.__setattr__(self, 'image_defaults', replace(self.image_defaults, **transform_values))
+        object.__setattr__(self, 'media', media)
+        object.__setattr__(self, 'active_media_id', active)
+        object.__setattr__(self, '_active_media', selected)
+
+    @property
+    def active_media(self):
+        return self._active_media
+
+    @property
+    def image(self):
+        return self.active_media.image if self.active_media else ''
+
+    @property
+    def image_fit(self):
+        return (self.active_media.transform if self.active_media else self.image_defaults).fit
+
+    @property
+    def crop_x(self):
+        return (self.active_media.transform if self.active_media else self.image_defaults).crop_x
+
+    @property
+    def crop_y(self):
+        return (self.active_media.transform if self.active_media else self.image_defaults).crop_y
 
     @property
     def node_type(self):
         return node_type(self.kind)
 
     def validate(self):
-        node_type(self.kind)
+        spec = node_type(self.kind)
+        if (not isinstance(self.media, tuple) or len(self.media) > MAX_MEDIA_ITEMS
+                or any(not isinstance(entry, NodeMedia) for entry in self.media)):
+            raise ValueError('Lista de mídias inválida.')
+        if len({entry.id for entry in self.media}) != len(self.media):
+            raise ValueError('Mídias repetidas no node.')
+        if (bool(self.media) != bool(self.active_media) or (not self.media and self.active_media_id)):
+            raise ValueError('Mídia ativa inválida.')
+        if not isinstance(self.image_defaults, MediaTransform):
+            raise ValueError('Enquadramento padrão inválido.')
+        self.image_defaults.validate()
+        for entry in self.media:
+            entry.validate()
+        if spec.contains_frames != (self.sequence is not None):
+            raise ValueError('A composição deve pertencer a um node de sequência.')
+        if self.sequence is not None:
+            if not isinstance(self.sequence, SequenceState):
+                raise ValueError('Composição de sequência inválida.')
+            self.sequence.validate()
         if not isinstance(self.drawing, DrawingLayer):
             raise ValueError('Camada de desenho inválida.')
         self.drawing.validate()
@@ -112,6 +197,8 @@ class Storyboard:
             raise ValueError(f'O storyboard aceita até {MAX_CARDS} quadros.')
         for frame in self.frames:
             frame.validate()
+        if sum(len(frame.media) for frame in self.frames) > MAX_MEDIA_ITEMS:
+            raise ValueError(f'O projeto aceita até {MAX_MEDIA_ITEMS} itens de mídia.')
         if len({frame.id for frame in self.frames}) != len(self.frames):
             raise ValueError('Há identificadores de quadros repetidos.')
         scenes = {frame.id for frame in self.frames if frame.node_type.starts_scene}
@@ -123,6 +210,8 @@ class Storyboard:
         if len({track.scene_id for track in self.audio_tracks}) != len(self.audio_tracks):
             raise ValueError('Cada cena aceita uma trilha de áudio. Substitua a trilha existente.')
         identifiers = {frame.id for frame in self.frames}
+        from koma.editor.sequences import SequenceIndex
+        hierarchy = SequenceIndex(self)
         outgoing, incoming = {}, set()
         if len(self.links) > len(self.frames):
             raise ValueError('Há ligações demais para uma sequência.')
@@ -145,6 +234,7 @@ class Storyboard:
                 path.add(identifier)
                 identifier = outgoing[identifier]
             checked.update(path)
+        hierarchy.validate_flow()
         grouped, group_ids = set(), set()
         for group in self.groups:
             if not isinstance(group.id, str) or not re.fullmatch(r'[a-f0-9]{32}', group.id) or group.id in group_ids:

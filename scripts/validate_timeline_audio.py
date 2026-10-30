@@ -13,7 +13,6 @@ import wave
 from PIL import Image, ImageDraw
 
 from koma.audio_transport import AudioTransport
-from koma.blender import detect_blender
 from koma.documents.audio import import_audio
 from koma.documents.images import import_image
 from koma.documents.session import DocumentSession
@@ -22,6 +21,7 @@ from koma.editor.models import Storyboard, StoryFrame, StoryLink
 from koma.editor.timeline import Timeline
 from koma.exports.video_export import prepare_frames, timeline_frame_counts
 from koma.exports.video_runner import VideoRunner
+from koma.exports.video_frames import FileFrames
 
 
 def boxes(data, start=0, end=None):
@@ -53,7 +53,7 @@ def handlers(path):
     return result
 
 
-async def validate(directory, blender=None):
+async def validate(directory, video=False):
     directory.mkdir(parents=True, exist_ok=True)
     report = {'ok': False, 'checks': {}}
     session = DocumentSession(directory / 'data')
@@ -95,13 +95,13 @@ async def validate(directory, blender=None):
         finally:
             await asyncio.to_thread(transport.close)
         report['checks']['native_audio_backend_null'] = 'passed'
-        if blender:
+        if video:
             target = directory / 'frames'
             target.mkdir(exist_ok=True)
             paths = await asyncio.to_thread(prepare_frames, timeline.frames, reopened.store, target, (1280, 720))
             runner = VideoRunner(directory / 'logs')
-            result = await runner.run(Path(blender), paths, directory / 'audio-timeline.mp4', 24, 'HIGH', 1280,
-                lambda event: None, frame_durations=timeline_frame_counts(timeline, 24),
+            result = await runner.run(FileFrames(tuple(paths), tuple(timeline_frame_counts(timeline, 24))),
+                directory / 'audio-timeline.mp4', 24, 'HIGH', 1280, lambda event: None,
                 audio_tracks=[dict(path=str((reopened.store.audio / name).resolve()), start=track.start, volume=track.volume)])
             streams = handlers(result)
             assert 'vide' in streams and 'soun' in streams, streams
@@ -119,6 +119,6 @@ async def validate(directory, blender=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--directory', type=Path, default=Path('build') / f'audio-validation-{uuid4().hex[:8]}')
-    parser.add_argument('--blender', action='store_true')
+    parser.add_argument('--video', action='store_true')
     args = parser.parse_args()
-    asyncio.run(validate(args.directory.resolve(), detect_blender() if args.blender else None))
+    asyncio.run(validate(args.directory.resolve(), video=args.video))

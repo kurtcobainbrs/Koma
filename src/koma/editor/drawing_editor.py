@@ -19,6 +19,8 @@ class DrawingDrag:
     points: list
     strokes: tuple
     selection_index: int | None = None
+    remaining_points: int = MAX_LAYER_POINTS
+    last_point: tuple | None = None
 
 
 class FrameDrawingEditor:
@@ -73,36 +75,43 @@ class FrameDrawingEditor:
         frame = self.active_frame()
         if not frame or not player.opened or not view.editable() or player.editing:
             return
+        view.properties.release_field_focus()
         if not frame.drawing.visible:
             view.notify('Mostre a camada de desenho antes de editar.', 'info')
             return
+        point_count = sum(len(s.points) for s in frame.drawing.strokes) if tool not in (ERASER, SELECT) else 0
         if tool not in (ERASER, SELECT) and (len(frame.drawing.strokes) >= MAX_STROKES
-                or sum(len(s.points) for s in frame.drawing.strokes) >= MAX_LAYER_POINTS):
+                or point_count >= MAX_LAYER_POINTS):
             view.notify('A camada atingiu seu limite. Apague traços antes de continuar.', 'warning')
             return
-        player.playing = False
+        player.pause_for_edit()
         index = None
         if tool == SELECT:
             self.selected = select_stroke(frame.drawing.strokes, point, hit_radius, view.board.frame_format.aspect_ratio)
             self.selection_owner = (view.session, frame.id, frame.drawing)
             index = self.selected
             if index is None:
-                player.render()
+                player.set_gesture_locked(False)
+                player.drawing_surface.refresh()
                 return
         else:
             self.clear_selection()
         normalized_width = self.width / min(view.board.frame_format.size)
         self.drag = DrawingDrag(view.board, view.session, frame, tool, self.color,
-            normalized_width, [point], frame.drawing.strokes, index)
+            normalized_width, [point], frame.drawing.strokes, index,
+            MAX_LAYER_POINTS - point_count, point if tool != ERASER else None)
         if tool == ERASER:
             self.move(point)
-        player.render()
+        player.set_gesture_locked(True)
+        player.drawing_surface.refresh()
         player.focus_timeline()
         return self.drag
 
     def move(self, point):
         drag = self.drag
         if drag is None:
+            return
+        if point == drag.last_point:
             return
         view = self.player.view
         if view.board is not drag.board or view.session is not drag.session:
@@ -124,9 +133,10 @@ class FrameDrawingEditor:
             previous = drag.points[-1]
             format = drag.board.frame_format
             distance = math.hypot((point[0] - previous[0]) * format.width, (point[1] - previous[1]) * format.height)
-            remaining = MAX_LAYER_POINTS - sum(len(s.points) for s in drag.strokes)
-            if distance >= .5 and len(drag.points) < min(MAX_STROKE_POINTS, remaining):
-                drag.points.append(point)
+            if distance < .5 or len(drag.points) >= min(MAX_STROKE_POINTS, drag.remaining_points):
+                return
+            drag.points.append(point)
+        drag.last_point = point
         self.player.drawing_surface.redraw()
 
     def preview_layer(self):
@@ -150,6 +160,7 @@ class FrameDrawingEditor:
         self.drag = None
         view = self.player.view
         if view.board is not drag.board or view.session is not drag.session or not view.editable() or not self.player.opened:
+            self.drag = drag
             self.cancel()
             return
         await self.commit_layer(drag.frame, layer, label='Mover desenho' if drag.tool == SELECT else None,
@@ -173,15 +184,20 @@ class FrameDrawingEditor:
             view.notify(str(exc), 'warning')
         finally:
             self.committing = False
+            self.player.controls.disabled = False
             if self.player.opened:
                 self.player.rebuild_timeline()
                 self.player.render()
                 self.player.focus_timeline()
 
     def cancel(self, *, update=True):
+        if self.drag is None:
+            return
         self.drag = None
+        self.player.controls.disabled = False
         if update and self.player.opened:
-            self.player.render()
+            self.player.set_gesture_locked(False)
+            self.player.drawing_surface.refresh()
 
     async def delete_selected(self):
         player, view = self.player, self.player.view

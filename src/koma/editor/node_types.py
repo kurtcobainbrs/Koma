@@ -14,12 +14,14 @@ class NodeType:
     starts_scene: bool = False
     accepts_input: bool = True
     title_prefix: str = ''
+    contains_frames: bool = False
 
 
 NODE_TYPES = MappingProxyType({spec.kind: spec for spec in (
     NodeType('main', 'Início de cena', 'PRINCIPAL', starts_scene=True,
              accepts_input=False, title_prefix='Cena'),
     NodeType('frame', 'Quadro', 'QUADRO', image=True, timed=True),
+    NodeType('sequence', 'Sequência', 'SEQUÊNCIA', title_prefix='Sequência', contains_frames=True),
 )})
 
 

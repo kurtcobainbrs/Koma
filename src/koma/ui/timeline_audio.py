@@ -4,6 +4,10 @@ import flet as ft
 import flet.canvas as cv
 from dataclasses import replace
 from koma.editor.audio_drag import AudioDrag
+from koma.editor.audio_volume import AudioVolume
+from koma.editor.media_models import MAX_AUDIO_VOLUME
+from koma.ui.workspace_style import WORKSPACE_STYLE
+from koma.ui.retained_container import RetainedCanvas
 
 from koma.editor.timing import duration_text
 from koma.editor.shortcuts import Action
@@ -16,16 +20,19 @@ class AudioLane:
     def __init__(self, strip):
         self.strip = strip
         self.key = None
-        self.canvas = cv.Canvas(shapes=[])
+        self.canvas = RetainedCanvas(hold_updates=lambda: False, shapes=[])
         self.drag = AudioDrag(strip.player)
         self.viewport = ft.Container(top=0, bottom=0, content=self.canvas)
         self.background = ft.Container(left=0, right=0, top=0, bottom=0, bgcolor=SURFACE,
             border=ft.Border.all(1, BORDER), border_radius=RADIUS)
+        self.name = ft.Text(size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+        self.label = ft.Container(top=APP_PADDING, left=APP_PADDING, padding=ft.Padding.symmetric(horizontal=APP_PADDING),
+            bgcolor=SURFACE, content=self.name, ignore_interactions=True)
         self.content = ft.Container(left=0, height=strip.style.audio_height,
             content=ft.GestureDetector(on_pan_start=self.drag.begin, on_pan_update=self.drag.move,
                 on_pan_end=self.drag.end, on_pan_cancel=self.drag.cancel,
                 mouse_cursor=ft.MouseCursor.MOVE, drag_interval=DRAG_INTERVAL_MS,
-                content=ft.Stack([self.background, self.viewport], fit=ft.StackFit.EXPAND)))
+                content=ft.Stack([self.background, self.viewport, self.label], fit=ft.StackFit.EXPAND)))
 
     def sync(self):
         strip = self.strip
@@ -33,14 +40,19 @@ class AudioLane:
         if track and self.drag.start is not None:
             track = replace(track, start=self.drag.start)
         waveform = strip.player.media.waveform(track) if track else None
+        self.content.top = strip.frames_top + strip.style.track_height
+        self.content.width = strip.track.width
         key = (track, id(waveform), strip.scale, strip.offset, strip.width)
         if key == self.key:
             return
         self.key = key
-        self.content.top = strip.style.marker_height + strip.style.ruler_height + strip.style.track_height
-        self.content.width = strip.track.width
         self.viewport.left = strip.offset
         self.viewport.width = strip.width or 0
+        self.label.left = strip.offset + APP_PADDING
+        self.label.width = min(CONTROL_HEIGHT * 6, max(0, (strip.width or 0) - APP_PADDING * 2))
+        self.label.visible = bool(track)
+        self.name.value = track.title if track else ''
+        self.name.tooltip = f'{track.title} · {track.duration:.2f} s' if track else None
         width = strip.width or 0
         middle = strip.style.audio_height / 2
         color = MUTED if not track or track.muted else ft.Colors.TERTIARY
@@ -59,12 +71,14 @@ class AudioControls:
         self.player = player
         self.focused = False
         self.target = None
-        self.name = ft.Text('Sem áudio', size=TEXT_SMALL, max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS, width=CONTROL_HEIGHT * 6)
-        self.import_button = ft.OutlinedButton('Áudio', icon=ft.Icons.AUDIO_FILE_OUTLINED,
-            on_click=player.media.pick_audio, height=COMPACT_CONTROL_HEIGHT)
+        self.gain = AudioVolume(player)
+        self.import_button = self.button(ft.Icons.FILE_UPLOAD_OUTLINED, 'Importar áudio', player.media.pick_audio)
         self.mute = self.button(ft.Icons.VOLUME_UP, 'Mutar áudio', self.toggle_mute)
         self.remove = self.button(ft.Icons.DELETE_OUTLINE, 'Remover áudio', player.media.remove_audio)
+        self.volume = ft.Slider(min=0, max=MAX_AUDIO_VOLUME, value=1,
+            width=WORKSPACE_STYLE.slider_width, height=COMPACT_CONTROL_HEIGHT,
+            tooltip='Volume', on_change_start=self.gain.begin, on_change_end=self.gain.finish,
+            on_blur=lambda e: self.gain.cancel() if self.gain.snapshot is not None else None)
         self.start = ft.TextField(width=CONTROL_HEIGHT * 2.5, suffix=ft.Text('f'),
             tooltip='Início do áudio em frames · aceita expressões', max_length=MAX_EXPRESSION_LENGTH,
             counter=ft.Container(width=0, height=0), on_focus=self.focus, on_blur=self.blur,
@@ -74,7 +88,7 @@ class AudioControls:
         self.snap = self.button(ft.Icons.GRID_ON,
             player.view.keymap.describe('Snap dos marcadores', Action.SNAP), self.toggle_snap)
         self.tools = ft.Row([self.add_marker, self.snap], spacing=0, tight=True)
-        self.content = ft.Row([self.import_button, self.name, self.start, self.mute, self.remove],
+        self.content = ft.Row([self.import_button, self.mute, self.volume, self.start, self.remove],
             spacing=APP_PADDING, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def toggle_snap(self, e=None):
@@ -133,8 +147,10 @@ class AudioControls:
         self.import_button.disabled = self.add_marker.disabled = locked
         for button in (self.start, self.mute, self.remove):
             button.disabled = locked or track is None
-        self.name.value = track.title if track else 'Sem áudio'
-        self.name.tooltip = f'{track.title} · {track.duration:.2f} s' if track else 'WAV, MP3, FLAC ou OGG'
+        self.volume.disabled = (locked and self.gain.snapshot is None) or track is None
+        if self.gain.snapshot is None:
+            self.volume.value = track.volume if track else 1
+        self.volume.tooltip = f'Volume · {self.volume.value * 100:.0f}%'
         if not self.focused:
             self.start.value = duration_text(track.start, player.view.board.fps, frames=True) if track else ''
         self.mute.icon = ft.Icons.VOLUME_OFF if track and track.muted else ft.Icons.VOLUME_UP

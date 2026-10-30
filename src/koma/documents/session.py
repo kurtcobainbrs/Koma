@@ -119,7 +119,10 @@ class DocumentSession:
             session.recovered_from = metadata.parent
             for track in session.board.audio_tracks:
                 validate_audio(session.store.audio / track.asset, track.duration)
-            for name in {frame.image for frame in session.board.frames if frame.image}:
+            from koma.documents.media_assets import validate_assets
+            from koma.editor.node_media import board_assets
+            validate_assets(session.board, session.store)
+            for name in {name for kind, name in board_assets(session.board) if kind == 'images'}:
                 validate_image(session.store.images / name)
                 session.store.thumbnails.mkdir(exist_ok=True)
                 thumbnail(session.store.images / name, session.store.thumbnails / name)

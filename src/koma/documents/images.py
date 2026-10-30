@@ -3,11 +3,14 @@
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff']
 IMAGE_LIMIT = 40_000_000
+THUMBNAIL_LOAD_WORKERS = 4
 
 
 def import_image(source: Path, store):
@@ -47,16 +50,23 @@ def _import(source, store, label):
 
 
 def load_thumbnails(board, store):
-    thumbnails = {}
-    for frame in board.frames:
-        if frame.image and frame.image not in thumbnails:
-            try:
-                thumbnails[frame.image] = (store.thumbnails / frame.image).read_bytes()
-            except OSError:
-                from koma.documents.bundle import validate_image, thumbnail
-                source = store.images / frame.image
+    names = tuple(dict.fromkeys(frame.image for frame in board.frames if frame.image))
+    regeneration = Lock()
+    def read(name):
+        target = store.thumbnails / name
+        try:
+            return target.read_bytes()
+        except OSError:
+            from koma.documents.bundle import validate_image, thumbnail
+            # File reads may overlap; full image decoding stays bounded to one
+            # regeneration so missing caches cannot multiply peak image memory.
+            with regeneration:
+                source = store.images / name
                 validate_image(source)
                 store.thumbnails.mkdir(parents=True, exist_ok=True)
-                thumbnail(source, store.thumbnails / frame.image)
-                thumbnails[frame.image] = (store.thumbnails / frame.image).read_bytes()
-    return thumbnails
+                thumbnail(source, target)
+            return target.read_bytes()
+    if len(names) < 2:
+        return {name: read(name) for name in names}
+    with ThreadPoolExecutor(max_workers=THUMBNAIL_LOAD_WORKERS, thread_name_prefix='koma-thumbnails') as workers:
+        return dict(zip(names, workers.map(read, names)))

@@ -17,6 +17,7 @@ class ProjectTabs:
         self.application = application
         self.entries = {}
         self.targets = {}
+        self.sync_key = None
         self.group = f'koma-project-tabs-{uuid4().hex}'
         self.row = ft.Row(spacing=1, scroll=ft.ScrollMode.AUTO, expand=True)
         self.add = ft.IconButton(icon=ft.Icons.ADD, tooltip='Novo projeto', icon_size=18,
@@ -57,6 +58,11 @@ class ProjectTabs:
 
     def sync(self):
         app = self.application
+        key = (app.view, app.transitioning, app.closing_attempt,
+            tuple((view, view.document_label, view.session.path, view.busy) for view in app.views))
+        if key == self.sync_key:
+            return False
+        self.sync_key = key
         self.entries = {view: entry for view, entry in self.entries.items() if view in app.views}
         self.targets = {view: target for view, target in self.targets.items() if view in app.views}
         for view in app.views:
@@ -86,3 +92,4 @@ class ProjectTabs:
             close.tooltip = f'Fechar {view.board.title or "projeto"}'
         self.row.controls = [self.targets[view] for view in app.views] + [self.end_target]
         self.content.disabled = app.transitioning or app.closing_attempt or any(view.busy for view in app.views)
+        return True

@@ -1,6 +1,7 @@
 """Ferramentas e atalhos locais do canvas; não captura a digitação dos campos."""
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.ui.design import BORDER, CONTROL_HEIGHT, MUTED, ON_SELECTION, RADIUS, SELECTION, SURFACE
 from koma.editor.geometry import ZOOM_STEP
@@ -11,6 +12,8 @@ from koma.editor.shortcut_commands import ShortcutCommands
 from koma.keymap import key_name
 from koma.editor.modifier_state import pressed_modifiers
 from koma.ui.typography import TEXT_SMALL
+from koma.ui.retained_container import retain_children
+from koma.ui.focus_requests import FocusListener
 
 
 class CanvasNavigation:
@@ -36,7 +39,7 @@ class CanvasNavigation:
             border=ft.Border.all(1, BORDER), border_radius=RADIUS,
             content=ft.Column([*self.buttons.values(), ft.Divider(height=8, color=BORDER),
                 self.focus_button], tight=True, spacing=2))
-        self.keyboard = ft.KeyboardListener(content=workspace.secondary_pointer.surface(workspace.viewer),
+        self.keyboard = FocusListener(content=workspace.secondary_pointer.surface(workspace.viewer),
             on_key_down=self.key_down, on_key_up=self.key_up)
         self.selection_count = ft.Text(size=TEXT_SMALL)
         self.selection_bar = ft.Container(left=10, bottom=10, padding=6, bgcolor=SURFACE,
@@ -62,20 +65,25 @@ class CanvasNavigation:
         return chosen
 
     def focus_keyboard(self):
-        if not self.view.closing:
-            self.view.page.run_task(self.keyboard.focus)
+        if self.view.player.opened:
+            self.view.player.focus_timeline()
+            return
+        self.view.focus.request(self.keyboard,
+            lambda: self.view.active and not self.view.closing and not self.view.player.opened)
 
     def set_mode(self, mode):
         if mode not in self.buttons or self.view.busy or self.view.closing:
+            return
+        if mode == self.mode and not self.temporary_pan:
             return
         self.view.properties.end_adjust()
         self.workspace.secondary_pointer.cancel(update=False)
         self.workspace.grab.cancel()
         if self.workspace.drag:
             self.workspace.cancel_drag(self.workspace.drag.identifier)
-        for tool in self.definitions.values():
-            if tool.cancel:
-                tool.cancel()
+        previous = self.definitions[self.effective_mode]
+        if previous.cancel:
+            previous.cancel()
         self.workspace.cancel_camera_transition()
         self.workspace.links.cancel()
         self.mode = mode
@@ -111,55 +119,74 @@ class CanvasNavigation:
         if hasattr(self.view, 'chrome'):
             self.view.chrome.sync()
         if update and not self.view.closing:
-            self.view.page.update(self.workspace.content, self.tools)
+            controls = [self.tools]
             if hasattr(self.view, 'chrome'):
-                self.view.page.update(self.view.chrome.content)
+                controls.append(self.view.chrome.content)
+            self.workspace.update_interaction(*controls)
 
     def apply_selection(self, identifiers, active=None):
         previous, previous_active = set(self.selection.ids), self.selected
         identifiers = set(identifiers) & set(self.view.cards)
+        projection = self.workspace.scope
+        identifiers = {projection.representative(key) for key in identifiers} - {None}
+        if active in self.view.cards:
+            active = projection.representative(active)
         active = active if active in identifiers else previous_active if previous_active in identifiers else next(
             (key for key in reversed(self.workspace.z_order) if key in identifiers), None)
+        if identifiers == previous and active == previous_active:
+            return
         self.selection.replace(identifiers, active)
         affected = previous ^ self.selection.ids
         if previous_active != self.selected:
             affected |= {previous_active, self.selected}
+        cards = []
+        controls = []
         for identifier in affected:
             if identifier in self.view.cards:
-                self.view.cards[identifier].highlight(identifier in self.selection.ids,
-                    is_active=identifier == self.selected)
+                card = self.view.cards[identifier]
+                card.highlight(identifier in self.selection.ids, is_active=identifier == self.selected, update=False)
+                cards.append(card)
+                controls.append(card.box)
         self.focus_button.disabled = not self.selection.ids
         self.selection_count.value = f'{len(self.selection.ids)} selecionados'
         self.selection_bar.visible = bool(self.selection.ids)
-        self.workspace.links.highlight_path(self.selection.ids)
+        if self.workspace.links.highlight_path(self.selection.ids, update=False):
+            controls.append(self.workspace.links.canvas)
         if hasattr(self.view, 'properties'):
             self.view.properties.sync()
             if not self.view.closing:
-                self.view.page.update(self.view.properties.content)
+                controls.append(self.view.properties.content)
         if not self.view.closing:
-            self.view.page.update(self.focus_button, self.selection_bar)
+            controls.append(self.focus_button)
             if hasattr(self.view, 'chrome'):
                 self.view.chrome.sync()
-                self.view.page.update(self.view.chrome.content, self.view.chrome.status)
+                controls.extend((self.view.chrome.content, self.view.chrome.status))
+            else:
+                controls.append(self.selection_bar)
+            with retain_children(*(card.box.content for card in cards)):
+                self.view.page.update(*controls)
 
     def reconcile(self):
-        self.selection.replace(self.selection.ids & set(self.view.cards))
+        self.selection.replace(self.selection.ids & self.workspace.scope.visible)
         self.focus_button.disabled = not self.selection.ids
         self.selection_bar.visible = bool(self.selection.ids)
         self.selection_count.value = f'{len(self.selection.ids)} selecionados'
 
-    def select_node(self, identifier, *, focus=False):
+    def select_node(self, identifier, *, focus=False, raise_node=True):
         if self.effective_mode != 'select' or self.view.busy or self.view.closing:
             return
         if identifier is not None and identifier not in self.view.cards:
             return
+        if identifier is not None:
+            identifier = self.workspace.scope.representative(identifier)
         identifiers = self.selection.ids if identifier in self.selection.ids else {identifier} if identifier else set()
         self.apply_selection(identifiers, identifier)
-        if identifier in self.view.cards:
+        if raise_node and identifier in self.view.cards:
             self.workspace.raise_node(identifier)
         if focus:
             self.focus_keyboard()
 
+    @explicit_updates
     def node_click(self, identifier):
         if self.effective_mode != 'select' or self.view.busy or self.view.closing:
             return
@@ -169,6 +196,7 @@ class CanvasNavigation:
         else:
             self.select_node(identifier, focus=True)
 
+    @explicit_updates
     def field_focus(self, identifier, key, focused):
         field = identifier, key
         if focused:
@@ -177,6 +205,7 @@ class CanvasNavigation:
         else:
             self.editing_fields.discard(field)
 
+    @explicit_updates
     async def background_click(self, e):
         mode = self.effective_mode
         if mode == 'select':
@@ -222,8 +251,12 @@ class CanvasNavigation:
 
     def drag_detach_active(self):
         physical = pressed_modifiers()
-        return self.keymap.modifier_active(Action.DETACH,
+        active = self.keymap.modifier_active(Action.DETACH,
             self.modifiers if physical is None else physical)
+        if not active:
+            return False
+        moving = self.workspace.drag.positions if self.workspace.drag else self.view.sequences.index.closure(self.selection.ids)
+        return active and self.view.sequences.index.can_detach(moving)
 
     def reset_keys(self):
         for keys in (self.shift_keys, self.control_keys, self.alt_keys, self.meta_keys):
@@ -239,6 +272,7 @@ class CanvasNavigation:
         for card in self.view.cards.values():
             card.refresh_shortcuts()
 
+    @explicit_updates
     async def key_down(self, e):
         key = e.key.lower()
         if key.startswith('shift'):
@@ -270,6 +304,7 @@ class CanvasNavigation:
         else:
             await self.commands.execute(action)
 
+    @explicit_updates
     def key_up(self, e):
         key = e.key.lower()
         for pressed in (self.shift_keys, self.control_keys, self.alt_keys, self.meta_keys):

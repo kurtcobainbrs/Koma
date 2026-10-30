@@ -1,6 +1,8 @@
 """Transactional node copies with owned assets and fresh document identifiers."""
 
 import asyncio
+import shutil
+import tempfile
 from dataclasses import dataclass, replace
 from uuid import uuid4
 import flet as ft
@@ -8,6 +10,9 @@ import flet as ft
 from koma.editor.models import MAX_CARDS, Storyboard, StoryLink, StoryGroup
 from koma.editor.geometry import group_delta
 from koma.documents.images import load_thumbnails
+from koma.editor.sequences import SequenceIndex, remap_frame
+from koma.editor.node_media import frame_assets
+from pathlib import Path
 from flet.controls.exceptions import FletException
 
 MAX_CLIPBOARD_BYTES = 512 * 1024 * 1024
@@ -21,27 +26,46 @@ class NodeSelection:
     tracks: tuple
     markers: tuple
     assets: dict
+    lease: object = None
+
+    def __del__(self):
+        if self.lease is not None:
+            self.lease.cleanup()
 
 
 async def capture_selection(board, store, identifiers):
     """Own the source assets without depending on a view or system clipboard."""
-    ids = frozenset(identifiers)
+    ids = frozenset(SequenceIndex(board).closure(identifiers))
     frames = tuple(frame for frame in board.frames if frame.id in ids)
     if not frames:
         return None
     whole = len(frames) == len(board.frames)
     tracks = tuple(track for track in board.audio_tracks if track.scene_id in ids or (whole and not track.scene_id))
     markers = tuple(marker for marker in board.markers if marker.scene_id in ids or (whole and not marker.scene_id))
-    assets = {('images', frame.image) for frame in frames if frame.image}
+    assets = set().union(*(frame_assets(frame) for frame in frames))
     assets.update(('audio', track.asset) for track in tracks)
     def read():
         paths = {(kind, name): getattr(store, kind) / name for kind, name in assets}
         if sum(path.stat().st_size for path in paths.values()) > MAX_CLIPBOARD_BYTES:
             raise ValueError('A seleção excede o limite de 512 MB da área de transferência.')
-        return {key: path.read_bytes() for key, path in paths.items()}
+        lease = tempfile.TemporaryDirectory(prefix='koma-clipboard-')
+        captured = {}
+        try:
+            for key, path in paths.items():
+                if key[0] == 'videos':
+                    target = Path(lease.name) / path.name
+                    shutil.copyfile(path, target)
+                    captured[key] = target
+                else:
+                    captured[key] = path.read_bytes()
+            return captured, lease
+        except Exception:
+            lease.cleanup()
+            raise
+    captured, lease = await asyncio.to_thread(read)
     return NodeSelection(frames, tuple(edge for edge in board.links if edge.source in ids and edge.target in ids),
         tuple(group for group in board.groups if set(group.members) <= ids), tracks, markers,
-        await asyncio.to_thread(read))
+        captured, lease)
 
 
 class NodeClipboard:
@@ -100,16 +124,19 @@ class NodeClipboard:
             view.notify('A seleção ultrapassa o limite de quadros do projeto.', 'warning')
             return
         mapping = {frame.id: uuid4().hex for frame in frames}
-        names = {key: uuid4().hex + ('.png' if key[0] == 'images' else '.wav') for key in assets}
+        names = {key: uuid4().hex + Path(key[1]).suffix for key in assets}
         ws = view.workspace
         anchor = ws.context_menu.pointer or ((ws.viewport_width / 2 - ws.translation_x) / ws.zoom,
             (ws.viewport_height / 2 - ws.translation_y) / ws.zoom)
+        roots = set(SequenceIndex(Storyboard(frames=frames, links=edges)).roots(mapping))
         positions = {frame.id: (frame.x or 0, frame.y or 0) for frame in frames}
-        left, top = min(x for x, _ in positions.values()), min(y for _, y in positions.values())
-        dx, dy = group_delta(positions, anchor[0] - ws.extent.origin_x - left,
+        root_positions = {key: positions[key] for key in roots}
+        left, top = min(x for x, _ in root_positions.values()), min(y for _, y in root_positions.values())
+        dx, dy = group_delta(root_positions, anchor[0] - ws.extent.origin_x - left,
             anchor[1] - ws.extent.origin_y - top, anchor=(left, top), snap=ws.snap_enabled)
-        copies = tuple(replace(frame, id=mapping[frame.id], x=positions[frame.id][0] + dx,
-            y=positions[frame.id][1] + dy, image=names.get(('images', frame.image), '')) for frame in frames)
+        copies = tuple(remap_frame(frame, mapping, x=positions[frame.id][0] + (dx if frame.id in roots else 0),
+            y=positions[frame.id][1] + (dy if frame.id in roots else 0),
+            media=tuple(entry.remap_assets(names) for entry in frame.media)) for frame in frames)
         result = replace(board, frames=(*board.frames, *copies),
             links=(*board.links, *(StoryLink(mapping[e.source], mapping[e.target]) for e in edges)),
             groups=(*board.groups, *(StoryGroup(title=g.title, members=tuple(mapping[i] for i in g.members)) for g in groups)),
@@ -118,13 +145,17 @@ class NodeClipboard:
         written = []
         view.lock(True)
         try:
+            result = ws.scope.attach_new(result, (frame.id for frame in copies))
             result.validate()
             def write():
                 for key, data in assets.items():
                     target = getattr(store, key[0]) / names[key]
                     target.parent.mkdir(parents=True, exist_ok=True)
                     written.append(target)
-                    target.write_bytes(data)
+                    if isinstance(data, Path):
+                        shutil.copyfile(data, target)
+                    else:
+                        target.write_bytes(data)
                 return load_thumbnails(Storyboard(frames=copies), store)
             thumbnails = await asyncio.to_thread(write)
             if view.board is not board or view.session is not session or not view.active or view.closing:

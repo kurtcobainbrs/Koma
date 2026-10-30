@@ -39,7 +39,8 @@ def export_pdf(board, store, destination: Path):
 
 def build_pdf(board, store, destination: Path):
     board.validate()
-    frames = tuple(frame for frame in board.frames if frame.node_type.timed)
+    from koma.exports.sequence import ExportSequence
+    frames = ExportSequence.from_project(board).frames
     if not frames:
         raise ValueError('Adicione pelo menos um quadro antes de exportar.')
     if destination.suffix.lower() != '.pdf':
@@ -58,7 +59,7 @@ def build_pdf(board, store, destination: Path):
     page_width, page_height = landscape(A4)
     margin = 24
     width, height = page_width - 2 * margin - 12, page_height - 2 * margin - 12
-    sequence = tuple(f for f in ordered(board).frames if f.node_type.timed)
+    sequence = frames
     numbers = {frame.id: index for index, frame in enumerate(sequence, 1)}
     sections = {}
     for frame in sequence:

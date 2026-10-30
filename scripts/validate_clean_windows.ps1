@@ -1,7 +1,7 @@
 param(
     [string]$Kit = $PSScriptRoot,
     [string]$Destination = (Join-Path ([Environment]::GetFolderPath('Desktop')) ('Koma-validacao-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
-    [string]$Blender = '',
+    [switch]$Video,
     [switch]$NoLaunch
 )
 $ErrorActionPreference = 'Stop'
@@ -34,7 +34,7 @@ $environmentReport | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Pa
 $executable = Join-Path $destinationPath 'Koma\Koma.exe'
 $report = Join-Path $results 'diagnostics.json'
 $arguments = @('--diagnostics', ('"' + $report + '"'))
-if ($Blender) { $arguments += @('--blender', ('"' + $Blender + '"')) }
+if ($Video) { $arguments += '--video' }
 $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $destinationPath -WindowStyle Hidden -PassThru -Wait
 if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "Diagnóstico falhou. Consulte $results" }
 $diagnostics = Get-Content -LiteralPath $report -Raw -Encoding UTF8 | ConvertFrom-Json

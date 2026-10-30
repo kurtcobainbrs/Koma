@@ -8,7 +8,7 @@ from koma.ui.typography import FONT_HEADING, TEXT_BODY
 
 
 class CollapsibleSection:
-    def __init__(self, page, title, controls, *, expanded=True, on_change=None):
+    def __init__(self, page, title, controls, *, expanded=True, on_change=None, actions=()):
         self.page, self.expanded, self.on_change = page, expanded, on_change
         self.body = ft.Column(controls, spacing=6, visible=expanded,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
@@ -16,7 +16,8 @@ class CollapsibleSection:
             style=menu_button_style().copy(text_style=ft.TextStyle(
                 size=TEXT_BODY, font_family=FONT_HEADING), alignment=ft.Alignment.CENTER_LEFT),
             on_click=self.toggle)
-        self.content = ft.Column([ft.Divider(height=1, color=BORDER), self.button, self.body],
+        self.header = ft.Row([ft.Container(content=self.button, expand=True), *actions], spacing=0)
+        self.content = ft.Column([ft.Divider(height=1, color=BORDER), self.header, self.body],
             spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _icon(self):

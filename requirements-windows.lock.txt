@@ -2,6 +2,7 @@
 Pygments==2.21.0
 altgraph==0.17.5
 anyio==4.15.1
+av==17.1.0
 build==1.6.1
 certifi==2026.10.23
 cffi==2.1.1

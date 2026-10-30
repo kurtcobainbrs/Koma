@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import math
 
 from koma.editor.graph import ordered
-from koma.editor.models import MAX_DURATION, SUPPORTED_FPS
+from koma.editor.models import MIN_DURATION, MAX_DURATION, SUPPORTED_FPS
 from koma.editor.scenes import principal, scene_frames
 
 
@@ -17,7 +17,11 @@ class Timeline:
         sequence_board = ordered(board)
         self.root = principal(sequence_board, active)
         has_scenes = any(frame.node_type.starts_scene for frame in sequence_board.frames)
-        sequence = scene_frames(sequence_board, self.root) if self.root else () if has_scenes else sequence_board.frames
+        from koma.editor.sequences import SequenceIndex
+        hierarchy = SequenceIndex(sequence_board)
+        sequence = scene_frames(sequence_board, self.root) if self.root else () if has_scenes else tuple(
+            item for frame in sequence_board.frames if frame.id not in hierarchy.parents
+            for item in hierarchy.playback(frame.id))
         self.frames = tuple(frame for frame in sequence if frame.node_type.timed and not frame.muted
                             and not (self.root and self.root.muted))
         self.starts = []
@@ -37,17 +41,48 @@ class Timeline:
 
     def with_duration(self, identifier, seconds):
         """Transient timing snapshot; a duration edit cannot change graph topology."""
-        index = next((i for i, frame in enumerate(self.frames) if frame.id == identifier), None)
-        if index is None:
-            raise ValueError('O quadro não está mais na timeline.')
-        frame = replace(self.frames[index], duration=seconds)
-        frame.validate()
-        delta = seconds - self.frames[index].duration
+        return self.with_durations({identifier: seconds})
+
+    def with_board(self, board):
+        """Reuse established scene order for node-property edits; rebuild only topology."""
+        if (self.board.links != board.links or len(self.board.frames) != len(board.frames)
+                or any((before.id, before.kind, before.muted, before.sequence) !=
+                    (after.id, after.kind, after.muted, after.sequence)
+                    for before, after in zip(self.board.frames, board.frames))):
+            return Timeline(board, self.root.id if self.root else None)
+        nodes = {frame.id: frame for frame in board.frames}
         preview = copy(self)
-        preview.frames = self.frames[:index] + (frame,) + self.frames[index + 1:]
-        preview.board = replace(self.board, frames=tuple(frame if item.id == identifier else item
-            for item in self.board.frames))
-        preview.starts = [start + delta if i > index else start for i, start in enumerate(self.starts)]
+        preview.board = board
+        preview.frames = tuple(nodes[frame.id] for frame in self.frames)
+        preview.root = nodes[self.root.id] if self.root else None
+        scope = preview.root.id if preview.root else ''
+        preview.audio_tracks = tuple(track for track in board.audio_tracks if track.scene_id == scope)
+        preview.markers = tuple(sorted((marker for marker in board.markers if marker.scene_id == scope),
+            key=lambda marker: (marker.position, marker.id)))
+        preview.starts, preview.picture_total = [], 0.0
+        for frame in preview.frames:
+            preview.starts.append(preview.picture_total)
+            preview.picture_total += frame.duration
+        preview.total = max(preview.picture_total,
+            *(track.start + track.duration for track in preview.audio_tracks), preview.picture_total) if preview.frames else 0
+        return preview
+
+    def with_durations(self, values):
+        """Change only timing; immutable drawings/media need no pointer-event validation."""
+        if not values.keys() <= {frame.id for frame in self.frames}:
+            raise ValueError('O quadro não está mais na timeline.')
+        if any(type(seconds) not in (float, int) or not math.isfinite(seconds)
+                or not MIN_DURATION <= seconds <= MAX_DURATION for seconds in values.values()):
+            raise ValueError('Duração inválida.')
+        changes = {frame.id: replace(frame, duration=values[frame.id]) for frame in self.frames if frame.id in values}
+        preview = copy(self)
+        preview.frames = tuple(changes.get(frame.id, frame) for frame in self.frames)
+        preview.board = replace(self.board, frames=tuple(changes.get(frame.id, frame) for frame in self.board.frames))
+        delta = 0
+        preview.starts = []
+        for start, frame in zip(self.starts, self.frames):
+            preview.starts.append(start + delta)
+            delta += values.get(frame.id, frame.duration) - frame.duration
         preview.picture_total = self.picture_total + delta
         preview.total = max(preview.picture_total,
             *(track.start + track.duration for track in self.audio_tracks), preview.picture_total)

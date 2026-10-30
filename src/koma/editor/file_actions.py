@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +14,8 @@ from koma.paths import initial_directory, open_file
 from koma.documents.session import DocumentSession
 from koma.documents.bundle import destination_stamp as document_stamp
 from koma.editor.animatic import Timeline
-from koma.exports.video_export import frame_counts, timeline_frame_counts, prepare_frames
+from koma.exports.video_export import timeline_frame_counts
+from koma.exports.video_frames import StoryboardFrames
 from koma.exports.encoding import video_progress
 from koma.exports.video_runner import VideoRunner, destination_stamp
 
@@ -46,7 +46,6 @@ class StoryboardFiles:
             'recover': menu_item('Recuperar…', on_click=self.recover_document),
             'pdf': menu_item('PDF…', icon=ft.Icons.PICTURE_AS_PDF_OUTLINED, on_click=view.export),
             'mp4': menu_item('MP4…', icon=ft.Icons.MOVIE_OUTLINED, on_click=self.video_options),
-            'blender': menu_item('Configurar Blender…', icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.blender_options),
         }
         self.menu = popup_menu(tooltip='Arquivo', items=list(self.commands.values()))
 
@@ -220,42 +219,12 @@ class StoryboardFiles:
         if choice:
             await self.change_document(recovery=choice)
 
-    def blender_options(self, e=None):
-        if self.view.busy:
-            return
-        field = ft.TextField(label='Executável do Blender', value=self.view.settings.blender, **input_style())
-        error = ft.Text(visible=False, color=ft.Colors.ERROR)
-        async def browse(e=None):
-            selected = await ft.FilePicker().pick_files(dialog_title='Selecionar Blender', allow_multiple=False)
-            if selected and selected[0].path:
-                field.value = selected[0].path
-                self.page.update(field)
-        async def save(e=None):
-            value = (field.value or '').strip()
-            previous = self.view.settings.blender
-            try:
-                if value and not Path(value).expanduser().is_file():
-                    raise ValueError('Escolha um executável existente do Blender.')
-                self.view.settings.blender = str(Path(value).expanduser().resolve()) if value else ''
-                await asyncio.to_thread(self.view.settings.save)
-                self.page.pop_dialog()
-            except (OSError, ValueError) as exc:
-                self.view.settings.blender = previous
-                error.value, error.visible = str(exc), True
-                self.page.update(error)
-        self.page.show_dialog(dialog(title=ft.Text('Preferências do Blender'), on_confirm=save,
-            content=ft.Column([field, ft.TextButton('Escolher executável…', on_click=browse),
-                ft.Text('Necessário apenas para exportar MP4. O Blender é instalado separadamente.', color=MUTED), error],
-                width=520, tight=True),
-            actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
-                ft.FilledButton('Salvar', on_click=save)]))
-
     def video_options(self, e=None):
         view = self.view
         if not view.editable():
             return
         board, session = view.board, view.session
-        timeline = Timeline(board, view.workspace.navigation.selected)
+        timeline = Timeline(board, view.player.scene_anchor if view.player.opened else view.workspace.navigation.selected)
         from koma.exports.sequence import ExportSequence
         from koma.expressions import arithmetic_value
         roots = [frame for frame in board.frames if frame.node_type.starts_scene]
@@ -308,7 +277,7 @@ class StoryboardFiles:
                 include_subtitles=self.include_subtitles)
         self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), on_confirm=export, content=ft.Column([
             scope, scene_list, ft.Row([start, end]), error, fps, size, subtitles,
-            ft.Text('Usa o Blender configurado no Koma. Inclui a trilha ativa da cena e mantém os enquadramentos.', color=MUTED),
+            ft.Text('Inclui áudio, desenhos e legendas habilitadas.', color=MUTED),
         ], width=390, tight=True, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
             ft.FilledButton('Escolher destino', on_click=export)]))
@@ -316,7 +285,8 @@ class StoryboardFiles:
     def video_from_player(self, e=None):
         if not self.view.player.opened:
             return
-        self.view.player.close()
+        self.view.player.playing = False
+        self.view.player.render_position()
         self.video_options()
 
     async def pick_video(self, timeline, name, fps, size, *, include_subtitles=True):
@@ -348,37 +318,33 @@ class StoryboardFiles:
         self.actions.visible = True
         self.track_task()
         try:
-            counts = timeline_frame_counts(timeline, fps)
-            blender = Path(view.settings.blender).expanduser().resolve()
-            if not blender.is_file():
-                raise ValueError('Configure um Blender válido nas preferências do Koma para gerar o MP4.')
+            from koma.editor.node_media import board_assets
+            owned = {(getattr(view.store, folder) / name).resolve() for folder, name in board_assets(view.board)}
+            if Path(destination).resolve() in owned:
+                raise ValueError('Escolha um destino fora dos arquivos de mídia do projeto.')
+            counts = await asyncio.to_thread(timeline_frame_counts, timeline, fps)
             view.feedback.progress.value = 0
             view.notify(f'Preparando {len(timeline.frames)} quadros para o MP4…', 'working')
-            with tempfile.TemporaryDirectory(prefix='koma-animatic-') as temporary:
-                paths = await asyncio.to_thread(prepare_frames, timeline.frames, view.store, Path(temporary), size,
-                    lambda: self.cancelled or view.closing, include_subtitles=include_subtitles)
+            source = StoryboardFrames(tuple(timeline.frames), view.store, tuple(size), tuple(counts),
+                include_subtitles, tuple(getattr(timeline, 'source_offsets', ())))
+            def progress(event):
                 if self.cancelled or view.closing:
-                    view.notify('Exportação cancelada. O vídeo anterior foi preservado.', 'cancelled')
                     return
-                def progress(event):
-                    value = video_progress(event)
-                    view.feedback.progress.value = value
-                    text = f"{event.get('phase', 'Exportando')} · {event.get('done', 0)}/{event.get('total', 1)}"
-                    view.notify(text, 'working')
-                audio_tracks = []
-                for index, track in enumerate(timeline.audio_tracks):
-                    if track.muted or track.volume <= 0:
-                        continue
-                    path = (view.store.audio / track.asset).resolve()
-                    if hasattr(track, 'source_offset'):
-                        from koma.exports.audio_segment import extract
-                        path = await asyncio.to_thread(extract, path, Path(temporary) / f'audio-{index}.wav',
-                            track.source_offset, track.duration, lambda: self.cancelled or view.closing)
-                    audio_tracks.append(dict(path=str(path), start=track.start, volume=track.volume))
-                options = dict(expected_destination_stamp=expected_stamp, frame_durations=counts)
-                if audio_tracks:
-                    options['audio_tracks'] = audio_tracks
-                result = await self.runner.run(blender, paths, destination, fps, 'HIGH', 0, progress, **options)
+                view.feedback.progress.value = video_progress(event)
+                text = f"{event.get('phase', 'Exportando')} · {event.get('done', 0)}/{event.get('total', 1)}"
+                view.notify(text, 'working')
+            audio_tracks = []
+            for track in timeline.audio_tracks:
+                if track.muted or track.volume <= 0:
+                    continue
+                audio_tracks.append(dict(path=str(view.store.audio / track.asset),
+                    start=track.start, volume=track.volume, offset=getattr(track, 'source_offset', 0),
+                    duration=track.duration))
+            if self.cancelled or view.closing:
+                view.notify('Exportação cancelada. O vídeo anterior foi preservado.', 'cancelled')
+                return
+            result = await self.runner.run(source, destination, fps, 'HIGH', 0, progress,
+                expected_destination_stamp=expected_stamp, audio_tracks=audio_tracks)
             if result:
                 self.last_video = result
                 self.directory = str(result.parent)

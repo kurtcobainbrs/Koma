@@ -5,9 +5,12 @@ import asyncio
 from dataclasses import dataclass
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 import flet.canvas as cv
 
 from koma.ui.design import BORDER, COMPACT_CONTROL_HEIGHT, CONTROL_HEIGHT, DRAG_INTERVAL_MS, MUTED, ON_SELECTION, RADIUS, SELECTION
+from koma.ui.coalesced_refresh import CoalescedRefresh
+from koma.ui.retained_container import RetainedStack, RetainedCanvas, retain_children
 from koma.editor.geometry import (GRID_STEP, MAX_ZOOM, MIN_ZOOM, NODE_HEIGHT, NODE_WIDTH,
     ZOOM_STEP, WHEEL_ZOOM_FACTOR, INITIAL_CANVAS_WIDTH, INITIAL_CANVAS_HEIGHT,
     CanvasExtent, frame_bounds, group_delta)
@@ -23,6 +26,8 @@ from koma.editor.group_frames import SceneFrames
 from koma.editor.graph import path_links
 from koma.editor.context_menu import CanvasContextMenu
 from koma.editor.secondary_pointer import SecondaryPointer
+from koma.editor.sequence_scope import SequenceScope
+from koma.ui.sequence_ports import SequencePorts
 
 
 @dataclass
@@ -35,6 +40,8 @@ class NodeDrag:
     zoom: float
     positions: dict[str, tuple[float, float]]
     detach_flow: bool = False
+    rigid: bool = False
+    delta: tuple[float, float] = (0, 0)
 
 
 class CanvasViewport(ft.Container):
@@ -45,6 +52,7 @@ class CanvasViewport(ft.Container):
         self.workspace = workspace
 
     def will_unmount(self):
+        self.workspace.measurements.cancel()
         self.workspace.secondary_pointer.cancel(update=False)
         self.workspace.grab.cancel(update=False)
         self.workspace.cancel_camera_transition()
@@ -63,20 +71,31 @@ class StoryboardCanvas:
         self.pending_shift = (0, 0)
         self.viewport_width, self.viewport_height = 1000, 600
         self.drag = None
+        self.scope = SequenceScope(self)
         self.grab = GrabMove(self)
         self.camera_revision = 0
         self.focusing_region = False
         self.camera_memory = CameraMemory(self)
         self.z_order = []
         self.node_heights = {}
+        self.measured_nodes = set()
+        self.measurements = CoalescedRefresh(self.page, self.refresh_measurements)
         self.grid_size = None
-        self.background = cv.Canvas()
+        self.background = RetainedCanvas(hold_updates=lambda: False)
         self.background_hit = ft.GestureDetector(on_tap_down=self.scene_click,
             content=ft.Container(width=INITIAL_CANVAS_WIDTH, height=INITIAL_CANVAS_HEIGHT,
                                  bgcolor=ft.Colors.TRANSPARENT))
         self.stack = ft.Stack(controls=[self.background], width=INITIAL_CANVAS_WIDTH, height=INITIAL_CANVAS_HEIGHT,
             clip_behavior=ft.ClipBehavior.NONE)
+        self.node_layer = RetainedStack(hold_updates=self.rigid_move_active,
+            width=self.stack.width, height=self.stack.height, clip_behavior=ft.ClipBehavior.NONE)
+        # A full-size decorated Container captures empty-space hits, even with
+        # no background color. Stack leaves those hits for the canvas below.
+        self.motion_layer = RetainedStack(hold_updates=self.rigid_move_active,
+            left=0, top=0, width=self.stack.width, height=self.stack.height,
+            clip_behavior=ft.ClipBehavior.NONE, controls=[self.node_layer])
         self.links = LinksLayer(self)
+        self.sequence_ports = SequencePorts(self)
         self.scene_frames = SceneFrames(self)
         self.scene = ft.Container(content=view.external_drop.scene(self.stack))
         self.secondary_pointer = SecondaryPointer(self)
@@ -121,15 +140,19 @@ class StoryboardCanvas:
         self.navigation.editing_fields = {field for field in self.navigation.editing_fields if field[0] in ids}
         self.node_heights = {key: value for key, value in self.node_heights.items() if key in ids}
         self.z_order = [identifier for identifier in self.z_order if identifier in ids]
-        self.z_order.extend(frame.id for frame in self.view.board.frames if frame.id not in self.z_order)
+        known = set(self.z_order)
+        self.z_order.extend(frame.id for frame in self.view.board.frames if frame.id not in known)
         dx, dy = self.extent.include(self.view.board.frames)
         self.pending_shift = self.pending_shift[0] + dx, self.pending_shift[1] + dy
         for frame in self.view.board.frames:
             node = self.view.cards[frame.id].content
-            node.left, node.top, node.width = frame.x + self.extent.origin_x, frame.y + self.extent.origin_y, NODE_WIDTH
+            node.left, node.top, node.width = frame.x + self.extent.origin_x, frame.y + self.extent.origin_y, self.view.cards[frame.id].width
         self.stack.width, self.stack.height = self.extent.width, self.extent.height
+        self.node_layer.width = self.motion_layer.width = self.stack.width
+        self.node_layer.height = self.motion_layer.height = self.stack.height
         self.scene_frames.refresh()
-        self.links.highlighted = path_links(self.view.board, self.navigation.selection.ids)
+        self.sequence_ports.sync()
+        self.links.highlighted = path_links(self.view.board, self.view.sequences.index.closure(self.navigation.selection.ids))
         self.links.refresh()
         self.rebuild_stack()
         size = self.stack.width, self.stack.height
@@ -143,30 +166,57 @@ class StoryboardCanvas:
                 cv.Line(0, y, size[0], y, paint=paint) for y in range(0, math.ceil(size[1]), GRID_STEP)]
 
     def rebuild_stack(self):
-        self.stack.controls = [self.background, self.background_hit, *self.scene_frames.controls(), self.links.content,
-            *[self.view.cards[key].content for key in self.z_order], self.box_selection.overlay, self.box_zoom.overlay]
+        self.node_layer.controls = [*self.scene_frames.controls(), self.links.content,
+            *self.sequence_ports.controls(),
+            *[self.view.cards[key].content for key in self.z_order]]
+        self.stack.controls = [self.background, self.background_hit, self.motion_layer,
+            self.box_selection.overlay, self.box_zoom.overlay]
 
-    def update_groups(self):
+    def rigid_move_active(self):
+        return self.drag is not None and self.drag.rigid
+
+    def update_interaction(self, *controls):
+        """Publish input/overlay changes without walking stable nodes or grid."""
+        if not self.view.closing:
+            with retain_children(self.node_layer, self.background):
+                self.page.update(self.content, *controls)
+
+    def update_groups(self, identifiers=None):
+        if identifiers is not None:
+            return self.scene_frames.update_members(identifiers)
         self.scene_frames.refresh()
         return self.scene_frames.controls()
 
+    @explicit_updates
     def resized(self, e):
         if e.width > 0 and e.height > 0:
             self.viewport_width, self.viewport_height = e.width, e.height
 
+    @explicit_updates
     def node_resized(self, identifier, e):
-        if e.height > 0 and self.node_heights.get(identifier) != e.height:
+        if not self.view.closing and identifier in self.view.cards and e.height > 0 and self.node_heights.get(identifier) != e.height:
             self.node_heights[identifier] = e.height
-            self.links.refresh(update=True)
-            if self.view.board.groups:
-                self.page.update(*self.update_groups())
+            self.measured_nodes.add(identifier)
+            self.measurements.request()
 
+    def refresh_measurements(self):
+        if not self.view.active and not self.view.closing:
+            return
+        identifiers, self.measured_nodes = self.measured_nodes, set()
+        if not self.view.closing and self.view.active:
+            self.links.refresh(update=True)
+            controls = self.update_groups(identifiers)
+            if controls:
+                self.page.update(*controls)
+
+    @explicit_updates
     def interaction_start(self, e):
         if self.focusing_region or self.box_zoom.active:
             return
         self.cancel_camera_transition()
         self.gesture_zoom = self.zoom
 
+    @explicit_updates
     def interaction_update(self, e):
         if self.focusing_region or self.box_zoom.active or self.drag or self.box_selection.active or self.view.closing or not math.isfinite(e.scale) or e.scale <= 0:
             return
@@ -185,6 +235,7 @@ class StoryboardCanvas:
             self.update_label()
         self.camera_memory.remember()
 
+    @explicit_updates
     def interaction_end(self, e):
         self.camera_memory.remember()
 
@@ -217,9 +268,11 @@ class StoryboardCanvas:
         if point is not None:
             await self.set_zoom(self.zoom * factor, anchor=(point.x, point.y))
 
+    @explicit_updates
     async def scene_click(self, e):
         await self.navigation.background_click(e)
 
+    @explicit_updates
     def hover(self, e):
         self.context_menu.pointer = (e.local_position.x, e.local_position.y)
         self.grab.hover(e)
@@ -249,8 +302,14 @@ class StoryboardCanvas:
         if self.drag or self.box_selection.active or self.box_zoom.active or self.view.closing or self.view.busy:
             return
         self.cancel_camera_transition()
-        frames = [frame for frame in self.view.board.frames if identifiers is None or frame.id in identifiers]
+        frames = [frame for frame in self.view.board.frames if self.view.cards[frame.id].content.visible
+            and (identifiers is None or frame.id in identifiers)]
         left, top, right, bottom = frame_bounds(frames, self.node_heights)
+        if self.scope.active and identifiers is None:
+            for box in self.sequence_ports.boxes.values():
+                left, top = min(left, box.left - self.extent.origin_x), min(top, box.top - self.extent.origin_y)
+                right = max(right, box.left + box.width - self.extent.origin_x)
+                bottom = max(bottom, box.top + box.height - self.extent.origin_y)
         margin = GRID_STEP * 3
         # F aproxima a seleção; Home mantém a visão geral em até 100%.
         limit = MAX_ZOOM if identifiers is not None else 1.0
@@ -291,7 +350,7 @@ class StoryboardCanvas:
         # elimina a disputa de doze etapas animadas com eventos nativos atrasados.
         self.focusing_region = True
         self.viewer.scale_enabled = self.viewer.pan_enabled = False
-        self.page.update(self.viewer)
+        self.update_interaction()
         try:
             await self.viewer.reset()
             self.zoom = self.gesture_zoom = 1.0
@@ -307,7 +366,7 @@ class StoryboardCanvas:
             self.focusing_region = False
             self.navigation.sync(update=False)
             if not self.view.closing and self.view.active:
-                self.page.update(self.viewer)
+                self.update_interaction()
 
     async def restore_camera(self):
         state = self.camera_memory.state
@@ -330,6 +389,8 @@ class StoryboardCanvas:
         revision = self.camera_revision
         await asyncio.sleep(.04)
         if revision == self.camera_revision and not self.view.closing and not self.view.busy:
+            if self.measured_nodes:
+                self.refresh_measurements()
             await self.restore_camera()
 
     async def ensure_initial_view(self):
@@ -372,7 +433,8 @@ class StoryboardCanvas:
             self.view.chrome.sync()
             self.page.update(self.view.chrome.content)
 
-    def begin_drag(self, identifier, e):
+    @explicit_updates
+    def begin_drag(self, identifier, e, *, update=True):
         if not self.view.editable() or self.drag or self.navigation.effective_mode != 'select':
             return
         frame = next((f for f in self.view.board.frames if f.id == identifier), None)
@@ -381,33 +443,53 @@ class StoryboardCanvas:
         if identifier not in self.navigation.selection.ids and self.navigation.modifier(Action.ADD_SELECTION):
             self.navigation.apply_selection(self.navigation.selection.ids | {identifier}, identifier)
         else:
-            self.navigation.select_node(identifier, focus=True)
-        positions = {f.id: (f.x, f.y) for f in self.view.board.frames if f.id in self.navigation.selection.ids}
+            self.navigation.select_node(identifier, focus=True, raise_node=False)
+        moving = set(self.navigation.selection.ids)
+        positions = {f.id: (f.x, f.y) for f in self.view.board.frames if f.id in moving}
         self.drag = NodeDrag(identifier, frame.x, frame.y, e.global_position.x, e.global_position.y, self.zoom, positions)
+        # When the whole scene participates, nodes, internal wires and frames
+        # share one temporary translation. No widget reparenting is required.
+        self.drag.rigid = len(positions) > 1 and len(positions) == len(self.scope.visible)
         self.drag.detach_flow = self.navigation.drag_detach_active()
         if self.drag.detach_flow:
             self.links.candidate = None
             self.links.refresh(update=True)
         self.viewer.pan_enabled = self.viewer.scale_enabled = False
-        self.z_order = [key for key in self.z_order if key not in positions] + [key for key in self.z_order if key in positions]
-        self.raise_node(identifier)
-        self.view.cards[identifier].highlight(True, is_active=True)
-        self.page.update(self.viewer)
+        order = ([key for key in self.z_order if key not in positions]
+            + [key for key in self.z_order if key in positions and key != identifier] + [identifier])
+        if order != self.z_order:
+            self.z_order = order
+            self.rebuild_stack()
+            if self.drag.rigid:
+                self.page.update(self.node_layer)
+        if update:
+            self.page.update(self.viewer)
 
     def raise_node(self, identifier):
         if self.view.closing or identifier not in self.z_order:
             return
+        if self.z_order[-1] == identifier:
+            return
         self.z_order.remove(identifier)
         self.z_order.append(identifier)
         self.rebuild_stack()
-        self.page.update(self.stack)
+        with retain_children(*(card.content for card in self.view.cards.values())):
+            self.page.update(self.node_layer)
 
+    @explicit_updates
     def update_drag(self, identifier, e):
         drag = self.drag
         if drag is None or drag.identifier != identifier or self.view.closing:
             return
         dx, dy = group_delta(drag.positions, (e.global_position.x - drag.pointer_x) / drag.zoom,
                             (e.global_position.y - drag.pointer_y) / drag.zoom, anchor=(drag.x, drag.y))
+        if drag.rigid:
+            drag.detach_flow = self.navigation.drag_detach_active()
+            if drag.delta != (dx, dy):
+                drag.delta = dx, dy
+                self.motion_layer.offset = ft.Offset(dx / self.motion_layer.width, dy / self.motion_layer.height)
+                self.page.update(self.motion_layer)
+            return
         positions = {key: (x + dx, y + dy) for key, (x, y) in drag.positions.items()}
         nodes = []
         for key, (x, y) in positions.items():
@@ -416,30 +498,52 @@ class StoryboardCanvas:
             if (node.left, node.top) != (left, top):
                 node.left, node.top = left, top
                 nodes.append(node)
-        drag.detach_flow = self.navigation.drag_detach_active()
+        detach = self.navigation.drag_detach_active()
+        if not nodes and detach == drag.detach_flow:
+            return
+        drag.detach_flow = detach
         self.links.candidate = self.links.drop_candidate(identifier) if len(drag.positions) == 1 and not drag.detach_flow else None
         self.links.refresh(update=True)
-        self.page.update(*nodes, *self.update_groups())
+        controls = [*nodes, *self.update_groups(positions)]
+        if controls:
+            self.page.update(*controls)
 
     async def end_drag(self, identifier, e=None):
         if self.drag is None or self.drag.identifier != identifier:
             return
+        if e is not None and getattr(e, 'global_position', None) is not None:
+            self.update_drag(identifier, e)
         drag, self.drag = self.drag, None
         self.grab.active = False
         self.navigation.sync(update=False)
         if self.view.closing:
             return
         node = self.view.cards[identifier].content
-        dx, dy = group_delta(drag.positions, node.left - self.extent.origin_x - drag.x,
-            node.top - self.extent.origin_y - drag.y, anchor=(drag.x, drag.y), snap=self.snap_enabled)
+        raw_dx, raw_dy = drag.delta if drag.rigid else (
+            node.left - self.extent.origin_x - drag.x, node.top - self.extent.origin_y - drag.y)
+        self.motion_layer.offset = None
+        dx, dy = group_delta(drag.positions, raw_dx, raw_dy, anchor=(drag.x, drag.y), snap=self.snap_enabled)
         await self.view.position_frames({key: (x + dx, y + dy) for key, (x, y) in drag.positions.items()}, insert_flow=True,
             detach_flow=drag.detach_flow and self.navigation.drag_detach_active())
-        self.page.update(self.viewer)
+        self.update_interaction()
+
+    def cancel_gestures(self):
+        self.context_menu.dismiss(refocus=False)
+        self.secondary_pointer.cancel(update=False)
+        self.grab.cancel(update=False)
+        if self.drag:
+            self.cancel_drag(self.drag.identifier, update=False)
+        self.box_selection.cancel()
+        self.box_zoom.cancel()
+        self.links.cancel()
+        self.links.cancel_cut()
+        self.cancel_camera_transition()
 
     def cancel_drag(self, identifier, e=None, *, update=True):
         if self.drag is None or self.drag.identifier != identifier:
             return
         drag, self.drag = self.drag, None
+        self.motion_layer.offset = None
         self.grab.active = False
         self.navigation.sync(update=False)
         for frame in self.view.board.frames:

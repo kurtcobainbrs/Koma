@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import flet as ft
+from koma.ui.event_updates import explicit_updates
 
 from koma.documents.session import DocumentSession
 from koma.editor.view import StoryboardView
@@ -19,6 +20,7 @@ from koma.ui.project_drop import ProjectDrop
 from koma.documents.recent import RecentDocuments
 from koma.editor.node_clipboard import NodeClipboard
 from koma.editor.document_tools import DocumentTools
+from koma.ui.retained_container import RetainedColumn, retain_children
 
 
 class KomaApplication:
@@ -37,7 +39,8 @@ class KomaApplication:
         self.menu_host = ft.Container(content=self.view.chrome.content)
         self.editor_host = ft.Container(content=self.view.content, expand=True)
         self.tabs = ProjectTabs(self)
-        self.host = ft.Column([self.menu_host, self.tabs.content, self.editor_host], expand=True, spacing=0,
+        self.host = RetainedColumn(hold_updates=lambda: False,
+            controls=[self.menu_host, self.tabs.content, self.editor_host], expand=True, spacing=0,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.project_drop = ProjectDrop(self)
         self.surface = self.project_drop.surface(self.host)
@@ -78,13 +81,10 @@ class KomaApplication:
         drop_changed = hasattr(self, 'project_drop') and self.project_drop.sync()
         if hasattr(self, 'tabs') and view in self.views:
             if drop_changed:
-                self.page.update(self.project_drop.control)
-            self.tabs.sync()
-            if not self.closing_attempt:
-                if view is self.view:
-                    self.page.update(self.menu_host, self.tabs.content)
-                else:
-                    self.page.update(self.tabs.content)
+                with retain_children(self.host):
+                    self.page.update(self.project_drop.control)
+            if self.tabs.sync() and not self.closing_attempt:
+                self.page.update(self.tabs.content)
 
     def can_save_to(self, view, path):
         return not any(other is not view and other.session.path is not None
@@ -95,7 +95,11 @@ class KomaApplication:
         self.editor_host.disabled = self.menu_host.disabled = value
         self.tabs.sync()
         self.project_drop.sync()
-        self.page.update(self.surface)
+        controls = [self.editor_host, self.menu_host, self.tabs.content]
+        if self.project_drop.control is not None:
+            controls.append(self.project_drop.control)
+        with retain_children(self.view.content, self.host):
+            self.page.update(*controls)
 
     def move_tab(self, source, target=None):
         if (self.transitioning or self.closing_attempt or any(v.busy for v in self.views)
@@ -123,6 +127,15 @@ class KomaApplication:
             from koma.ui import drop_runtime
             if not drop_runtime.enabled():
                 self.view.notify(drop_runtime.unavailable_reason(), 'warning')
+
+    def disconnected(self, e=None):
+        for view in self.views:
+            view.focus.disconnect()
+
+    def reconnected(self, e=None):
+        for view in self.views:
+            view.focus.reconnect()
+        self.view.focus_editor()
 
     async def select_view(self, target):
         if target not in self.views or self.transitioning or self.closing_attempt or any(v.busy for v in self.views):
@@ -244,6 +257,7 @@ class KomaApplication:
             return False
         self.closing_attempt = True
         for view in self.views:
+            view.focus.suspend()
             view.lock(True)
         self.tabs.sync()
         self.page.update(self.tabs.content)
@@ -270,6 +284,7 @@ class KomaApplication:
             self.closing_attempt = False
             for view in self.views:
                 if not view.closing:
+                    view.focus.resume()
                     view.lock(False)
             self.tabs.sync()
             if not self.view.closing:
@@ -287,6 +302,9 @@ def mount(page, document=None):
     page.window.min_width, page.window.min_height = 600, 600
     page.window.prevent_close = True
     application = KomaApplication(page, data_directory(), document)
+    page.on_disconnect = application.disconnected
+    page.on_connect = application.reconnected
+    @explicit_updates
     async def on_window_event(e):
         if e.type == ft.WindowEventType.CLOSE:
             await application.close()
@@ -304,6 +322,7 @@ def mount(page, document=None):
                     view.workspace.cancel_drag(view.workspace.drag.identifier)
                 nav.sync(update=view.active)
     page.window.on_event = on_window_event
+    @explicit_updates
     async def on_keyboard_event(e):
         from koma.editor.application_commands import dispatch
         if await dispatch(application, e):
@@ -321,11 +340,11 @@ def main():
     parser = argparse.ArgumentParser(description='Koma App — storyboard e animatic')
     parser.add_argument('document', nargs='?', type=Path, help='Documento .koma para abrir')
     parser.add_argument('--diagnostics', type=Path, metavar='REPORT.json', help='Validar instalação offline e gerar relatório')
-    parser.add_argument('--blender', type=Path, help='Blender usado somente no diagnóstico opcional de MP4')
+    parser.add_argument('--video', action='store_true', help='Incluir MP4 no diagnóstico offline')
     args = parser.parse_args()
     if args.diagnostics:
         from koma.diagnostics import run
-        return run(args.diagnostics, args.blender)
+        return run(args.diagnostics, video=args.video)
     from koma.ui import drop_runtime
     drop_runtime.configure()
     ft.run(lambda page: mount(page, args.document))

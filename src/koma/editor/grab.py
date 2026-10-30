@@ -16,13 +16,14 @@ class GrabMove:
         if self.active or ws.drag or not ws.view.editable() or nav.editing_fields or not nav.selection.ids:
             return
         ws.cancel_camera_transition()
-        nav.set_mode('select')
+        if nav.effective_mode != 'select':
+            nav.set_mode('select')
         identifier = nav.selected
         if identifier is None:
             return
         self.waiting_pointer = self.pointer is None
         point = self.pointer or SimpleNamespace(x=0, y=0)
-        ws.begin_drag(identifier, SimpleNamespace(global_position=point))
+        ws.begin_drag(identifier, SimpleNamespace(global_position=point), update=False)
         self.active = ws.drag is not None
         nav.sync()
         confirm, cancel = ws.view.keymap.label(Action.CONFIRM), ws.view.keymap.label(Action.CANCEL)

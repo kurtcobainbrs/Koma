@@ -24,6 +24,7 @@ class ExportSequence:
     frames: tuple
     durations: tuple
     audio_tracks: tuple
+    source_offsets: tuple = ()
 
     @property
     def starts(self):
@@ -42,8 +43,12 @@ class ExportSequence:
         chosen = [root for root in scenes if roots is None or root.id in roots]
         pieces = [Timeline(board, root.id) for root in chosen]
         if roots is None:
-            assigned = {frame.id for root in scenes for frame in scene_frames(project, root)}
-            orphans = tuple(frame for frame in project.frames if frame.node_type.timed and not frame.muted and frame.id not in assigned)
+            from koma.editor.sequences import SequenceIndex
+            from koma.editor.scenes import principal
+            hierarchy = SequenceIndex(project)
+            orphans = tuple(item for frame in project.frames if frame.id not in hierarchy.parents
+                and not frame.node_type.starts_scene and principal(project, frame.id, index=hierarchy) is None
+                for item in hierarchy.playback(frame.id) if not item.muted)
             if orphans:
                 audio = tuple(track for track in board.audio_tracks if not track.scene_id)
                 total = max(sum(frame.duration for frame in orphans), *(track.start + track.duration for track in audio), 0)
@@ -68,15 +73,16 @@ class ExportSequence:
     def window(self, start, end):
         if not all(math.isfinite(value) for value in (start, end)) or not 0 <= start < end <= self.total + 1e-6:
             raise ValueError('Escolha um intervalo válido dentro da sequência.')
-        frames, durations, audio = [], [], []
-        for frame, position, duration in zip(self.frames, self.starts, self.durations):
+        frames, durations, audio, offsets = [], [], [], []
+        for index, (frame, position, duration) in enumerate(zip(self.frames, self.starts, self.durations)):
             overlap = min(end, position + duration) - max(start, position)
             if overlap > 1e-9:
                 frames.append(frame)
                 durations.append(overlap)
+                offsets.append((self.source_offsets[index] if self.source_offsets else 0) + max(0, start - position))
         for track in self.audio_tracks:
             overlap = min(end, track.start + track.duration) - max(start, track.start)
             if overlap > 1e-9:
                 audio.append(replace(track, start=max(start, track.start) - start, duration=overlap,
                     source_offset=track.source_offset + max(0, start - track.start)))
-        return ExportSequence(tuple(frames), tuple(durations), tuple(audio))
+        return ExportSequence(tuple(frames), tuple(durations), tuple(audio), tuple(offsets))

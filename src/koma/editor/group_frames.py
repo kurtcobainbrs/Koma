@@ -38,17 +38,31 @@ class SceneFrames:
             self.update_bounds(group)
 
     def update_bounds(self, group):
+        box, header = self.boxes[group.id], self.headers[group.id]
+        before = box.left, box.top, box.width, box.height
         nodes = [self.view.cards[key].content for key in group.members]
         left, top = min(node.left for node in nodes) - GRID_STEP, min(node.top for node in nodes) - GRID_STEP * 2
         right = max(node.left + NODE_WIDTH for node in nodes) + GRID_STEP
         bottom = max(self.view.cards[key].content.top + self.workspace.node_heights.get(key, NODE_HEIGHT)
                      for key in group.members) + GRID_STEP
-        box, header = self.boxes[group.id], self.headers[group.id]
         box.left, box.top, box.width, box.height = left, top, right - left, bottom - top
         header.left, header.top, header.width = left, top, right - left
+        return before != (box.left, box.top, box.width, box.height)
+
+    def update_members(self, identifiers):
+        """A gesture only changes frames containing one of the moved nodes."""
+        identifiers = set(identifiers)
+        controls = []
+        for group in self.view.board.groups:
+            if (set(group.members) <= self.workspace.scope.visible
+                    and identifiers.intersection(group.members) and self.update_bounds(group)):
+                controls.extend((self.boxes[group.id], self.headers[group.id]))
+        return controls
 
     def controls(self):
-        return [control for group in self.view.board.groups for control in (self.boxes[group.id], self.headers[group.id])]
+        return [control for group in self.view.board.groups
+            if set(group.members) <= self.workspace.scope.visible
+            for control in (self.boxes[group.id], self.headers[group.id])]
 
     def group(self, identifier):
         return next((group for group in self.view.board.groups if group.id == identifier), None)

@@ -1,4 +1,5 @@
 """Faixa fina de marcadores: seleção, arraste e nome editável no próprio local."""
+from koma.ui.event_updates import explicit_updates
 
 import flet as ft
 
@@ -29,9 +30,11 @@ class MarkerFlag:
         self.select()
         self.lane.rename()
 
+    @explicit_updates
     def pointer_down(self, e):
         self.pointer_x = e.global_position.x
 
+    @explicit_updates
     def begin(self, e):
         if self.lane.renaming is not None:
             self.lane.cancel_rename()
@@ -40,14 +43,19 @@ class MarkerFlag:
             self.token = self.lane.editor.begin(self.identifier, origin, self.lane.strip.scale)
             self.lane.editor.move(self.token, e.global_position.x)
 
+    @explicit_updates
     def move(self, e):
         self.lane.editor.move(self.token, e.global_position.x)
 
+    @explicit_updates
     async def finish(self, e):
+        if e is not None and getattr(e, 'global_position', None) is not None:
+            self.move(e)
         token, self.token = self.token, None
         self.pointer_x = None
         await self.lane.editor.finish(token)
 
+    @explicit_updates
     def cancel(self, e=None):
         if self.token is not None and self.token is self.lane.editor.drag:
             self.lane.editor.cancel()
@@ -70,10 +78,9 @@ class MarkerLane:
             bgcolor=SURFACE, visible=False)
         self.background = ft.Container(left=0, right=0, top=0, bottom=0, bgcolor=SURFACE,
             border=ft.Border(bottom=ft.BorderSide(1, BORDER)))
-        self.empty = ft.Container(left=8, top=0, bottom=0,
-            content=ft.Text('Marcadores', size=TEXT_SMALL, color=MUTED))
-        self.content = ft.Stack(left=0, top=0, height=strip.style.marker_height)
-        self.guides = ft.Container(left=0, right=0, top=strip.style.marker_height, bottom=0,
+        self.empty = ft.Container()
+        self.content = ft.Stack(left=0, top=strip.style.marker_top, height=strip.style.marker_height)
+        self.guides = ft.Container(left=0, right=0, top=strip.style.marker_top, bottom=0,
             ignore_interactions=True, content=ft.Stack(fit=ft.StackFit.EXPAND,
                 clip_behavior=ft.ClipBehavior.HARD_EDGE))
 
@@ -98,14 +105,11 @@ class MarkerLane:
             x = strip.scale.pixels(position)
             if strip.offset - strip.style.marker_height <= x <= strip.offset + strip.width:
                 flag = self.flags[marker.id]
-                flag.box.left = max(0, min(strip.track.width - strip.style.marker_height, x - strip.style.marker_height / 2))
                 next_x = strip.scale.pixels(markers[index + 1].position) if index + 1 < len(markers) else strip.track.width
-                flag.box.width = min(strip.style.marker_label_width,
-                    max(strip.style.marker_height, next_x - x), strip.track.width - flag.box.left)
+                self.place(flag, position, next_x)
                 flag.title.value = marker.title
                 flag.box.visible = self.renaming != marker.id
                 flag.icon.color = ft.Colors.PRIMARY if editor.selected == marker.id else ft.Colors.TERTIARY
-                flag.guide.left = max(0, min(strip.track.width - flag.guide.width, x))
                 opacity = (strip.style.selected_marker_line_opacity if editor.selected == marker.id
                     else strip.style.marker_line_opacity)
                 flag.guide.bgcolor = ft.Colors.with_opacity(opacity, flag.icon.color)
@@ -120,6 +124,24 @@ class MarkerLane:
         self.content.width = strip.track.width
         self.content.controls = controls
         self.guides.content.controls = guides
+
+    def place(self, flag, position, next_x):
+        strip = self.strip
+        x = strip.scale.pixels(position)
+        flag.box.left = max(0, min(strip.track.width - strip.style.marker_height, x - strip.style.marker_height / 2))
+        flag.box.width = min(strip.style.marker_label_width,
+            max(strip.style.marker_height, next_x - x), strip.track.width - flag.box.left)
+        flag.guide.left = max(0, min(strip.track.width - flag.guide.width, x))
+
+    def preview(self, identifier):
+        flag = self.flags.get(identifier)
+        if flag is None or self.editor.position is None or not self.strip.scale:
+            return
+        position = self.editor.position
+        next_position = min((marker.position for marker in self.player.timeline.markers
+            if marker.id != identifier and marker.position > position), default=self.player.timeline.total)
+        self.place(flag, position, self.strip.scale.pixels(next_position))
+        self.player.view.page.update(flag.box, flag.guide)
 
     def rename(self, e=None):
         if self.player.editing or not self.player.view.editable():
