@@ -36,7 +36,8 @@ class NodeMediaActions:
             return
         session = self.view.session
         files = await ft.FilePicker().pick_files(dialog_title='Adicionar mídias', allow_multiple=True,
-            file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=list(MEDIA_EXTENSIONS))
+            file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=list(MEDIA_EXTENSIONS),
+            initial_directory=await self.view.files.initial())
         if files and self.view.session is session:
             await self.import_paths(identifier, [Path(item.path) for item in files if item.path])
 

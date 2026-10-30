@@ -47,6 +47,16 @@ def open_file(path):
     path = Path(path).expanduser().resolve()
     if not path.is_file():
         raise ValueError(f'O arquivo não existe: {path}')
+    _open_path(path)
+
+
+def open_directory(path):
+    path = Path(path).expanduser().resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    _open_path(path)
+
+
+def _open_path(path):
     if sys.platform == 'win32':
         os.startfile(str(path))
     else:

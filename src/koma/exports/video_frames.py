@@ -8,6 +8,7 @@ from koma.documents.videos import VideoReader, inspect_video
 from koma.editor.node_media import VIDEO_EXTENSIONS
 from koma.editor.frame_format import FrameFormat
 from koma.exports.video_export import FrameComposer
+from koma.exports.reference_overlay import FrameReference, ReferenceOverlay, reference_fields, reference_values
 
 
 class FrameSource(Protocol):
@@ -34,6 +35,9 @@ class StoryboardFrames:
     counts: tuple
     include_subtitles: bool = True
     offsets: tuple = ()
+    reference_fields: tuple = ()
+    references: tuple = ()
+    preferences: object = None
 
     @property
     def count(self):
@@ -48,6 +52,13 @@ class StoryboardFrames:
     def validate(self):
         validate_counts(self.frames, self.counts)
         FrameFormat(*self.size).validate()
+        reference_fields(self.reference_fields)
+        if self.references and len(self.references) != len(self.frames):
+            raise ValueError('Referências de exportação inválidas.')
+        for reference in self.references:
+            if not isinstance(reference, FrameReference):
+                raise ValueError('Referência de quadro inválida.')
+            reference.validate()
         for frame in self.frames:
             frame.validate()
         if self.offsets and (len(self.offsets) != len(self.frames) or any(
@@ -57,9 +68,12 @@ class StoryboardFrames:
 
     def pictures(self, size, fps, cancelled):
         reader = VideoReader()
+        overlay = ReferenceOverlay(size, self.reference_fields,
+            self.preferences['reference'] if self.preferences else None) if self.reference_fields else None
+        done, total = 0, self.count
         try:
             for i, (frame, count) in enumerate(zip(self.frames, self.counts)):
-                composer = FrameComposer(frame, size, include_subtitles=self.include_subtitles)
+                composer = FrameComposer(frame, size, include_subtitles=self.include_subtitles, preferences=self.preferences)
                 video = frame.active_media and frame.active_media.kind == 'video'
                 if not video:
                     if frame.image:
@@ -78,7 +92,14 @@ class StoryboardFrames:
                         if original is None:
                             return
                         picture = composer.compose(original)
-                    yield picture
+                    done += 1
+                    if overlay:
+                        reference = self.references[i] if self.references else FrameReference(number=i + 1)
+                        yield overlay.apply(picture, reference_values(frame, reference,
+                            local_frame=index + 1, count=count, current_frame=done, total_frames=total, fps=fps, size=size,
+                            preferences=self.preferences))
+                    else:
+                        yield picture
         finally:
             reader.close()
 

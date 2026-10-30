@@ -65,10 +65,12 @@ class StoryCard:
         self.image = ft.Container(content=self.viewport.content, alignment=ft.Alignment.CENTER)
         self.viewport.set_frame(frame)
         self.scene_title = ft.Text(frame.title, size=TEXT_BODY, font_family=FONT_HEADING, max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS, expand=True)
+            overflow=ft.TextOverflow.ELLIPSIS)
+        self.scene_code = ft.Text(size=TEXT_SMALL, color=MUTED)
         self.main_body = ft.Container(height=NODE_LAYOUT.scene_body_height, padding=8,
             content=self.move_handle(ft.Row([ft.Icon(ft.Icons.MOVIE_OUTLINED, size=22, color=ft.Colors.TERTIARY),
-                self.scene_title], spacing=8)))
+                ft.Column([self.scene_code, self.scene_title], expand=True, tight=True, spacing=0,
+                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH)], spacing=8)))
         self.composite_body = SequenceBody(view, frame.id) if frame.node_type.contains_frames else None
         if self.composite_body:
             self.sequence.items.append(menu_item('Dissolver sequência',
@@ -152,6 +154,7 @@ class StoryCard:
     def sync(self, frame):
         nav = self.view.workspace.navigation
         key = (id(frame), self.view.board.fps, self.view.board.frame_format,
+            self.view.production.code(frame.id),
             id(self.view.thumbnails.get(frame.image)), bool(self.view.board.links),
             self.identifier in nav.selection.ids, self.identifier == nav.selected,
             id(self.view.board) if frame.node_type.contains_frames else None)
@@ -171,6 +174,7 @@ class StoryCard:
         self.output_socket.visible = True
         self.duration.visible = frame.node_type.timed or frame.node_type.contains_frames
         self.scene_title.value = frame.title or 'Cena'
+        self.scene_code.value = self.view.production.code(frame.id)
         self.viewport.set_frame(frame)
         body = self.image if frame.node_type.image else self.main_body
         if self.composite_body:
@@ -199,7 +203,7 @@ class StoryCard:
         frame = self.viewport.frame
         accent = frame.scene_color or ft.Colors.TERTIARY
         base = accent if frame.node_type.starts_scene else BORDER
-        color = ft.Colors.PRIMARY if active else base
+        color = self.view.settings.configuration.values['appearance']['selection'] if active else base
         self.box.border = ft.Border.all(NODE_LAYOUT.border, color)
         self.box.bgcolor = SURFACE
         self.main_body.bgcolor = None

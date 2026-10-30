@@ -49,8 +49,10 @@ class StoryboardFiles:
         }
         self.menu = popup_menu(tooltip='Arquivo', items=list(self.commands.values()))
 
-    async def initial(self):
-        return await asyncio.to_thread(initial_directory, self.directory)
+    async def initial(self, *, exporting=False):
+        files = self.view.settings.configuration.values['files']
+        folder = files['export_folder' if exporting else 'import_folder']
+        return await asyncio.to_thread(initial_directory, folder or self.directory)
 
     def track_task(self):
         self.task = asyncio.current_task()
@@ -78,6 +80,11 @@ class StoryboardFiles:
     async def guard_changes(self):
         if not self.view.dirty:
             return True
+        if not self.view.settings.configuration.values['confirmations']['close']:
+            saved = await self.view.persist()
+            if saved:
+                self.view.session.keep_recovery = True
+            return saved
         decision = await self.choose('Alterações não salvas',
             f'Projeto: {self.view.board.title or "Sem título"}. Salve as alterações antes de fechá-lo.',
             [('cancel', 'Cancelar'), ('discard', 'Descartar'), ('save', 'Salvar')], confirm='save')
@@ -93,7 +100,7 @@ class StoryboardFiles:
         if save_as or target is None:
             selected = await ft.FilePicker().save_file(dialog_title='Salvar documento Koma',
                 file_name=(target.name if target else file_name(view.board.title) + '.koma'),
-                initial_directory=await self.initial(),
+                initial_directory=await self.initial(exporting=True),
                 file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=['koma'])
             if not selected:
                 return False
@@ -260,6 +267,15 @@ class StoryboardFiles:
             self.include_subtitles = bool(subtitles.value)
             view.preferences.update(include_subtitles=self.include_subtitles)
         subtitles.on_change = choose_subtitles
+        from koma.ui.reference_fields import ReferenceFields
+        from koma.ui.collapsible_section import CollapsibleSection
+        choices = ReferenceFields(view, on_change=view.player.reference_presentation.refresh)
+        def choose_reference_fields(e=None):
+            choices.changed(e)
+        reference_section = CollapsibleSection(self.page, 'Dados de referência',
+            [choices.content],
+            expanded=bool(view.preferences.options.reference_fields))
+        reference_section.button.tooltip = 'Gravar dados na imagem do MP4. Contagem inicia em 1; duração corresponde ao trecho exportado.'
         async def export(e):
             try:
                 if view.board is not board or view.session is not session or not view.editable():
@@ -273,13 +289,13 @@ class StoryboardFiles:
                 return
             self.page.pop_dialog()
             choose_subtitles()
+            choose_reference_fields()
             await self.pick_video(sequence, name if scope.value == 'current' else view.board.title, project_fps, project_format.size,
-                include_subtitles=self.include_subtitles)
+                include_subtitles=self.include_subtitles, reference_fields=view.preferences.options.reference_fields)
         self.page.show_dialog(dialog(title=ft.Text('Exportar animatic MP4'), on_confirm=export, content=ft.Column([
-            scope, scene_list, ft.Row([start, end]), error, fps, size, subtitles,
-            ft.Text('Inclui áudio, desenhos e legendas habilitadas.', color=MUTED),
+            scope, scene_list, ft.Row([start, end]), error, fps, size, subtitles, reference_section.content,
         ], width=390, tight=True, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-            actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
+            scrollable=True, actions=[ft.TextButton('Cancelar', on_click=lambda e: self.page.pop_dialog()),
             ft.FilledButton('Escolher destino', on_click=export)]))
 
     def video_from_player(self, e=None):
@@ -289,14 +305,16 @@ class StoryboardFiles:
         self.view.player.render_position()
         self.video_options()
 
-    async def pick_video(self, timeline, name, fps, size, *, include_subtitles=True):
+    async def pick_video(self, timeline, name, fps, size, *, include_subtitles=True, reference_fields=()):
         view = self.view
         if not view.editable():
             return
         view.lock(True)
         try:
-            selected = await ft.FilePicker().save_file(dialog_title='Salvar animatic MP4', file_name=file_name(name)+'.mp4',
-                initial_directory=await self.initial(), file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=['mp4'])
+            from koma.file_defaults import export_name
+            suggested = export_name(view, name, timeline)
+            selected = await ft.FilePicker().save_file(dialog_title='Salvar animatic MP4', file_name=suggested+'.mp4',
+                initial_directory=await self.initial(exporting=True), file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=['mp4'])
         except (OSError, ValueError, RuntimeError) as exc:
             view.notify(str(exc), 'error')
             return
@@ -305,9 +323,9 @@ class StoryboardFiles:
         if selected and not view.closing:
             destination = Path(selected).with_suffix('.mp4').resolve()
             await self.export_video(timeline, destination, fps, size, destination_stamp(destination),
-                include_subtitles=include_subtitles)
+                include_subtitles=include_subtitles, reference_fields=reference_fields)
 
-    async def export_video(self, timeline, destination, fps, size, expected_stamp, *, include_subtitles=True):
+    async def export_video(self, timeline, destination, fps, size, expected_stamp, *, include_subtitles=True, reference_fields=()):
         view = self.view
         if not view.editable() or not timeline.frames:
             return
@@ -326,7 +344,13 @@ class StoryboardFiles:
             view.feedback.progress.value = 0
             view.notify(f'Preparando {len(timeline.frames)} quadros para o MP4…', 'working')
             source = StoryboardFrames(tuple(timeline.frames), view.store, tuple(size), tuple(counts),
-                include_subtitles, tuple(getattr(timeline, 'source_offsets', ())))
+                include_subtitles, tuple(getattr(timeline, 'source_offsets', ())),
+                tuple(reference_fields), tuple(getattr(timeline, 'references', ())),
+                view.settings.configuration.values)
+            if reference_fields and not source.references:
+                from dataclasses import replace
+                from koma.exports.reference_overlay import frame_references
+                source = replace(source, references=frame_references(timeline))
             def progress(event):
                 if self.cancelled or view.closing:
                     return
@@ -343,7 +367,8 @@ class StoryboardFiles:
             if self.cancelled or view.closing:
                 view.notify('Exportação cancelada. O vídeo anterior foi preservado.', 'cancelled')
                 return
-            result = await self.runner.run(source, destination, fps, 'HIGH', 0, progress,
+            quality = {'Alta': 'HIGH', 'Média': 'MEDIUM'}[view.settings.configuration.values['files']['quality']]
+            result = await self.runner.run(source, destination, fps, quality, 0, progress,
                 expected_destination_stamp=expected_stamp, audio_tracks=audio_tracks)
             if result:
                 self.last_video = result

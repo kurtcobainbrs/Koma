@@ -27,8 +27,10 @@ from koma.editor.timeline_navigation import adjacent_stop
 from koma.editor.drawing_editor import FrameDrawingEditor
 from koma.ui.drawing_surface import DrawingSurface
 from koma.editor.video_preview import VideoPreview
+from koma.editor.time_display import clock_text
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.retained_container import retain_children
+from koma.ui.reference_presentation import ReferencePresentation
 
 
 class AnimaticPlayer:
@@ -54,9 +56,11 @@ class AnimaticPlayer:
         self.drawing_surface = DrawingSurface(self)
         self.strip = TimelineStrip(self, self.duration_editor)
         self.preview = ImageViewport(view, height=400, show_drawing=False)
+        self.reference_presentation = ReferencePresentation(self)
         self.subtitles = SubtitlePreview(self)
         self.screen = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=ft.Stack(
-            [self.preview.content, self.drawing_surface.content, self.subtitles.content], fit=ft.StackFit.EXPAND))
+            [self.preview.content, self.drawing_surface.content, self.subtitles.content,
+                self.reference_presentation.preview.content], fit=ft.StackFit.EXPAND))
         self.caption = ft.Text(size=TEXT_SMALL, font_family=FONT_HEADING, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
         self.clock = ft.Text(size=TEXT_SMALL, color=MUTED)
@@ -95,6 +99,9 @@ class AnimaticPlayer:
                     width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
                     on_click=lambda e: self.view.node_media.open_editor(self.selection.active)
                         if self.selection.active else None),
+                ft.IconButton(icon=ft.Icons.INFO_OUTLINED, tooltip='Dados de referência',
+                    width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
+                    on_click=self.reference_presentation.open_fields),
                     self.export_button], spacing=APP_PADDING * 2)
         self.layout = AnimaticWorkspace(self, self.header)
         self.content, self.surface = self.layout.body, self.layout.content
@@ -102,6 +109,8 @@ class AnimaticPlayer:
     def open(self, e=None):
         if not self.view.editable() or not self.view.board.frames or self.opened:
             return
+        if not self.view.settings.configuration.values['drawing']['remember']:
+            self.drawing.set_tool('select')
         previous = self.timeline
         active = self.view.workspace.navigation.selected
         scene = resolve_scene(self.view.board, active, fallback=self.scene_anchor)
@@ -142,7 +151,7 @@ class AnimaticPlayer:
             lambda: self.opened and self.view.active and not self.view.closing)
 
     def sync_scenes(self):
-        scenes = tuple((frame.id, frame.title or 'Cena') for frame in self.view.board.frames if frame.node_type.starts_scene)
+        scenes = tuple((frame.id, self.view.production.label(frame.id)) for frame in self.view.board.frames if frame.node_type.starts_scene)
         if scenes != self.scenes_key:
             self.scenes_key = scenes
             self.scene_choice.options = [ft.DropdownOption(identifier, title) for identifier, title in scenes]
@@ -202,6 +211,8 @@ class AnimaticPlayer:
         if e.width > 0 and e.height > 0 and self.preview_bounds != (e.width, e.height):
             self.preview_bounds = (e.width, e.height)
             self.fit_preview()
+            if self.timeline:
+                self.reference_presentation.sync()
             if self.opened:
                 self.view.page.update(self.screen)
 
@@ -295,7 +306,7 @@ class AnimaticPlayer:
             self.subtitles.set_text(frame.subtitle if self.show_subtitles.selected else '')
             self.caption.value = f'{index+1:02d} · {frame.title or "Sem título"}'
             self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
-        self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
+        self.clock.value = clock_text(self.position, self.timeline.total, self.view.board.fps, self.view.settings.configuration.values['timeline'])
         self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
         self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
         self.previous_button.tooltip = self.view.keymap.describe('Quadro ou marcador anterior', Action.PREVIOUS_STOP)
@@ -321,12 +332,13 @@ class AnimaticPlayer:
         self.play.disabled = self.previous_button.disabled = self.next_button.disabled = self.editing
         self.export_button.disabled = self.editing or not self.view.editable()
         self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
-        self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
+        self.clock.value = clock_text(self.position, self.timeline.total, self.view.board.fps, self.view.settings.configuration.values['timeline'])
         self.strip.sync()
         if self.opened and not self.view.closing:
             with retain_children(self.strip.audio_lane.canvas,
                     *(block.thumbnail.canvas for block in self.strip.blocks.values())):
-                self.view.page.update(self.strip.content, self.controls, self.caption, self.export_button)
+                self.view.page.update(self.strip.content, self.controls, self.caption, self.export_button,
+                    self.reference_presentation.preview.content)
 
     def set_gesture_locked(self, locked):
         """Publish a logical gesture lock without touching preview or tracks."""
@@ -360,12 +372,13 @@ class AnimaticPlayer:
         else:
             self.strip.sync_cursor()
             self.sync_video()
-            self.clock.value = f'{self.position:.2f} / {self.timeline.total:.2f} s'
+            self.clock.value = clock_text(self.position, self.timeline.total, self.view.board.fps, self.view.settings.configuration.values['timeline'])
             self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
             self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
             self.audio_transport.update(self.timeline, self.view.store, self.playing, self.position)
             controls = []
-        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls)
+        reference_controls = self.reference_presentation.sync_current()
+        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls, *reference_controls)
 
     def sync_video(self):
         if self.timeline and 0 <= self.current < len(self.timeline.frames):

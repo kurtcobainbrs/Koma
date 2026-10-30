@@ -109,7 +109,8 @@ class MarkerLane:
                 self.place(flag, position, next_x)
                 flag.title.value = marker.title
                 flag.box.visible = self.renaming != marker.id
-                flag.icon.color = ft.Colors.PRIMARY if editor.selected == marker.id else ft.Colors.TERTIARY
+                colors = strip.player.view.settings.configuration.values['appearance']
+                flag.icon.color = colors['selection'] if editor.selected == marker.id else colors['marker']
                 opacity = (strip.style.selected_marker_line_opacity if editor.selected == marker.id
                     else strip.style.marker_line_opacity)
                 flag.guide.bgcolor = ft.Colors.with_opacity(opacity, flag.icon.color)

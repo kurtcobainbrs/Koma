@@ -156,14 +156,19 @@ class StoryboardCanvas:
         self.links.refresh()
         self.rebuild_stack()
         size = self.stack.width, self.stack.height
-        if size != self.grid_size:
-            self.grid_size = size
-            paint = ft.Paint(color=ft.Colors.with_opacity(0.4, BORDER), stroke_width=0.6)
+        preferences = self.view.settings.configuration.values
+        grid = preferences['canvas']
+        grid_key = (size, grid['grid'], grid['spacing'], preferences['appearance']['grid_color'])
+        if grid_key != self.grid_size:
+            self.grid_size = grid_key
+            paint = ft.Paint(color=ft.Colors.with_opacity(0.4, preferences['appearance']['grid_color']), stroke_width=0.6)
             self.background.width, self.background.height = size
             self.background_hit.content.width, self.background_hit.content.height = size
             self.background.shapes = [cv.Line(x, 0, x, size[1], paint=paint)
-                for x in range(0, math.ceil(size[0]), GRID_STEP)] + [
-                cv.Line(0, y, size[0], y, paint=paint) for y in range(0, math.ceil(size[1]), GRID_STEP)]
+                for x in range(0, math.ceil(size[0]), grid['spacing'])] + [
+                cv.Line(0, y, size[0], y, paint=paint) for y in range(0, math.ceil(size[1]), grid['spacing'])]
+            if not grid['grid']:
+                self.background.shapes = []
 
     def rebuild_stack(self):
         self.node_layer.controls = [*self.scene_frames.controls(), self.links.content,
@@ -370,7 +375,7 @@ class StoryboardCanvas:
 
     async def restore_camera(self):
         state = self.camera_memory.state
-        if state is None:
+        if state is None or self.view.settings.configuration.values['canvas']['fit']:
             await self.fit()
             return
         await self.viewer.reset()
@@ -522,7 +527,8 @@ class StoryboardCanvas:
         raw_dx, raw_dy = drag.delta if drag.rigid else (
             node.left - self.extent.origin_x - drag.x, node.top - self.extent.origin_y - drag.y)
         self.motion_layer.offset = None
-        dx, dy = group_delta(drag.positions, raw_dx, raw_dy, anchor=(drag.x, drag.y), snap=self.snap_enabled)
+        dx, dy = group_delta(drag.positions, raw_dx, raw_dy, anchor=(drag.x, drag.y), snap=self.snap_enabled,
+            step=self.view.settings.configuration.values['canvas']['spacing'])
         await self.view.position_frames({key: (x + dx, y + dy) for key, (x, y) in drag.positions.items()}, insert_flow=True,
             detach_flow=drag.detach_flow and self.navigation.drag_detach_active())
         self.update_interaction()

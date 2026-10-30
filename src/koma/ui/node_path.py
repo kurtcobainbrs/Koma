@@ -2,4 +2,4 @@
 
 
 def path_text(index, identifier):
-    return ' > '.join(node.title or node.node_type.label for node in index.path(identifier))
+    return ' > '.join(index.production.label(node.id) for node in index.path(identifier))

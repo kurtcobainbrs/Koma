@@ -94,11 +94,11 @@ def next_position(frames):
     return GRID_STEP, coordinate(max((y for _, y in occupied), default=0) + ROW_STEP)
 
 
-def group_delta(positions, dx, dy, *, anchor, snap=False):
+def group_delta(positions, dx, dy, *, anchor, snap=False, step=GRID_STEP):
     """Um único deslocamento preserva o espaçamento, inclusive no snap e nos limites."""
     if snap:
-        dx = coordinate(anchor[0] + dx) - anchor[0]
-        dy = coordinate(anchor[1] + dy) - anchor[1]
+        dx = round((anchor[0] + dx) / step) * step - anchor[0]
+        dy = round((anchor[1] + dy) / step) * step - anchor[1]
     xs, ys = zip(*positions.values())
     return (max(-MAX_POSITION - min(xs), min(MAX_POSITION - max(xs), dx)),
             max(-MAX_POSITION - min(ys), min(MAX_POSITION - max(ys), dy)))

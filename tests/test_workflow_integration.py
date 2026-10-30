@@ -23,8 +23,8 @@ from koma.exports.audio_segment import extract
 from koma.preferences import AppPreferences
 
 
-async def immediate(function, *args):
-    return function(*args)
+async def immediate(function, *args, **kwargs):
+    return function(*args, **kwargs)
 
 
 def inline(function):
@@ -250,7 +250,11 @@ class WorkflowIntegrationTests(unittest.TestCase):
             card.assert_not_called()
         self.assertIs(view.board, original)
         self.assertFalse(view.history.past)
-        self.assertEqual(view.page.update.call_args.args, (player.strip.content, player.controls, player.caption))
+        updated = view.page.update.call_args.args
+        self.assertEqual(tuple(id(control) for control in updated[:3]),
+            tuple(id(control) for control in (player.strip.content, player.controls, player.caption)))
+        self.assertLessEqual({id(control) for control in updated[3:]},
+            {id(player.export_button), id(player.reference_presentation.preview.content)})
         await block.finish(None)
         self.assertEqual(len(view.history.past), 1)
         self.assertEqual(view.board.frames[0].duration, 3)

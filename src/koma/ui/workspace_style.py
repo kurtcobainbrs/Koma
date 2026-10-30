@@ -17,6 +17,7 @@ class WorkspaceStyle:
     ruler_height: float = COMPACT_CONTROL_HEIGHT
     marker_height: float = COMPACT_CONTROL_HEIGHT
     sequence_height: float = COMPACT_CONTROL_HEIGHT - APP_PADDING * 2
+    reference_cell_maximum: float = 240
     picture_height: float = CONTROL_HEIGHT * 3
     picture_caption_height: float = COMPACT_CONTROL_HEIGHT
     audio_height: float = CONTROL_HEIGHT + APP_PADDING

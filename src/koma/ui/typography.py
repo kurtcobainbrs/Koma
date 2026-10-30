@@ -20,6 +20,8 @@ def register_fonts(page: ft.Page) -> None:
         FONT_BODY: str(root.joinpath("Archivo-Medium.ttf")),
         FONT_HEADING: str(root.joinpath("Archivo-SemiBold.ttf")),
     }
+    from koma.exports.presentation_style import font_path
+    page.fonts['Arial'] = font_path('Arial')
 
 
 def body_style(size: int = TEXT_BODY) -> ft.TextStyle:

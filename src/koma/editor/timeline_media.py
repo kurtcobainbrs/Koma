@@ -55,7 +55,8 @@ class TimelineMedia:
         session, scope = self.view.session, self.scope
         try:
             selected = await ft.FilePicker().pick_files(dialog_title='Importar áudio da cena', allow_multiple=False,
-                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=list(AUDIO_EXTENSIONS))
+                file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=list(AUDIO_EXTENSIONS),
+                initial_directory=await self.view.files.initial())
             if selected and selected[0].path and self.view.session is session and self.scope == scope:
                 await self.import_path(selected[0].path)
         except (OSError, ValueError, RuntimeError) as exc:

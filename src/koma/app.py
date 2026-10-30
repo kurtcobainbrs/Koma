@@ -28,7 +28,8 @@ class KomaApplication:
         self.page = page
         self.page.title = 'Koma App'
         self.settings = AppPreferences(directory)
-        self.recent = RecentDocuments(directory)
+        self.recent = RecentDocuments(directory, limit=self.settings.configuration.values['files']['recent'])
+        self.settings.configuration.listeners.append(self.preferences_changed)
         self.node_clipboard = NodeClipboard()
         self.document_tools = DocumentTools(self)
         self.closing_attempt = self.transitioning = False
@@ -49,7 +50,10 @@ class KomaApplication:
     def make_view(self, session):
         if session.path is None and session.recovered_from is None and session.board == Storyboard():
             self.untitled_number += 1
-            session.board = session.saved_board = replace(session.board, title=f'Projeto {self.untitled_number}')
+            from koma.editor.frame_format import FrameFormat
+            initial = self.settings.configuration.values['projects']
+            session.board = session.saved_board = replace(session.board, title=f'Projeto {self.untitled_number}',
+                fps=initial['fps'], frame_format=FrameFormat(initial['width'], initial['height']))
         view = StoryboardView(self.page, session, self.settings,
             on_session=self.switch_session, on_state=self.editor_changed)
         view.content.controls.remove(view.chrome.content)
@@ -63,6 +67,10 @@ class KomaApplication:
             await self.close_tab(view)
         view.close_project = close_project
         return view
+
+    def preferences_changed(self, previous, current):
+        self.recent.limit = current['files']['recent']
+        self.recent.paths = self.recent.paths[:self.recent.limit]
 
     async def open_project(self, path):
         if self.transitioning or self.closing_attempt or any(view.busy for view in self.views):
@@ -115,6 +123,14 @@ class KomaApplication:
 
     async def start(self):
         await self.view.activate()
+        if not self.document and self.settings.configuration.values['system']['restore']:
+            from koma.session_preferences import read_session
+            paths = await asyncio.to_thread(read_session, self.settings.directory)
+            for path in paths:
+                try:
+                    await self.open_project(path)
+                except (OSError, ValueError):
+                    self.view.notify('Um projeto da última sessão não pôde ser aberto.', 'warning')
         if self.document:
             try:
                 session = await asyncio.to_thread(DocumentSession.open, self.document, self.settings.directory)
@@ -266,6 +282,8 @@ class KomaApplication:
             for view in self.views:
                 if not await view.files.guard_changes():
                     return False
+            from koma.session_preferences import write_session
+            await asyncio.to_thread(write_session, self.settings.directory, [view.session.path for view in self.views])
             for view in self.views:
                 view.closing = True
                 await view.shutdown()

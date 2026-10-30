@@ -175,6 +175,10 @@ class DrawingSurface:
         if not self.player.opened or not self.player.view.editable() or self.player.editing:
             return
         self.editor.set_tool(tool)
+        settings = self.player.view.settings
+        if settings.configuration.values['drawing']['remember']:
+            settings.last_tool = tool
+            self.player.view.page.run_task(settings.flush_tool)
         self.player.pause_for_edit()
         self.player.set_gesture_locked(False)
         self.refresh()

@@ -61,6 +61,7 @@ class ImageViewport:
             on_size_change=self.resized)
 
     def set_frame(self, frame):
+        self.content.bgcolor = self.view.settings.configuration.values['appearance']['preview']
         format = self.view.board.frame_format
         if self.format != format:
             self.format = format
@@ -82,6 +83,10 @@ class ImageViewport:
             if self.drawing:
                 self.stack.controls.append(self.drawing.content)
         self.layout()
+        if self.image is not None:
+            from koma.preview_cache import PREVIEW_SIDES
+            maximum = PREVIEW_SIDES[self.view.settings.configuration.values['system']['quality']]
+            self.image.cache_width = min(maximum, max(1, self.source[0]))
 
     def layout(self):
         if self.drawing and self.frame:

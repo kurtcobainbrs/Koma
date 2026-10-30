@@ -84,7 +84,7 @@ class SequenceScope:
             root = principal(self.view.board, self.path[0])
             if root:
                 controls.extend((ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=MUTED),
-                    ft.Text(root.title or 'Cena')))
+                    ft.Text(self.view.production.label(root.id))))
         for key in self.path:
             controls.extend((ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=MUTED),
                 button(index.nodes[key].title or 'Sequência', key)))

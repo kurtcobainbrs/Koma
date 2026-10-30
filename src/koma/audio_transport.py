@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from time import monotonic
 import wave
+from dataclasses import replace
 
 from koma.documents.audio import SAMPLE_RATE, CHANNELS, SAMPLE_WIDTH
 
@@ -43,9 +44,12 @@ class AudioTransport:
         self.device = self.stream = None
         self.error = ''
         self.closed = False
+        self.volume = 1
 
     def update(self, timeline, store, playing, position):
         track = next((track for track in timeline.audio_tracks if not track.muted and track.volume > 0), None) if timeline else None
+        if track is not None and self.volume != 1:
+            track = replace(track, volume=track.volume * self.volume)
         key = (track, store.directory, bool(playing and track))
         now = self.clock()
         if key == self.key and (not key[-1] or abs(position - (now - self.anchor)) < .15):

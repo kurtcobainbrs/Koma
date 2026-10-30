@@ -308,7 +308,7 @@ class SequenceTests(TestCase):
         self.assertEqual(strip.audio_lane.content.top, strip.frames_top + strip.style.track_height)
         self.assertGreaterEqual(player.layout.timeline.height, strip.track.height)
         player.select_node(a.id)
-        self.assertEqual(view.properties.scene_info.value, f'Cena > {outer.title} > {inner.title} > A')
+        self.assertEqual(view.properties.scene_info.value, f'Scene_01 · Cena > {outer.title} > {inner.title} > shot_0001 · A')
         before, history = view.board, tuple(view.history.past)
         strip.zoom(2)
         player.position = 1
@@ -319,7 +319,7 @@ class SequenceTests(TestCase):
         self.assertEqual(tuple(view.history.past), history)
         fixtures.finish(view.set_frame_properties(inner.id, title='Detalhes'))
         self.assertEqual(inner_box.content.value, 'Detalhes')
-        self.assertIn('Detalhes > A', view.properties.scene_info.value)
+        self.assertIn('Detalhes > shot_0001 · A', view.properties.scene_info.value)
         fixtures.finish(view.graph.undo())
         self.assertEqual(inner_box.content.value, inner.title)
 

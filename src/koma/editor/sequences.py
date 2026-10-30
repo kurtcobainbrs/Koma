@@ -12,6 +12,7 @@ class SequenceIndex:
         self.previous = {edge.target: edge.source for edge in board.links}
         self.parents = {}
         self._connected_paths = {}
+        self._production = None
         for frame in board.frames:
             if frame.node_type.contains_frames:
                 for key in frame.sequence.members:
@@ -28,6 +29,13 @@ class SequenceIndex:
                     raise ValueError('Uma sequência não pode conter a si mesma.')
                 visited.add(parent)
                 parent = self.parents.get(parent)
+
+    @property
+    def production(self):
+        if self._production is None:
+            from koma.editor.production_numbers import ProductionNumbers
+            self._production = ProductionNumbers(self)
+        return self._production
 
     def closure(self, identifiers):
         result, pending = set(), list(identifiers)

@@ -120,6 +120,10 @@ class StoryboardView:
         self.keymap.listeners.append(self.shortcuts_changed)
 
     @property
+    def production(self):
+        return self.sequences.index.production
+
+    @property
     def edit_selection(self):
         return self.player.selection if self.player.opened else self.workspace.navigation.selection
 
@@ -172,10 +176,14 @@ class StoryboardView:
             self.page.update(self.content)
 
     async def activate(self):
+        if not hasattr(self, 'preference_bindings'):
+            from koma.editor.preference_bindings import PreferenceBindings
+            self.preference_bindings = PreferenceBindings(self)
         self.focus.resume()
         if self.closing or self.busy:
             return
         if self.loaded:
+            self.preference_bindings.apply()
             if not self.load_error:
                 if self.player.suspended:
                     self.player.resume()
@@ -185,6 +193,7 @@ class StoryboardView:
         self.lock(True)
         try:
             await self.preferences.load()
+            self.preference_bindings.apply()
             self.player.show_subtitles.selected = self.preferences.options.show_subtitles
             self.files.include_subtitles = self.preferences.options.include_subtitles
             board = self.session.board
@@ -237,7 +246,7 @@ class StoryboardView:
                 self.cards[frame.id] = StoryCard(self, frame)
             self.cards[frame.id].sync(frame)
             self.cards[frame.id].content.visible = frame.id in self.workspace.scope.visible
-            self.cards[frame.id].number.value = (f'{number:02d}'
+            self.cards[frame.id].number.value = (self.production.code(frame.id) or '—'
                 if frame.node_type.timed else frame.node_type.header)
         self.graph.sync_history()
         self.workspace.refresh()
@@ -297,7 +306,11 @@ class StoryboardView:
             board = self.board
             self.session.board = board
             try:
-                await asyncio.to_thread(self.session.recover, board)
+                config = self.settings.configuration
+                options = config.values['system']
+                await asyncio.to_thread(self.session.recover, board,
+                    backup_interval=options['interval'] if config.path.exists() else 0,
+                    backup_count=options['backups'])
                 self.retry_save.visible = False
                 self.chrome.sync()
                 if not self.closing and self.active:
@@ -436,6 +449,18 @@ class StoryboardView:
         await self.persist()
 
     def confirm_remove_frames(self, identifiers, preserve_flow=False):
+        if self.settings.configuration.values['confirmations']['delete']:
+            async def confirm():
+                board = self.board
+                choice = await self.files.choose('Excluir nodes?', 'A exclusão pode ser desfeita.',
+                    [('cancel', 'Cancelar'), ('delete', 'Excluir')], confirm='delete')
+                if choice == 'delete' and self.board is board:
+                    self.remove_confirmed_frames(identifiers, preserve_flow)
+            self.page.run_task(confirm)
+        else:
+            self.remove_confirmed_frames(identifiers, preserve_flow)
+
+    def remove_confirmed_frames(self, identifiers, preserve_flow=False):
         if not self.editable():
             return
         targets = frozenset(frame.id for frame in self.board.frames if frame.id in identifiers)
@@ -519,7 +544,8 @@ class StoryboardView:
         self.lock(True)
         try:
             root = str(self.session.path.parent) if self.session.path else ''
-            directory = await asyncio.to_thread(initial_directory, self.image_directory, root)
+            directory = await asyncio.to_thread(initial_directory,
+                self.settings.configuration.values['files']['import_folder'] or self.image_directory, root)
             selected = await ft.FilePicker().pick_files(dialog_title='Imagens do storyboard',
                 allow_multiple=identifier is None, file_type=ft.FilePickerFileType.CUSTOM,
                 allowed_extensions=IMAGE_EXTENSIONS, initial_directory=directory)
@@ -571,7 +597,8 @@ class StoryboardView:
         self.lock(True)
         try:
             root = str(self.session.path.parent) if self.session.path else ''
-            directory = await asyncio.to_thread(initial_directory, '', root)
+            directory = await asyncio.to_thread(initial_directory,
+                self.settings.configuration.values['files']['export_folder'], root)
             # O nome informado ao seletor não pode conter separadores de caminho.
             name = ''.join(c for c in self.board.title if c not in '<>:"/\\|?*').strip(' .') or 'storyboard'
             destination = await ft.FilePicker().save_file(dialog_title='Exportar storyboard em PDF',
@@ -605,6 +632,8 @@ class StoryboardView:
         self.active = False
 
     async def shutdown(self):
+        if hasattr(self, 'preference_bindings'):
+            self.preference_bindings.close()
         self.focus.suspend()
         self.node_media.close_editor()
         self.workspace.measurements.cancel()

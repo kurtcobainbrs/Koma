@@ -106,7 +106,8 @@ class StoryboardChrome:
             submenu('Importar', self.import_items, icon=ft.Icons.FILE_DOWNLOAD_OUTLINED),
             submenu('Exportar', [commands['pdf'], commands['mp4']], icon=ft.Icons.FILE_UPLOAD_OUTLINED),
             menu_separator(),
-            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED)]
+            item('Projeto…', view.project_properties.open, ft.Icons.SETTINGS_OUTLINED),
+            item('Preferências…', self.open_preferences, ft.Icons.TUNE)]
         for entry in files.items:
             entry.height = MENU_ITEM_HEIGHT
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
@@ -187,6 +188,10 @@ class StoryboardChrome:
 
     async def import_project(self, e=None):
         await self.view.document_tools.import_project()
+
+    async def open_preferences(self, e=None):
+        from koma.ui.preferences_panel import PreferencesPanel
+        await PreferencesPanel(self.view).open(e)
 
     async def open_media(self, e=None):
         await self.view.document_tools.media()

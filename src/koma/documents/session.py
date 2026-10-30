@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+from time import monotonic, time_ns
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,6 +26,8 @@ class DocumentSession:
         self.stamp = None
         self.recovered_from = None
         self.recovery_lease = None
+        self.backup_at = 0
+        self.keep_recovery = False
 
     @staticmethod
     def _lease(directory):
@@ -50,7 +53,7 @@ class DocumentSession:
     def dirty(self):
         return self.saved_board is None or self.board != self.saved_board
 
-    def recover(self, board):
+    def recover(self, board, *, backup_interval=0, backup_count=10):
         self.store.save(board)
         if self.saved_board is not None and board == self.saved_board:
             (self.directory / 'session.json').unlink(missing_ok=True)
@@ -59,6 +62,14 @@ class DocumentSession:
             'version': 1, 'path': str(self.path) if self.path else None,
             'stamp': self.stamp, 'title': board.title,
         })
+        if backup_interval and monotonic() - self.backup_at >= backup_interval * 60:
+            folder = self.data / 'backups' / self.store.document_id
+            folder.mkdir(parents=True, exist_ok=True)
+            destination = folder / f'backup-{time_ns()}.koma'
+            export_bundle(board, self.store, destination, expected_stamp=None)
+            self.backup_at = monotonic()
+            for previous in sorted(folder.glob('backup-*.koma'), reverse=True)[backup_count:]:
+                previous.unlink(missing_ok=True)
 
     def save(self, board, destination=None, *, expected_stamp=Ellipsis):
         path = Path(destination).expanduser().resolve().with_suffix('.koma') if destination else self.path
@@ -138,5 +149,7 @@ class DocumentSession:
         if self.recovery_lease is not None:
             self.recovery_lease.close()
         for directory in (self.directory, self.recovered_from if resolved else None):
+            if directory == self.directory and self.keep_recovery:
+                continue
             if directory is not None and directory.resolve().parent == root:
                 shutil.rmtree(directory, ignore_errors=True)

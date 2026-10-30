@@ -131,9 +131,7 @@ class FrameProperties:
             self.drawing_visibility.content = 'Ocultar' if visible else 'Mostrar'
             self.drawing_visibility.icon = ft.Icons.VISIBILITY_OFF if visible else ft.Icons.VISIBILITY
             self.drawing_clear.disabled = not count
-            index = [item.id for item in self.view.board.frames if item.node_type.timed].index(frame.id)+1 if frame.node_type.timed else 0
-            self.heading.value = ('Início de cena' if is_main else f'Quadro {index:02d}'
-                if frame.node_type.timed else frame.node_type.label)
+            self.heading.value = self.view.production.code(frame.id) or ('Sem fluxo' if frame.node_type.timed else frame.node_type.label)
             for key in ('title', 'action', 'audio', 'notes', 'subtitle'):
                 getattr(self, key).value = getattr(frame, key)
             self.duration.value = duration_text(frame.duration, self.view.board.fps)

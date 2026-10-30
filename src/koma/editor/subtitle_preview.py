@@ -1,7 +1,6 @@
 """Prévia de legendas em segundo plano, com cache curto e descarte de tarefas antigas."""
 
 import asyncio
-from collections import OrderedDict
 from io import BytesIO
 
 import flet as ft
@@ -10,9 +9,9 @@ from koma.exports.subtitles import normalized, render_subtitle
 from koma.editor.frame_format import FrameFormat
 
 
-def preview_bytes(text, size=None):
+def preview_bytes(text, size=None, options=None):
     output = BytesIO()
-    render_subtitle(text, size or FrameFormat().preview_size()).save(output, format='PNG')
+    render_subtitle(text, size or FrameFormat().preview_size(), options).save(output, format='PNG')
     return output.getvalue()
 
 
@@ -20,7 +19,7 @@ class SubtitlePreview:
     def __init__(self, player):
         self.player = player
         self.revision = 0
-        self.cache = OrderedDict()
+        self.cache = player.view.settings.preview_cache
         self.pending = None
         self.preparing = False
         self.image = ft.Image(src='', fit=ft.BoxFit.FILL, gapless_playback=True)
@@ -33,13 +32,14 @@ class SubtitlePreview:
         self.content.visible = False
         if not text:
             return
-        key = (text, self.player.view.board.frame_format.preview_size())
+        config = self.player.view.settings.configuration
+        key = (text, self.player.view.board.frame_format.preview_size(), config.revision)
         if key in self.cache:
             self.cache.move_to_end(key)
             self.image.src = self.cache[key]
             self.content.visible = True
         else:
-            self.pending = (text, self.revision, key[1])
+            self.pending = (text, self.revision, key[1], config.values, config.revision)
             if not self.preparing:
                 self.preparing = True
                 self.player.view.page.run_task(self.drain)
@@ -53,13 +53,16 @@ class SubtitlePreview:
         finally:
             self.preparing = False
 
-    async def prepare(self, text, revision, size=None):
+    async def prepare(self, text, revision, size=None, preferences=None, settings_revision=None):
         try:
             size = size or self.player.view.board.frame_format.preview_size()
-            data = await asyncio.to_thread(preview_bytes, text, size)
+            config = self.player.view.settings.configuration
+            preferences = preferences or config.values
+            settings_revision = config.revision if settings_revision is None else settings_revision
+            data = await asyncio.to_thread(preview_bytes, text, size, preferences['subtitles'])
             if revision != self.revision or not self.player.opened or self.player.view.closing:
                 return
-            self.cache[(text, size)] = data
+            self.cache[(text, size, settings_revision)] = data
             while len(self.cache) > 8:
                 self.cache.popitem(last=False)
             self.image.src = data

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from koma.documents.videos import VideoReader
 import av
+from koma.preview_cache import PREVIEW_SIDES
 
 MAX_PREVIEW_LAG = .25
 
@@ -48,7 +49,10 @@ class VideoPreview:
 
     def decode(self, request):
         generation, key, seconds, path = request
-        image = self.reader.read(path, seconds, cancelled=lambda: generation != self.generation or self.closed)
+        quality = self.player.view.settings.configuration.values['system']['quality']
+        maximum_side = PREVIEW_SIDES[quality]
+        image = self.reader.read(path, seconds, maximum_side=maximum_side,
+            cancelled=lambda: generation != self.generation or self.closed)
         if image is None:
             return None
         buffer = BytesIO()

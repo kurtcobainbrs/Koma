@@ -4,7 +4,8 @@ import json
 from functools import lru_cache
 from importlib.resources import files
 
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw
+from koma.exports.presentation_style import configured, text_font
 
 
 @lru_cache(maxsize=1)
@@ -37,20 +38,19 @@ def wrap(text, font, width):
     return lines
 
 
-def render_subtitle(text, size):
+def render_subtitle(text, size, options=None):
     overlay = Image.new('RGBA', size)
     text = normalized(text)
     if not text:
         return overlay
-    config = style()
+    config = configured(style(), options)
     width, height = size
     padding = max(4, round(height * config['padding_ratio']))
     available = round(width * config['safe_width_ratio']) - padding * 2
-    font_path = str(files('koma').joinpath('assets', 'fonts', 'Archivo-SemiBold.ttf'))
-    minimum = max(10, round(height * config['minimum_size_ratio']))
+    minimum = max(1, min(round(height * config['minimum_size_ratio']), round(height * config['font_size_ratio'])))
     font_size = max(minimum, round(height * config['font_size_ratio']))
     while True:
-        font = ImageFont.truetype(font_path, font_size)
+        font = text_font(font_size, config.get('font', 'Archivo'))
         lines = wrap(text, font, available)
         line_height = round(font_size * 1.3)
         if len(lines) * line_height + padding * 2 <= height * config['max_height_ratio'] or font_size <= minimum:
@@ -58,12 +58,17 @@ def render_subtitle(text, size):
         font_size -= 1
     box_width = min(width, round(max(font.getlength(line) for line in lines)) + padding * 2)
     box_height = len(lines) * line_height + padding * 2
-    left = (width - box_width) // 2
-    top = height - round(height * config['bottom_margin_ratio']) - box_height
+    margin = round(height * config['bottom_margin_ratio'])
+    align = config.get('align', 'Centro')
+    left = margin if align == 'Esquerda' else width - margin - box_width if align == 'Direita' else (width - box_width) // 2
+    left = max(0, min(width - box_width, left))
+    top = margin if config.get('position', 'Embaixo') == 'Em cima' else height - margin - box_height
+    top = max(0, top)
     draw = ImageDraw.Draw(overlay)
     draw.rounded_rectangle((left, top, left + box_width, top + box_height),
         radius=max(3, padding // 2), fill=ImageColor.getcolor(config['background'], 'RGBA'))
     for index, line in enumerate(lines):
-        draw.text((width / 2, top + padding + (index + .5) * line_height), line,
-            font=font, anchor='mm', fill=ImageColor.getcolor(config['text'], 'RGBA'))
+        x, anchor = (left + padding, 'lm') if align == 'Esquerda' else (left + box_width - padding, 'rm') if align == 'Direita' else (left + box_width / 2, 'mm')
+        draw.text((x, top + padding + (index + .5) * line_height), line,
+            font=font, anchor=anchor, fill=ImageColor.getcolor(config['text'], 'RGBA'))
     return overlay

@@ -10,6 +10,39 @@ habilitadas compõem os frames. Vídeos são cortados pela duração do node ou 
 o último frame quando terminam antes. Um intervalo que começa dentro de um vídeo
 parte do instante correspondente, sem alterar o node.
 
+## Dados de referência
+
+Em **Dados de referência**, habilite cada campo que deseja gravar na imagem:
+projeto, cena, sequência, quadro, duração em frames, duração em segundos, frame do
+quadro, frame atual do vídeo, total de frames, tempo do vídeo, FPS e resolução.
+As escolhas ficam nas preferências de exportação; o projeto e os nodes não são
+alterados. Por padrão nenhum campo está ligado.
+
+O botão **Dados de referência** (ícone de informação) no Animatic oferece as mesmas
+escolhas. Os dados aparecem sobre a prévia e acompanham a agulha, sem ocupar
+os blocos da timeline.
+
+Por padrão, os contadores reservam quatro dígitos (`0009`, `0010`); o mínimo e
+as casas decimais são configuráveis em Preferências > Timeline. Vídeos maiores
+reservam mais dígitos desde o início. A renderização do MP4 usa células numéricas
+de largura fixa, e os campos ao vivo também têm larguras estáveis, sem depender
+da largura variável dos algarismos da fonte.
+
+A faixa aparece por padrão no topo, com fundo translúcido e texto ajustado ao formato.
+Estilo e posição podem ser alterados em Preferências > Dados de referência. Os
+contadores começam em 1 e o tempo começa em 0 s. Frame atual e total correspondem
+ao MP4 gerado, inclusive quando se exporta um intervalo. A duração em frames e
+segundos corresponde ao trecho exportado de cada quadro, incluindo recorte e
+eventual extensão pelo áudio. O nome e o número do quadro mantêm a identificação
+de sua cena de origem. Legendas e desenhos continuam sendo compostos normalmente.
+
+Os dados são derivados de um snapshot imutável dos mesmos nodes usados na
+exportação. `reference_overlay` centraliza o catálogo dos campos e a renderização;
+`StoryboardFrames` atualiza os contadores durante a codificação em segundo plano.
+Os padrões estão em `assets/storyboard-reference.json`, sobrepostos pelas
+preferências globais capturadas no início da exportação. Nenhuma renderização dessa
+faixa ocorre durante os gestos do canvas ou da timeline.
+
 O áudio das cenas é misturado em blocos de 1.024 amostras, a 48 kHz estéreo.
 Entrada, volume, mute, recortes e sobreposições são preservados. Os espaços sem
 áudio permanecem em silêncio, e a saída é limitada à duração da sequência.

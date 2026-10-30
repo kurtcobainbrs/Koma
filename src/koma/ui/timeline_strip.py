@@ -9,6 +9,7 @@ from koma.ui.event_updates import explicit_updates
 from koma.editor.timeline import TimeScale
 from koma.editor.timing import duration_text
 from koma.editor.timeline_navigation import TimelineNavigator, ruler_ticks
+from koma.editor.time_display import time_text
 from koma.ui.duration_input import DurationInput
 from koma.editor.shortcuts import Action
 from koma.editor.modifier_state import pressed_modifiers
@@ -289,7 +290,7 @@ class TimelineStrip:
             return
         self.ruler_key = key
         self.ruler_marks.controls = [ft.Container(left=x, top=0,
-            content=ft.Text(f'{seconds:.2f} s', size=TEXT_SMALL, color=MUTED),
+            content=ft.Text(time_text(seconds, fps, self.player.view.settings.configuration.values['timeline']), size=TEXT_SMALL, color=MUTED),
             border=ft.Border(left=ft.BorderSide(1, BORDER)), padding=ft.Padding.only(left=4))
             for seconds, x in ticks]
 
@@ -400,7 +401,7 @@ class TimelineStrip:
                 block.labels.visible = width >= self.style.thumbnail_label_minimum
                 block.thumbnail.sync(frame, view.thumbnails, width, height,
                     image_source=thumbnail_source(view, frame.image), frame_format=view.board.frame_format)
-                block.title.value = f'{index + 1:02d} · {frame.title or "Sem título"}'
+                block.title.value = view.production.label(frame.id)
                 block.duration.value = f'{duration_text(frame.duration, fps, frames=True)} f'
                 block.box.tooltip = f'{block.title.value} · {block.duration.value} · {duration_text(frame.duration, fps)} s'
             self.track.width = max(self.width or 0, self.scale.pixels(timeline.total))
@@ -419,6 +420,7 @@ class TimelineStrip:
         self.audio_controls.sync()
         self.sync_markers()
         self.duration_input.sync()
+        self.player.reference_presentation.sync()
         editing = player.editing
         self.undo.disabled = editing or not view.editable() or not view.history.past
         self.redo.disabled = editing or not view.editable() or not view.history.future

@@ -26,7 +26,7 @@ class DrawingDrag:
 class FrameDrawingEditor:
     def __init__(self, player):
         self.player = player
-        self.tool = SELECT
+        self.tool = player.view.settings.last_tool if player.view.settings.configuration.values['drawing']['remember'] else SELECT
         self.color = '#FF5252'
         self.width = DEFAULT_BRUSH_WIDTH
         self.drag = None
@@ -96,7 +96,8 @@ class FrameDrawingEditor:
                 return
         else:
             self.clear_selection()
-        normalized_width = self.width / min(view.board.frame_format.size)
+        width = view.settings.configuration.values['drawing']['eraser'] if tool == ERASER else self.width
+        normalized_width = width / min(view.board.frame_format.size)
         self.drag = DrawingDrag(view.board, view.session, frame, tool, self.color,
             normalized_width, [point], frame.drawing.strokes, index,
             MAX_LAYER_POINTS - point_count, point if tool != ERASER else None)

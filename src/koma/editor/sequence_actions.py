@@ -15,6 +15,10 @@ class SequenceActions:
         if self.source is not self.view.board:
             self.source = self.view.board
             self._index = SequenceIndex(self.source)
+        identity = self.view.settings.configuration.values['identity']
+        if self._index._production is None or self._index._production.options != identity:
+            from koma.editor.production_numbers import ProductionNumbers
+            self._index._production = ProductionNumbers(self._index, identity)
         return self._index
 
     async def create(self, *, spec, position=None):

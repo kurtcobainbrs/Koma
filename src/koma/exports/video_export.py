@@ -11,12 +11,18 @@ from koma.exports.drawings import paint_image
 
 
 def frame_counts(frames, fps, *, durations=None):
+    for frame in frames:
+        frame.validate()
+    return duration_frame_counts(durations if durations is not None else (frame.duration for frame in frames), fps)
+
+
+def duration_frame_counts(durations, fps):
+    """Quantize timing only; safe for already validated interactive snapshots."""
     if fps not in (24, 25, 30, 60):
         raise ValueError('Escolha 24, 25, 30 ou 60 FPS.')
     elapsed, previous, counts = Decimal(0), 0, []
-    for index, frame in enumerate(frames):
-        frame.validate()
-        elapsed += Decimal(str(durations[index] if durations is not None else frame.duration))*fps
+    for duration in durations:
+        elapsed += Decimal(str(duration))*fps
         boundary = max(previous+1, int(elapsed.quantize(Decimal(1), rounding=ROUND_HALF_UP)))
         counts.append(boundary-previous)
         previous = boundary
@@ -36,19 +42,21 @@ def timeline_frame_counts(timeline, fps):
 
 class FrameComposer:
     """Prepare the node's fixed overlays once, then compose changing video frames."""
-    def __init__(self, frame, size, *, include_subtitles=True):
+    def __init__(self, frame, size, *, include_subtitles=True, preferences=None):
         self.frame, self.size = frame, size
+        self.preferences = preferences
         self.colors = load_theme().colors
         self.overlay = None
         if (frame.drawing.visible and frame.drawing.strokes) or (include_subtitles and frame.subtitle.strip()):
             self.overlay = Image.new('RGBA', size)
             paint_image(self.overlay, frame.drawing)
             if include_subtitles and frame.subtitle.strip():
-                self.overlay.alpha_composite(render_subtitle(frame.subtitle, size))
+                self.overlay.alpha_composite(render_subtitle(frame.subtitle, size,
+                    preferences['subtitles'] if preferences else None))
 
     def compose(self, original):
         frame, size = self.frame, self.size
-        target = Image.new('RGB', size, self.colors['surface_container_low'])
+        target = Image.new('RGB', size, self.preferences['appearance']['preview'] if self.preferences else self.colors['surface_container_low'])
         if original is not None:
             image = ImageOps.exif_transpose(original).convert('RGBA')
             if frame.image_fit == 'cover':
