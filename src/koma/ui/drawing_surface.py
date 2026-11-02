@@ -104,7 +104,8 @@ class DrawingSurface:
         return max(0, min(1, e.local_position.x / width)), max(0, min(1, e.local_position.y / height))
 
     def hit_radius(self):
-        return SELECTION_HIT_RADIUS / min(self.bounds) if self.bounds else 0
+        zoom = self.player.preview_navigation.zoom if hasattr(self.player, 'preview_navigation') else 1
+        return SELECTION_HIT_RADIUS / (min(self.bounds) * zoom) if self.bounds else 0
 
     def reset_inputs(self):
         for pointer in self.inputs:

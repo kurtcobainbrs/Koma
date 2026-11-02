@@ -45,6 +45,8 @@ class MarkerEditor:
                 self.player.focus_timeline()
 
     def begin(self, identifier, pointer_x, scale):
+        if self.player.timeline and not self.player.timeline.local_editing:
+            return None
         if self.player.editing or not self.player.opened or not self.view.editable() or not math.isfinite(pointer_x):
             return None
         timeline = self.player.timeline

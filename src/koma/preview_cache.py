@@ -2,6 +2,7 @@
 from collections import OrderedDict
 
 PREVIEW_SIDES = {'Automática': 1280, 'Baixa': 480, 'Média': 720, 'Alta': 1920}
+PREVIEW_BUDGET_SHARES = 2  # Generated image overlays and audio waveform pyramids.
 
 
 class PreviewCache(OrderedDict):

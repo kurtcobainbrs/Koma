@@ -10,7 +10,7 @@ from time import monotonic
 import flet as ft
 
 from koma.documents.audio import AUDIO_EXTENSIONS, import_audio, load_waveform
-from koma.editor.media_models import AudioTrack, TimelineMarker, next_marker_title
+from koma.editor.media_models import AudioTrack, TimelineMarker, next_marker_title, MAX_AUDIO_TRACKS
 from koma.editor.models import MAX_CARDS, MAX_DURATION
 from koma.editor.timeline_navigation import frame_position
 from koma.expressions import arithmetic_value
@@ -20,12 +20,13 @@ class TimelineMedia:
     def __init__(self, player):
         self.player, self.view = player, player.view
         self.waveforms = OrderedDict()
-        self.waveform_limit = 8
+        self.scene_waveform_limit = self.waveform_limit = 8
         self.loading = set()
         self.failed = set()
         self.cancelled = Event()
         self.task = None
         self.background = set()
+        self.waveform_slots = asyncio.Semaphore(2)
 
     @property
     def scope(self):
@@ -33,6 +34,8 @@ class TimelineMedia:
 
     @property
     def track(self):
+        if self.player.timeline and not self.player.timeline.local_editing:
+            return None
         return next((track for track in self.view.board.audio_tracks if track.scene_id == self.scope), None)
 
     async def commit(self, board, *, pause=True, label=None, render=True):
@@ -48,6 +51,9 @@ class TimelineMedia:
         await self.view.persist()
 
     async def pick_audio(self, e=None):
+        if self.player.timeline and not self.player.timeline.local_editing:
+            self.view.notify('Abra a cena para editar o áudio.', 'info')
+            return
         if not self.view.editable() or self.task:
             return
         self.player.playing = False
@@ -92,7 +98,16 @@ class TimelineMedia:
         try:
             if self.cancelled.is_set():
                 return
-            waveform = await asyncio.to_thread(load_waveform, store.audio / track.asset, store.waveforms, self.cancelled.is_set)
+            async with self.waveform_slots:
+                if self.cancelled.is_set():
+                    return
+                waveform = await asyncio.to_thread(load_waveform, store.audio / track.asset, store.waveforms, self.cancelled.is_set)
+            from koma.preview_cache import PREVIEW_BUDGET_SHARES
+            budget = self.view.settings.configuration.values['system']['cache'] * 1024 * 1024 / (PREVIEW_BUDGET_SHARES * self.waveform_limit)
+            levels, bins = waveform.levels, waveform.bin_frames
+            while len(levels) > 1 and sum(len(level) * level.itemsize for level in levels) > budget:
+                levels, bins = levels[1:], bins * 2
+            waveform = replace(waveform, levels=levels, bin_frames=bins)
             if self.view.session is session and not self.view.closing:
                 self.remember_waveform(key, waveform)
                 if self.player.opened:
@@ -138,9 +153,13 @@ class TimelineMedia:
         await self.change_track(start=frame_position(seconds, MAX_CARDS * MAX_DURATION, self.view.board.fps))
 
     async def remove_audio(self, e=None):
+        if not self.player.timeline.local_editing:
+            return
         await self.commit(replace(self.view.board, audio_tracks=tuple(track for track in self.view.board.audio_tracks if track.scene_id != self.scope)))
 
     async def set_marker(self, title, expression=None, identifier=None):
+        if not self.player.timeline.local_editing:
+            return
         position = self.player.position if expression is None else arithmetic_value(expression) / self.view.board.fps
         if position < 0:
             raise ValueError('A posição do marcador não pode ser negativa.')
@@ -156,6 +175,9 @@ class TimelineMedia:
 
     async def add_marker(self, e=None):
         player = self.player
+        if player.timeline and not player.timeline.local_editing:
+            self.view.notify('Abra a cena para criar marcadores.', 'info')
+            return
         if not self.view.editable() or player.editing:
             return
         position = min(player.timeline.total, monotonic() - player.anchor) if player.playing else player.position
@@ -182,6 +204,9 @@ class TimelineMedia:
         await self.commit(replace(board, markers=tuple(updated if item.id == identifier else item for item in board.markers)))
 
     async def remove_marker(self, identifier):
+        if not self.player.timeline.local_editing:
+            self.view.notify('Abra a cena para editar marcadores.', 'info')
+            return
         await self.commit(replace(self.view.board, markers=tuple(marker for marker in self.view.board.markers if marker.id != identifier)))
 
     def jump_marker(self, delta):

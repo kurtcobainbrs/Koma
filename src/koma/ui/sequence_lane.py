@@ -20,11 +20,13 @@ class SequenceLane:
         strip = self.strip
         timeline = strip.player.timeline
         index = strip.player.view.sequences.index
-        source = (id(index), identifiers)
+        source = (id(index), identifiers, timeline.local_editing,
+            tuple(strip.player.view.settings.configuration.values['identity'].items()))
         if source != self.source:
             spans = []
             for position, identifier in enumerate(identifiers):
-                parent = index.parents.get(identifier)
+                root = timeline.references[position].scene if not timeline.local_editing else None
+                parent = root.id if root else index.parents.get(identifier)
                 if parent is None:
                     continue
                 if spans and spans[-1][0] == parent and spans[-1][2] == position:
@@ -40,7 +42,10 @@ class SequenceLane:
                 for key, start, _ in spans}
             for (key, _), box in self.boxes.items():
                 node = index.nodes[key]
-                box.content.value = node.title or node.node_type.label
+                text = ft.Text(index.production.label(key) if node.node_type.starts_scene else node.title or node.node_type.label,
+                    size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                box.content = ft.GestureDetector(content=text,
+                    on_double_tap=lambda e, identifier=key: strip.player.select_scene(identifier)) if node.node_type.starts_scene else text
                 box.tooltip = path_text(index, key)
             self.content.controls = list(self.boxes.values())
             self.height = strip.style.sequence_height if spans else 0
@@ -52,7 +57,8 @@ class SequenceLane:
         if strip.scale and geometry != self.geometry:
             for key, start, stop in self.spans:
                 box = self.boxes[key, start]
-                end = timeline.starts[stop - 1] + timeline.frames[stop - 1].duration
+                span = timeline.durations[stop - 1] if hasattr(timeline, 'durations') else timeline.frames[stop - 1].duration
+                end = timeline.starts[stop - 1] + span
                 box.left = strip.scale.pixels(timeline.starts[start])
                 box.width = max(0, strip.scale.pixels(end - timeline.starts[start]))
             self.geometry = geometry

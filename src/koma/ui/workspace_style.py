@@ -1,6 +1,7 @@
 """Shared presentation measurements for the approved Canvas/Animatic design."""
 from dataclasses import dataclass
 from koma.ui.design import APP_PADDING, COMPACT_CONTROL_HEIGHT, CONTROL_HEIGHT, PAGE_PADDING
+from koma.editor.animatic_settings import SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM
 
 
 @dataclass(frozen=True)
@@ -10,6 +11,9 @@ class WorkspaceStyle:
     inspector_maximum: float = 520
     mode_button_width: float = 90
     scene_choice_width: float = 144
+    scenes_width: float = SCENES_WIDTH
+    scenes_minimum: float = SCENES_MINIMUM
+    scenes_maximum: float = SCENES_MAXIMUM
     media_row_height: float = CONTROL_HEIGHT + PAGE_PADDING
     media_thumbnail_width: float = 64
     slider_width: float = 112

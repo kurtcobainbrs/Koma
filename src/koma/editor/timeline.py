@@ -12,6 +12,7 @@ from koma.editor.scenes import principal, scene_frames
 
 
 class Timeline:
+    local_editing = True
     def __init__(self, board, active=None):
         self.board = board
         sequence_board = ordered(board)

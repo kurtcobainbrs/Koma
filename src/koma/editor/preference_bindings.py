@@ -25,8 +25,16 @@ class PreferenceBindings:
             return
         values = config.values
         changed = {key for key in values if self.previous is None or self.previous[key] != values[key]}
-        view.settings.preview_cache.resize(values['system']['cache'])
+        from koma.preview_cache import PREVIEW_BUDGET_SHARES
+        view.settings.preview_cache.resize(values['system']['cache'] / PREVIEW_BUDGET_SHARES)
         ws, player = view.workspace, view.player
+        if self.previous is not None and self.previous['system']['cache'] != values['system']['cache']:
+            player.media.waveforms.clear()
+        if 'animatic' in changed:
+            player.preview_navigation.configure()
+            player.strip.configure_navigation()
+            player.layout.sidebar.configure()
+            player.layout.scene_splitter.content.visible = player.layout.sidebar.content.visible
         if changed == {'appearance'} and self.previous is not None:
             differences = {key for key in values['appearance']
                 if self.previous['appearance'][key] != values['appearance'][key]}
@@ -89,7 +97,7 @@ class PreferenceBindings:
         if view.loaded:
             if refresh_nodes:
                 view.refresh()
-            refresh_player = player.opened and (refresh_nodes or bool(changed & {'subtitles', 'timeline', 'reference'}))
+            refresh_player = player.opened and (refresh_nodes or bool(changed & {'subtitles', 'timeline', 'reference', 'animatic'}))
             if refresh_player:
                 player.current = -1
                 player.render(update=False)
@@ -97,7 +105,7 @@ class PreferenceBindings:
                 if refresh_nodes:
                     view.page.update(view.content)
                 elif refresh_player:
-                    view.page.update(player.content)
+                    view.page.update(player.content, player.layout.timeline)
                 elif 'drawing' in changed:
                     player.drawing_surface.refresh()
 

@@ -235,7 +235,7 @@ class StoryboardFiles:
         from koma.exports.sequence import ExportSequence
         from koma.expressions import arithmetic_value
         roots = [frame for frame in board.frames if frame.node_type.starts_scene]
-        scope = ft.Dropdown(label='Exportar', value='current' if timeline.frames else 'project', options=[
+        scope = ft.Dropdown(label='Exportar', value='project' if view.player.project_mode or not timeline.frames else 'current', options=[
             ft.DropdownOption('current', 'Cena atual'), ft.DropdownOption('project', 'Projeto completo'),
             ft.DropdownOption('selected', 'Escolher cenas')], **input_style())
         scenes = [(root, ft.Checkbox(label=root.title or 'Cena', value=True)) for root in roots]

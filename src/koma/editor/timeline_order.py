@@ -64,6 +64,9 @@ def reordered(board, frames, source, target, *, after=False):
 
 async def reorder(player, source, target, *, after=False, expected=None):
     view = player.view
+    if not player.timeline.local_editing:
+        view.notify('Reordene as cenas na lista lateral. Abra a cena para reordenar quadros.', 'info')
+        return
     if not view.editable() or player.editing or (expected and (expected[0] is not view.board or expected[1] is not view.session)):
         return
     board = view.board

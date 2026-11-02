@@ -9,6 +9,7 @@ import sys
 PROTOCOL = 1
 FLET_VERSION = '1.0.5'
 _enabled = False
+_features = frozenset()
 _reason = 'Cliente Flet com a extensão de imagens ainda não compilado.'
 
 
@@ -50,8 +51,9 @@ def validate_client(directory):
 
 
 def configure():
-    global _enabled, _reason
+    global _enabled, _reason, _features
     _enabled = False
+    _features = frozenset()
     if sys.platform != 'win32':
         _reason = 'O cliente de arraste desta distribuição foi compilado para Windows.'
         return False
@@ -68,12 +70,18 @@ def configure():
         _reason = f'Arraste externo indisponível: {exc}. Use Importar imagens.'
         return False
     os.environ['FLET_VIEW_PATH'] = str(candidate)
+    metadata = json.loads((candidate / 'koma-client.json').read_text(encoding='utf-8'))
+    _features = frozenset(metadata.get('features', []))
     _enabled, _reason = True, ''
     return True
 
 
 def enabled():
     return _enabled
+
+
+def supports(feature):
+    return _enabled and feature in _features
 
 
 def unavailable_reason():

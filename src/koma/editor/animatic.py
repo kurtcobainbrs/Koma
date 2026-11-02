@@ -47,6 +47,7 @@ class AnimaticPlayer:
         self.task = None
         self.timeline = None
         self.scene_anchor = None
+        self.project_mode = False
         self.media = TimelineMedia(self)
         self.audio_transport = AudioTransport()
         self.video_preview = VideoPreview(self)
@@ -81,7 +82,10 @@ class AnimaticPlayer:
         self.strip.footer_context.content = self.caption
         self.controls = self.toolbar.commands
         self.preview_bounds = None
-        self.preview_slot = ft.Container(content=self.screen, alignment=ft.Alignment.CENTER,
+        self.navigation_target = 'timeline'
+        from koma.ui.navigation_view import PreviewNavigation
+        self.preview_navigation = PreviewNavigation(self)
+        self.preview_slot = ft.Container(content=self.preview_navigation.content,
             on_size_change=self.preview_resized)
         self.export_button = ft.OutlinedButton('Exportar MP4', icon=ft.Icons.FILE_UPLOAD_OUTLINED, tooltip='Exportar animatic em MP4',
             height=COMPACT_CONTROL_HEIGHT, on_click=view.files.video_from_player)
@@ -113,10 +117,14 @@ class AnimaticPlayer:
             self.drawing.set_tool('select')
         previous = self.timeline
         active = self.view.workspace.navigation.selected
-        scene = resolve_scene(self.view.board, active, fallback=self.scene_anchor)
+        initial = self.view.settings.configuration.values['animatic']['initial_scope']
+        project = active is None and (initial == 'Montagem' or (initial == 'Última visualização' and self.project_mode))
+        scene = resolve_scene(self.view.board, active, fallback=None if initial == 'Primeira cena' else self.scene_anchor)
         reusable = (previous is not None and previous.board is self.view.board
-            and (previous.root.id if previous.root else None) == (scene.id if scene else None))
-        self.timeline = previous if reusable else Timeline(self.view.board, scene.id if scene else active)
+            and (not previous.local_editing) == project
+            and (previous.root.id if previous.root else None) == (scene.id if scene and not project else None))
+        self.project_mode = project
+        self.timeline = previous if reusable else self.make_timeline(scene.id if scene else active)
         self.title.value = self.timeline.root.title or 'Cena' if self.timeline.root else 'Prévia'
         self.scene_anchor = self.timeline.root.id if self.timeline.root else None
         same_scope = previous is not None and (previous.root.id if previous.root else None) == self.scene_anchor
@@ -155,25 +163,38 @@ class AnimaticPlayer:
         if scenes != self.scenes_key:
             self.scenes_key = scenes
             self.scene_choice.options = [ft.DropdownOption(identifier, title) for identifier, title in scenes]
-        self.scene_choice.visible = bool(scenes)
-        self.title.visible = not bool(scenes)
+        self.scene_choice.visible = False
+        self.title.visible = True
         self.scene_choice.value = self.scene_anchor
         self.scene_choice.disabled = self.editing or not self.view.editable()
-        self.title.value = 'Animatic' if scenes else self.view.board.title
+        self.title.value = 'Montagem' if self.project_mode else self.view.production.label(self.scene_anchor) if self.scene_anchor else self.view.board.title
+        self.layout.sidebar.sync()
 
     def choose_scene(self, e=None):
-        identifier = self.scene_choice.value
-        if not self.view.editable() or self.editing or not any(
-                frame.id == identifier and frame.node_type.starts_scene for frame in self.view.board.frames):
+        self.select_scene(self.scene_choice.value)
+
+    def select_scene(self, identifier):
+        if not self.opened or not self.view.editable() or self.editing or (identifier is not None and not any(
+                frame.id == identifier and frame.node_type.starts_scene for frame in self.view.board.frames)):
             return
+        current = self.timeline.frames[self.current].id if self.timeline and 0 <= self.current < len(self.timeline.frames) else None
+        local = self.position - self.timeline.starts[self.current] if current else 0
         self.playing = False
         self.audio_transport.stop()
         self.video_preview.clear()
         self.drawing.clear_selection()
         self.view.properties.release_field_focus()
-        self.timeline = Timeline(self.view.board, identifier)
+        self.project_mode = identifier is None
+        self.timeline = self.make_timeline(identifier)
         self.scene_anchor, self.position, self.current = identifier, 0, -1
-        self.selection.replace({self.timeline.frames[0].id} if self.timeline.frames else {identifier})
+        if self.project_mode and current:
+            index = next((i for i, frame in enumerate(self.timeline.frames) if frame.id == current), None)
+            if index is not None:
+                self.position = min(self.timeline.total, self.timeline.starts[index] + max(0, local))
+        selected = self.timeline.frames[self.timeline.index_at(self.position)].id if self.timeline.frames else identifier
+        self.selection.replace({selected} if selected else set(), selected)
+        if not self.project_mode:
+            self.media.waveform_limit = self.media.scene_waveform_limit
         self.strip.reset()
         self.render()
         self.focus_timeline()
@@ -217,9 +238,15 @@ class AnimaticPlayer:
                 self.view.page.update(self.screen)
 
     def rebuild_timeline(self):
-        self.timeline = Timeline(self.view.board, self.scene_anchor)
+        self.timeline = self.make_timeline(self.scene_anchor)
         self.position = max(0, min(self.position, self.timeline.total))
         self.current = -1
+
+    def make_timeline(self, identifier=None):
+        if self.project_mode:
+            from koma.editor.project_timeline import ProjectTimeline
+            return ProjectTimeline(self.view.board)
+        return Timeline(self.view.board, identifier)
 
     def select_node(self, identifier, *, seek=False):
         if not self.opened or self.editing or not self.view.editable():
@@ -306,6 +333,7 @@ class AnimaticPlayer:
             self.subtitles.set_text(frame.subtitle if self.show_subtitles.selected else '')
             self.caption.value = f'{index+1:02d} · {frame.title or "Sem título"}'
             self.caption.tooltip = f'{frame.duration * self.view.board.fps:.6g} f · {frame.duration:.6g} s'
+        self.layout.sidebar.sync_active()
         self.clock.value = clock_text(self.position, self.timeline.total, self.view.board.fps, self.view.settings.configuration.values['timeline'])
         self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
         self.play.tooltip = self.view.keymap.describe('Pausar' if self.playing else 'Reproduzir', Action.PLAY)
@@ -343,6 +371,7 @@ class AnimaticPlayer:
     def set_gesture_locked(self, locked):
         """Publish a logical gesture lock without touching preview or tracks."""
         self.controls.disabled = locked
+        self.preview_navigation.lock(locked)
         self.scene_choice.disabled = locked or not self.view.editable()
         self.export_button.disabled = locked or not self.view.editable() or not self.timeline.frames
         self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
@@ -378,7 +407,8 @@ class AnimaticPlayer:
             self.audio_transport.update(self.timeline, self.view.store, self.playing, self.position)
             controls = []
         reference_controls = self.reference_presentation.sync_current()
-        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls, *reference_controls)
+        scene_controls = self.layout.sidebar.take_updates()
+        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls, *reference_controls, *scene_controls)
 
     def sync_video(self):
         if self.timeline and 0 <= self.current < len(self.timeline.frames):
@@ -555,7 +585,10 @@ class AnimaticPlayer:
         elif action == Action.REDO:
             await self.strip.redo_edit()
         elif action in (Action.FOCUS, Action.FIT):
-            self.strip.fit()
+            if self.navigation_target == 'preview':
+                await self.preview_navigation.fit()
+            else:
+                self.strip.fit()
 
     async def delete_selection(self):
         if self.editing or not self.view.editable():

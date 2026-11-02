@@ -28,6 +28,10 @@ class RetainedColumn(_RetainedUpdates, ft.Column):
     pass
 
 
+class RetainedListView(_RetainedUpdates, ft.ListView):
+    pass
+
+
 class RetainedCanvas(_RetainedUpdates, cv.Canvas):
     pass
 

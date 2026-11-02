@@ -126,14 +126,15 @@ class NodeClipboard:
         mapping = {frame.id: uuid4().hex for frame in frames}
         names = {key: uuid4().hex + Path(key[1]).suffix for key in assets}
         ws = view.workspace
-        anchor = ws.context_menu.pointer or ((ws.viewport_width / 2 - ws.translation_x) / ws.zoom,
-            (ws.viewport_height / 2 - ws.translation_y) / ws.zoom)
+        from koma.editor.canvas_position import insertion_position
+        anchor = insertion_position(ws)
         roots = set(SequenceIndex(Storyboard(frames=frames, links=edges)).roots(mapping))
         positions = {frame.id: (frame.x or 0, frame.y or 0) for frame in frames}
         root_positions = {key: positions[key] for key in roots}
         left, top = min(x for x, _ in root_positions.values()), min(y for _, y in root_positions.values())
-        dx, dy = group_delta(root_positions, anchor[0] - ws.extent.origin_x - left,
-            anchor[1] - ws.extent.origin_y - top, anchor=(left, top), snap=ws.snap_enabled)
+        dx, dy = group_delta(root_positions, anchor[0] - left,
+            anchor[1] - top, anchor=(left, top), snap=ws.snap_enabled,
+            step=view.settings.configuration.values['canvas']['spacing'])
         copies = tuple(remap_frame(frame, mapping, x=positions[frame.id][0] + (dx if frame.id in roots else 0),
             y=positions[frame.id][1] + (dy if frame.id in roots else 0),
             media=tuple(entry.remap_assets(names) for entry in frame.media)) for frame in frames)

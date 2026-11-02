@@ -2,6 +2,7 @@
 from dataclasses import dataclass, replace
 import math
 import re
+from koma.editor.animatic_settings import SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,22 @@ CATEGORIES = (
     Category('drawing', 'Desenho', (
         Field('color', 'Cor inicial', '#FF5050', 'color'), number('width', 'Espessura (px)', 4, 1, 64),
         number('eraser', 'Borracha (px)', 24, 1, 200), Field('remember', 'Lembrar ferramenta', True, 'bool'))),
+    Category('animatic', 'Animatic', (
+        Field('scenes_visible', 'Mostrar lista de cenas', True, 'bool'),
+        number('scenes_width', 'Largura da lista (px)', SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM),
+        choice('initial_scope', 'Abrir sem seleção', 'Última visualização',
+            'Última visualização', 'Montagem', 'Primeira cena'),
+        *group('Preview',
+            number('preview_min_zoom', 'Zoom mínimo (%)', 25, 1, 100),
+            number('preview_max_zoom', 'Zoom máximo (%)', 1600, 100, 6400),
+            number('preview_wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True),
+            number('preview_pan_speed', 'Sensibilidade do pan', 1, .1, 5, decimal=True)),
+        *group('Timeline',
+            number('timeline_min_zoom', 'Zoom mínimo (%)', 10, 1, 100),
+            number('timeline_max_frames', 'Frames no zoom máximo', 1, 1, 100),
+            number('timeline_wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True),
+            number('timeline_pan_speed', 'Sensibilidade do pan', 1, .1, 5, decimal=True),
+            number('timeline_tail', 'Espaço após o fim (telas)', 0, 0, 5, decimal=True)))),
     Category('shortcuts', 'Atalhos', (), presentation='shortcuts'),
     Category('system', 'Salvamento e desempenho', (
         *group('Recuperação', number('interval', 'Backup a cada (min)', 2, 1, 60),

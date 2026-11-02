@@ -16,8 +16,8 @@ class AppPreferences:
         self.path = self.directory / 'settings.json'
         from koma.global_preferences import GlobalPreferences
         self.configuration = GlobalPreferences(directory)
-        from koma.preview_cache import PreviewCache
-        self.preview_cache = PreviewCache(self.configuration.values['system']['cache'])
+        from koma.preview_cache import PreviewCache, PREVIEW_BUDGET_SHARES
+        self.preview_cache = PreviewCache(self.configuration.values['system']['cache'] / PREVIEW_BUDGET_SHARES)
         self.last_tool = 'select'
         try:
             from koma.editor.drawing_geometry import drawing_tool

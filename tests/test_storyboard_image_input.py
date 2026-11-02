@@ -76,13 +76,23 @@ class ImageInputTests(TestCase):
                 self.assertFalse(view.busy)
                 self.assertEqual(view.feedback.state, 'warning')
 
-    def test_no_active_frame_does_not_read_the_clipboard(self):
+    def test_no_active_frame_creates_owned_image_node_and_undo_redo_preserve_it(self):
         view = self.view()
         finish(view.add_frame())
-        with patch('koma.editor.image_input.ft.Clipboard') as clipboard:
+        before = view.board
+        with patch('koma.editor.image_input.ft.Clipboard', return_value=self.clipboard(self.original)):
             finish(view.image_input.paste())
-            clipboard.assert_not_called()
+        self.assertEqual(len(view.board.frames), 2)
         self.assertFalse(view.board.frames[0].image)
+        pasted = view.board.frames[-1]
+        self.assertTrue(pasted.image)
+        self.assertTrue((view.store.images / pasted.image).exists())
+        self.assertEqual(view.workspace.navigation.selected, pasted.id)
+        self.assertEqual(view.store.load(), view.board)
+        finish(view.graph.undo())
+        self.assertEqual(view.board, before)
+        finish(view.graph.redo())
+        self.assertEqual(view.board.frames[-1], pasted)
 
     def test_destination_is_captured_before_asynchronous_clipboard_read(self):
         view = self.view()

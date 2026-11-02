@@ -51,6 +51,9 @@ class TimelineEditor:
 
     def begin(self, identifier, pointer_x, scale, *, ripple=False):
         player, view = self.player, self.view
+        if player.timeline and not player.timeline.local_editing:
+            view.notify('Abra a cena para ajustar o corte.', 'info')
+            return None
         if (self.drag or self.committing or not player.opened or not view.editable() or
                 not math.isfinite(pointer_x)):
             return None

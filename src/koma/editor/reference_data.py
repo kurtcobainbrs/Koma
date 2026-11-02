@@ -18,11 +18,11 @@ class ReferenceData:
         identifiers = tuple(frame.id for frame in timeline.frames)
         source = (self.player.view.board, identifiers)
         if self.source is None or self.source[0] is not source[0] or self.source[1] != identifiers:
-            self.references = frame_references(timeline)
+            self.references = getattr(timeline, 'references', ()) or frame_references(timeline)
             self.source = source
         if self.timing is not timeline:
             fps = self.player.view.board.fps
-            counts = duration_frame_counts((frame.duration for frame in timeline.frames), fps)
+            counts = duration_frame_counts(getattr(timeline, 'durations', None) or (frame.duration for frame in timeline.frames), fps)
             total = int((Decimal(str(timeline.total)) * fps).quantize(Decimal(1), rounding=ROUND_HALF_UP))
             if counts:
                 counts[-1] += max(0, total - sum(counts))

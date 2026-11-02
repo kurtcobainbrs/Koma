@@ -2,12 +2,14 @@
 import flet as ft
 from koma.ui.event_updates import explicit_updates
 from koma.ui.design import BORDER, APP_PADDING, DRAG_INTERVAL_MS
+from koma.ui.retained_container import retain_children
 
 
 class Splitter:
-    def __init__(self, page, target, *, horizontal=False, minimum=120, maximum=600, reverse=False):
+    def __init__(self, page, target, *, horizontal=False, minimum=120, maximum=600, reverse=False, stable=()):
         self.page, self.target = page, target
         self.horizontal, self.minimum, self.maximum, self.reverse = horizontal, minimum, maximum, reverse
+        self.stable = tuple(stable)
         self.origin = self.value = None
         self.user_resized = False
         self.content = ft.GestureDetector(on_pan_start=self.begin, on_pan_update=self.move,
@@ -37,7 +39,8 @@ class Splitter:
             self.target.height, self.target.expand = value, False
         else:
             self.target.width = value
-        self.page.update(self.target)
+        with retain_children(*self.stable):
+            self.page.update(self.target)
 
     @explicit_updates
     def end(self, e=None):

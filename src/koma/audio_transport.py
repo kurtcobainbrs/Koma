@@ -47,7 +47,9 @@ class AudioTransport:
         self.volume = 1
 
     def update(self, timeline, store, playing, position):
-        track = next((track for track in timeline.audio_tracks if not track.muted and track.volume > 0), None) if timeline else None
+        tracks = (track for track in timeline.audio_tracks if not track.muted and track.volume > 0
+            and track.start + track.duration > position) if timeline else ()
+        track = min(tracks, key=lambda item: item.start, default=None)
         if track is not None and self.volume != 1:
             track = replace(track, volume=track.volume * self.volume)
         key = (track, store.directory, bool(playing and track))

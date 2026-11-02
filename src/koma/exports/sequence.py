@@ -5,8 +5,6 @@ import math
 
 from koma.editor.timeline import Timeline
 from koma.editor.graph import ordered
-from koma.editor.scenes import scene_frames
-from types import SimpleNamespace
 from koma.exports.reference_overlay import frame_references
 
 
@@ -40,21 +38,8 @@ class ExportSequence:
     def from_project(cls, board, roots=None):
         project = ordered(board)
         scenes = [frame for frame in project.frames if frame.node_type.starts_scene]
-        if not scenes:
-            return cls.from_timelines([Timeline(board)])
         chosen = [root for root in scenes if roots is None or root.id in roots]
         pieces = [Timeline(board, root.id) for root in chosen]
-        if roots is None:
-            from koma.editor.sequences import SequenceIndex
-            from koma.editor.scenes import principal
-            hierarchy = SequenceIndex(project)
-            orphans = tuple(item for frame in project.frames if frame.id not in hierarchy.parents
-                and not frame.node_type.starts_scene and principal(project, frame.id, index=hierarchy) is None
-                for item in hierarchy.playback(frame.id) if not item.muted)
-            if orphans:
-                audio = tuple(track for track in board.audio_tracks if not track.scene_id)
-                total = max(sum(frame.duration for frame in orphans), *(track.start + track.duration for track in audio), 0)
-                pieces.append(SimpleNamespace(frames=orphans, audio_tracks=audio, total=total, board=board))
         return cls.from_timelines(pieces)
 
     @classmethod

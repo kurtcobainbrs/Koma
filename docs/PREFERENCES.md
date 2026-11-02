@@ -1,6 +1,6 @@
 # Preferências globais
 
-Abra **Editar > Preferências…**. A janela reúne 12 categorias em uma navegação
+Abra **Editar > Preferências…**. A janela reúne 13 categorias em uma navegação
 lateral, com campos compactos, prévia de identificação e estilos e restauração
 por seção. Os atalhos editam o mapa compartilhado, com validação de conflitos.
 
@@ -38,6 +38,10 @@ sem uma segunda cópia autoritativa no arquivo de preferências visuais.
 - **Timeline:** frames ou segundos, decimais e contadores, snap inicial dos
   marcadores e volume de monitoração. Esse volume não modifica os áudios do
   documento nem a mixagem exportada.
+- **Animatic:** visibilidade e largura iniciais da lista de cenas e abertura
+  sem seleção na última visualização, montagem completa ou primeira cena.
+  Limites de zoom, sensibilidade da roda e velocidade de pan independentes
+  para prévia e timeline; espaço adicional ao fim da timeline configurável.
 - **Desenho:** cor e espessura iniciais, borracha independente e lembrança da
   ferramenta. Traços existentes permanecem intactos. O estado da ferramenta
   é salvo separadamente em `tool-state.json`, com uma escrita em andamento.
@@ -45,8 +49,8 @@ sem uma segunda cópia autoritativa no arquivo de preferências visuais.
   alternativas com ponto e vírgula.
 - **Salvamento e desempenho:** backups completos `.koma` durante edições,
   intervalo mínimo e rotação por documento, restauração de abas salvas,
-  qualidade das imagens e vídeos na prévia e cache compartilhado das legendas
-  geradas. O limite desse cache não é um limite da memória total do aplicativo;
+  qualidade das imagens e vídeos na prévia e orçamento de cache dividido entre
+  legendas geradas e waveforms. O limite não é o da memória total do aplicativo;
   vídeos mantêm seu leitor ativo e imagens usam o cache nativo do cliente.
   Limpar prévias não exclui mídias. **Abrir backups** mostra as cópias, que podem
   ser abertas pelo comando Abrir normal.
@@ -78,3 +82,17 @@ arquivos nem revalidam a configuração completa.
 Cada exportação captura sua configuração: alterações posteriores não mudam um
 MP4 já em andamento. A cache de legendas considera a revisão das preferências.
 O formato dos documentos `.koma` permanece inalterado.
+
+## Navegação do Animatic
+
+A roda aproxima ou afasta mantendo o ponto sob o cursor. Arrastar com o botão
+do meio move a visualização. Na timeline, Shift + roda também desloca a trilha.
+F enquadra a área sob o mouse; a prévia também oferece um botão de enquadrar
+junto ao indicador de zoom. O zoom da prévia é relativo à imagem enquadrada.
+
+As duas câmeras são estados temporários independentes: navegar não move mídias,
+não cria histórico e não muda o MP4. O botão direito continua sendo borracha.
+No cliente atualizado, o pan ocorre localmente e a timeline mantém apenas um
+pedido de zoom em andamento, agrupando os movimentos seguintes. Clientes
+anteriores usam a navegação compatível disponível; reabra o aplicativo para
+carregar o cliente compilado com a nova navegação.

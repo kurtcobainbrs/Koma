@@ -147,6 +147,9 @@ class MarkerLane:
     def rename(self, e=None):
         if self.player.editing or not self.player.view.editable():
             return
+        if not self.player.timeline.local_editing:
+            self.player.view.notify('Abra a cena para renomear marcadores.', 'info')
+            return
         marker = next((item for item in self.player.timeline.markers if item.id == self.editor.selected), None)
         if marker:
             self.player.playing = False
