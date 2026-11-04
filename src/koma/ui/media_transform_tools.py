@@ -5,7 +5,7 @@ from koma.editor.media_animation import MediaPose, INTERPOLATIONS, MAX_TRANSLATI
 from koma.expressions import arithmetic_value
 from koma.ui.design import COMPACT_CONTROL_HEIGHT, APP_PADDING, BORDER, MUTED
 from koma.ui.choice_input import ChoiceInput
-from koma.ui.event_updates import explicit_updates
+from koma.ui.event_updates import explicit_updates, action_event
 from koma.ui.scrub_number import ScrubNumber
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.typography import TEXT_BODY, TEXT_SMALL, FONT_HEADING
@@ -33,9 +33,9 @@ class MediaTransformTools:
             on_cancel=self.cancel_value, on_submit=self.apply, on_focus=self.focus, on_blur=self.blur)
             for key, label, low, high, sensitivity in specs}
         self.fields = {key: scrub.entry for key, scrub in self.scrubs.items()}
-        self.key = self.button(ft.Icons.DIAMOND_OUTLINED, 'Gravar keyframe · I', lambda e: editor.set_key())
+        self.key = self.button(ft.Icons.DIAMOND_OUTLINED, 'Gravar keyframe · I', action_event(editor.set_key))
         self.delete_key = self.button(ft.Icons.DELETE_OUTLINE, 'Excluir keyframe atual · Alt+I',
-            lambda e: editor.set_key(remove_only=True))
+            action_event(editor.set_key, remove_only=True))
         self.auto = self.button(ft.Icons.RADIO_BUTTON_UNCHECKED, 'Auto Key', self.toggle_auto)
         self.previous = self.button(ft.Icons.FAST_REWIND, 'Keyframe anterior', lambda e: editor.jump(-1))
         self.next = self.button(ft.Icons.FAST_FORWARD, 'Próximo keyframe', lambda e: editor.jump(1))

@@ -7,12 +7,40 @@ from PIL import Image
 import flet as ft
 from flet.controls.exceptions import FletException
 from koma.documents.images import import_image, IMAGE_EXTENSIONS
+from koma.image_clipboard import copy_image
 from koma.editor.reference_models import ReferenceImage, MAX_REFERENCES, MIN_REFERENCE_SIZE, MAX_REFERENCE_POSITION, REFERENCE_GAP
 
 
 class ReferenceActions:
     def __init__(self, canvas):
         self.canvas, self.view = canvas, canvas.view
+
+    async def copy_image(self, e=None):
+        if not self.canvas.active or not self.view.editable():
+            return
+        item = next((item for item in self.view.board.references
+            if item.id == self.canvas.selection.active), None)
+        if item is None:
+            self.view.notify('Selecione uma imagem.', 'info')
+            return
+        try:
+            await copy_image(self.view.store.images / item.asset)
+            self.view.notify('Imagem copiada.', 'success')
+        except (OSError, ValueError, RuntimeError, FletException) as exc:
+            self.view.notify(f'Não foi possível copiar: {exc}', 'warning')
+
+    async def send_to_canvas(self, e=None):
+        if not self.canvas.active or not self.view.editable() or self.canvas.gesture:
+            return
+        selected = tuple((item.asset, item.title) for item in self.view.board.references
+            if item.id in self.canvas.selection.ids)
+        try:
+            identifiers = await self.view.image_input.create_from_assets(selected, label='Enviar referências ao Canvas')
+            if identifiers:
+                self.view.work_modes.show_canvas()
+                self.view.notify(f'{len(identifiers)} quadros criados.', 'success')
+        except (OSError, ValueError, RuntimeError, FletException) as exc:
+            self.view.notify(f'Não foi possível enviar: {exc}', 'warning')
 
     async def commit(self, items, label, *, expected=None):
         view = self.view

@@ -114,7 +114,7 @@ CATEGORIES = (
         number('zoom', 'Sensibilidade do zoom', 1, .1, 5, decimal=True),
         Field('fit', 'Enquadrar ao abrir', False, 'bool'))),
     Category('timeline', 'Timeline', (
-        choice('unit', 'Unidade de tempo', 'Segundos', 'Frames', 'Segundos'),
+        choice('unit', 'Unidade de tempo', 'Frames', 'Frames', 'Segundos'),
         number('seconds_decimals', 'Casas decimais dos segundos', 3, 0, 6),
         number('counter_digits', 'Dígitos dos contadores', 4, 1, 10),
         Field('snap', 'Snap ligado ao abrir', True, 'bool'),
@@ -140,7 +140,7 @@ CATEGORIES = (
             Field('media_interpolation', 'Interpolação inicial', 'linear', 'choice', choices=tuple(INTERPOLATIONS), choice_labels=tuple(INTERPOLATIONS.items()))),
         Field('scenes_visible', 'Mostrar lista de cenas', True, 'bool'),
         number('scenes_width', 'Largura da lista (px)', SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM),
-        choice('initial_scope', 'Abrir sem seleção', 'Última visualização',
+        choice('initial_scope', 'Visualização inicial', 'Montagem',
             'Última visualização', 'Montagem', 'Primeira cena'),
         *group('Preview',
             number('preview_min_zoom', 'Zoom mínimo (%)', 25, 1, 100),

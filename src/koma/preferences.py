@@ -14,6 +14,8 @@ class AppPreferences:
     def __init__(self, directory):
         self.directory = Path(directory)
         self.path = self.directory / 'settings.json'
+        from koma.dialog_directories import DialogDirectories
+        self.dialog_directories = DialogDirectories(directory)
         from koma.global_preferences import GlobalPreferences
         self.configuration = GlobalPreferences(directory)
         from koma.preview_cache import PreviewCache, PREVIEW_BUDGET_SHARES

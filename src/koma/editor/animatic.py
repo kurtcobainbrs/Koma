@@ -51,6 +51,9 @@ class AnimaticPlayer:
         self.project_mode = False
         self.media = TimelineMedia(self)
         self.audio_transport = AudioTransport()
+        from koma.editor.timeline_snap import TimelineSnapping
+        from koma.ui.timeline_strip import TimelineStyle
+        self.snapping = TimelineSnapping(TimelineStyle().snap_distance)
         self.video_preview = VideoPreview(self)
         self.duration_editor = TimelineEditor(self)
         self.marker_editor = MarkerEditor(self)
@@ -59,6 +62,15 @@ class AnimaticPlayer:
         self.strip = TimelineStrip(self, self.duration_editor)
         self.preview = ImageViewport(view, height=400, show_drawing=False)
         self.media_transform = MediaTransformEditor(self)
+        from koma.editor.edit_selection import EditSelection
+        self.edit_selection = EditSelection()
+        self.edit_selection.register(self.marker_editor, clear=self.marker_editor.clear_selection,
+            remove=self.marker_editor.delete_selected, publish=self.marker_editor.refresh_lane)
+        keys = self.strip.keyframe_lane.editor
+        self.edit_selection.register(keys, clear=keys.clear_selection, remove=keys.remove_selected,
+            publish=lambda: self.publish_key_selection())
+        self.edit_selection.register(self.drawing, clear=self.drawing.clear_selection,
+            remove=self.drawing.delete_selected, publish=lambda: self.publish_drawing_selection())
         self.reference_presentation = ReferencePresentation(self)
         self.subtitles = SubtitlePreview(self)
         from koma.ui.guide_presentation import GuidePresentation
@@ -125,7 +137,7 @@ class AnimaticPlayer:
         previous = self.timeline
         active = self.view.workspace.navigation.selected
         initial = self.view.settings.configuration.values['animatic']['initial_scope']
-        project = active is None and (initial == 'Montagem' or (initial == 'Última visualização' and self.project_mode))
+        project = initial == 'Montagem' or (active is None and initial == 'Última visualização' and self.project_mode)
         scene = resolve_scene(self.view.board, active, fallback=None if initial == 'Primeira cena' else self.scene_anchor)
         reusable = (previous is not None and previous.board is self.view.board
             and (not previous.local_editing) == project
@@ -135,7 +147,7 @@ class AnimaticPlayer:
         self.title.value = self.timeline.root.title or 'Cena' if self.timeline.root else 'Prévia'
         self.scene_anchor = self.timeline.root.id if self.timeline.root else None
         same_scope = previous is not None and (previous.root.id if previous.root else None) == self.scene_anchor
-        self.position = max(0, min(self.position, self.timeline.total)) if same_scope else 0
+        self.position = max(self.timeline.playback_start, min(self.position, self.timeline.playback_end)) if same_scope else self.timeline.playback_start
         active_index = next((index for index, frame in enumerate(self.timeline.frames) if frame.id == active), None)
         if active_index is not None:
             self.position = self.timeline.starts[active_index]
@@ -193,7 +205,7 @@ class AnimaticPlayer:
         self.view.properties.release_field_focus()
         self.project_mode = identifier is None
         self.timeline = self.make_timeline(identifier)
-        self.scene_anchor, self.position, self.current = identifier, 0, -1
+        self.scene_anchor, self.position, self.current = identifier, self.timeline.playback_start, -1
         if self.project_mode and current:
             index = next((i for i, frame in enumerate(self.timeline.frames) if frame.id == current), None)
             if index is not None:
@@ -202,7 +214,7 @@ class AnimaticPlayer:
         self.selection.replace({selected} if selected else set(), selected)
         if not self.project_mode:
             self.media.waveform_limit = self.media.scene_waveform_limit
-        self.strip.reset()
+        self.strip.reset(preserve_camera=True)
         self.render()
         self.focus_timeline()
 
@@ -246,14 +258,17 @@ class AnimaticPlayer:
 
     def rebuild_timeline(self):
         self.timeline = self.make_timeline(self.scene_anchor)
-        self.position = max(0, min(self.position, self.timeline.total))
+        self.position = max(self.timeline.playback_start, min(self.position, self.timeline.playback_end))
         self.current = -1
 
     def make_timeline(self, identifier=None):
         if self.project_mode:
             from koma.editor.project_timeline import ProjectTimeline
             return ProjectTimeline(self.view.board)
-        return Timeline(self.view.board, identifier)
+        if not any(frame.node_type.starts_scene for frame in self.view.board.frames):
+            return Timeline(self.view.board, identifier)
+        from koma.editor.project_timeline import SceneTimeline
+        return SceneTimeline(self.view.board, identifier)
 
     def select_node(self, identifier, *, seek=False):
         if not self.opened or self.editing or not self.view.editable():
@@ -274,6 +289,13 @@ class AnimaticPlayer:
                 self.playing = False
                 self.position = self.timeline.starts[index]
         self.render_position()
+        geometry = self.strip.track.width, self.strip.track.height
+        self.strip.sync()
+        if geometry != (self.strip.track.width, self.strip.track.height):
+            self.strip.prepare_scroll()
+            self.strip.publish_geometry()
+        else:
+            self.view.page.update(self.strip.keyframe_lane.content, self.strip.keyframe_label)
         self.focus_timeline()
 
     def sync_inspector(self, *, update=True):
@@ -300,7 +322,7 @@ class AnimaticPlayer:
     def document_changed(self):
         if self.opened and not self.editing and self.timeline.board is not self.view.board:
             self.timeline = self.timeline.with_board(self.view.board)
-            self.position = max(0, min(self.position, self.timeline.total))
+            self.position = max(self.timeline.playback_start, min(self.position, self.timeline.playback_end))
             self.current = -1
             self.render()
 
@@ -321,6 +343,8 @@ class AnimaticPlayer:
         self.sync_scenes()
         if self.duration_editor.drag is None and self.timeline.board is not self.view.board:
             self.rebuild_timeline()
+        if self.duration_editor.drag is None:
+            self.snapping.prepare(self.timeline)
         if self.drawing.drag and (not self.timeline.frames or
                 self.timeline.frames[self.timeline.index_at(self.position)].id != self.drawing.drag.frame.id):
             self.drawing.cancel(update=False)
@@ -474,8 +498,8 @@ class AnimaticPlayer:
             self.position = min(self.timeline.total, monotonic()-self.anchor)
             self.playing = False
         else:
-            if self.position >= self.timeline.total:
-                self.position = 0
+            if self.position >= self.timeline.playback_end:
+                self.position = self.timeline.playback_start
             self.anchor = monotonic()-self.position
             self.playing = True
             if self.task is None or self.task.done():
@@ -486,13 +510,14 @@ class AnimaticPlayer:
     def advance(self, now):
         if not self.playing:
             return
-        self.position = max(0, now-self.anchor)
-        if self.position >= self.timeline.total:
+        self.position = max(self.timeline.playback_start, now-self.anchor)
+        if self.position >= self.timeline.playback_end:
             if self.loop.selected:
-                self.position %= self.timeline.total
+                span = self.timeline.playback_end - self.timeline.playback_start
+                self.position = self.timeline.playback_start + (self.position - self.timeline.playback_start) % span if span > 0 else self.timeline.playback_start
                 self.anchor = now-self.position
             else:
-                self.position = self.timeline.total
+                self.position = self.timeline.playback_end
                 self.playing = False
         self.render_position()
 
@@ -523,7 +548,8 @@ class AnimaticPlayer:
 
     @explicit_updates
     async def key_down(self, e):
-        if self.view.references.active:
+        from koma.ui.keyboard_scope import dialog_owns_keyboard
+        if dialog_owns_keyboard(self.view.page) or self.view.references.active:
             return
         modifiers = {name for field, name in (('ctrl', 'Ctrl'), ('alt', 'Alt'),
             ('shift', 'Shift'), ('meta', 'Meta')) if getattr(e, field, False)}
@@ -560,9 +586,6 @@ class AnimaticPlayer:
             if action == Action.CANCEL:
                 self.media_transform.ui.cancel_fields()
                 self.focus_timeline()
-            return
-        if action == Action.DELETE_SELECTION and self.strip.keyframe_lane.editor.selected is not None and not self.editing:
-            await self.strip.keyframe_lane.editor.remove_selected()
             return
         if (self.media_transform.enabled or self.navigation_target == 'preview') and not self.editing:
             media_action = self.view.keymap.resolve(e.key, modifiers, 'media')
@@ -616,16 +639,15 @@ class AnimaticPlayer:
                 self.render()
                 self.focus_timeline()
                 return
-            editing = self.editing
-            self.drawing.cancel()
-            self.strip.audio_lane.drag.cancel()
-            self.strip.audio_controls.gain.cancel()
-            self.duration_editor.cancel()
-            self.marker_editor.cancel()
-            if editing:
-                self.focus_timeline()
+            if self.editing:
+                self.drawing.cancel()
+                self.strip.audio_lane.drag.cancel()
+                self.strip.audio_controls.gain.cancel()
+                self.duration_editor.cancel()
+                self.marker_editor.cancel()
             else:
-                self.close()
+                self.edit_selection.claim(None)
+            self.focus_timeline()
             return
         if self.editing or not self.view.editable():
             return
@@ -656,10 +678,7 @@ class AnimaticPlayer:
         elif action == Action.RENAME_MARKER:
             self.strip.marker_lane.rename()
         elif action == Action.DELETE_SELECTION:
-            if self.strip.keyframe_lane.editor.selected is not None:
-                await self.strip.keyframe_lane.editor.remove_selected()
-            else:
-                await self.delete_selection()
+            await self.delete_selection()
         elif action == Action.IMPORT_AUDIO:
             await self.media.pick_audio()
         elif action == Action.UNDO:
@@ -675,10 +694,17 @@ class AnimaticPlayer:
     async def delete_selection(self):
         if self.editing or not self.view.editable():
             return
-        if await self.drawing.delete_selected():
-            return
-        if self.marker_editor.selected:
-            await self.media.remove_marker(self.marker_editor.selected)
+        await self.edit_selection.remove()
+
+    def publish_key_selection(self):
+        self.strip.keyframe_lane.sync()
+        if self.presenting:
+            self.view.page.update(self.strip.keyframe_lane.content)
+
+    def publish_drawing_selection(self):
+        self.drawing_surface.refresh()
+        if self.presenting:
+            self.view.page.update(self.drawing_surface.content)
 
     def next(self, e):
         self.step(1)

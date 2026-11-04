@@ -38,7 +38,7 @@ Mudanças de formato exigem migração explícita e proteção dos arquivos anti
 Verificações automatizadas devem focar salvar/abrir, copiar, desfazer/refazer e
 exportar. Não executar testes manuais sem solicitação.
 
-## Pendências — precisão da timeline (registradas em 04/11/2026)
+## Revisão — precisão da timeline (registrada em 04/11/2026)
 
 Revisar antes de ampliar a edição da montagem. A waveform é uma referência
 crucial para sincronizar os cortes com música e áudio.
@@ -58,9 +58,39 @@ crucial para sincronizar os cortes com música e áudio.
    mostrar seu início após o fim da anterior, na posição temporal que ocupa
    no projeto, em vez de deslocá-la para zero. Manter a referência da música
    e da waveform para ajustar as trocas de cena com precisão.
+4. **Áudio principal do projeto:** a trilha principal deve pertencer ao projeto,
+   mantendo a continuidade entre cenas e montagem. Áudio próprio de uma cena
+   pode existir como trilha opcional. Ao implementar, preservar e migrar
+   explicitamente os áudios existentes, sem perda ou duplicação involuntária.
+5. **Transferir imagens de Refs:** oferecer ações distintas para copiar a
+   imagem ao clipboard e enviar as referências selecionadas ao Canvas.
+   Enviar deve sempre criar nodes novos, mesmo quando já houver um node
+   selecionado; nunca substituir suas mídias. Reaproveitar os fluxos de
+   importação, propriedade dos dados e histórico.
+6. **Preservar a câmera do Refs — problema ainda relatado:** após dar zoom e
+   mover a vista, alternar para outro ambiente e voltar ainda desorganiza o
+   enquadramento e tira de vista o conteúdo em uso. A correção incluída na
+   v0.6.0 não resolveu integralmente o caso relatado. Investigar o ciclo
+   completo de saída e retorno, preservando zoom e posição por projeto;
+   enquadrar automaticamente apenas na primeira entrada, conforme o padrão
+   configurado. Não reenquadrar nem reaplicar uma câmera antiga ao voltar.
+7. **Remover marcador:** disponibilizar no menu do marcador e por Delete,
+   com desfazer/refazer. Delete deve remover somente o elemento explicitamente
+   selecionado; selecionar marcador e keyframe deve ser mutuamente exclusivo.
+8. **Inverter mídia:** opções horizontal e vertical da mídia ativa, sem alterar
+   o original, com persistência, histórico e resultado consistente na exportação.
+9. **Keyframes fora do intervalo:** manter visíveis e editáveis os keys do
+   quadro selecionado, inclusive quando a agulha estiver em outro quadro ou
+   os keys estiverem além da duração atual. Não aumentar a duração do quadro
+   por causa dessa visualização.
 
 Reprodução relatada: abrir uma cena com áudio e marcadores, alternar para
 Montagem, tentar ajustar a borda de um quadro e depois isolar a cena seguinte.
 Conferir a mesma correspondência entre cortes, marcadores e waveform nos dois
-contextos. Relato registrado para revisão posterior; sem correção ou validação
-manual nesta etapa.
+contextos.
+
+Os nove itens foram implementados no código em 04/11/2026, com verificações
+automatizadas direcionadas; a confirmação de usabilidade fica com o usuário,
+sem testes manuais do agente. O item 6 recebeu uma segunda correção: retenção
+da matriz no cliente nativo durante a desmontagem/remontagem da interface.
+Consulte `PROJECT_TIMING.md` para o contrato temporal e a migração do áudio.

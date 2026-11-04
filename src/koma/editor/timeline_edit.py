@@ -22,6 +22,7 @@ class DurationDrag:
     trim: DurationTrim
     ripple: bool
     values: dict
+    targets: object
 
 
 class TimelineEditor:
@@ -51,9 +52,6 @@ class TimelineEditor:
 
     def begin(self, identifier, pointer_x, scale, *, ripple=False):
         player, view = self.player, self.view
-        if player.timeline and not player.timeline.local_editing:
-            view.notify('Abra a cena para ajustar o corte.', 'info')
-            return None
         if (self.drag or self.committing or not player.opened or not view.editable() or
                 not math.isfinite(pointer_x)):
             return None
@@ -62,9 +60,17 @@ class TimelineEditor:
             return None
         frame = player.timeline.frames[index]
         trim = DurationTrim.at(player.timeline, index)
+        moving_cut = player.timeline.starts[index] + frame.duration
+        exclude = {('boundary', moving_cut)}
+        if ripple:
+            for following, start in zip(player.timeline.frames[index + 1:], player.timeline.starts[index + 1:]):
+                exclude.update((('boundary', start), ('boundary', start + following.duration), ('key', following.id)))
+        elif index + 1 < len(player.timeline.frames):
+            exclude.add(('key', player.timeline.frames[index + 1].id))
+        targets = player.snapping.capture(player.timeline, exclude=exclude, playhead=player.position)
         self.drag = DurationDrag(identifier, view.board, view.session, pointer_x, scale,
             frame.duration, frame.duration, player.timeline.starts[index], player.position, player.timeline,
-            trim, ripple, {identifier: frame.duration} if ripple else trim.originals)
+            trim, ripple, {identifier: frame.duration} if ripple else trim.originals, targets)
         player.playing = False
         player.position = self.drag.position
         view.lock(True, update=False)
@@ -80,7 +86,9 @@ class TimelineEditor:
             self.cancel()
             return
         delta = pointer_x - drag.pointer_x
-        values = drag.trim.resolve(drag.duration + drag.scale.seconds(delta), ripple=drag.ripple)
+        boundary = self.player.snapping.resolve(drag.position + drag.duration + drag.scale.seconds(delta),
+            drag.scale, drag.targets, minimum=drag.position + 1 / drag.board.fps)
+        values = drag.trim.resolve(boundary - drag.position, ripple=drag.ripple)
         if values == drag.values:
             return
         drag.values = values

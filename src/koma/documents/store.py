@@ -14,7 +14,7 @@ from koma.editor.drawing_models import DrawingLayer
 from koma.editor.sequence_models import SequenceState
 from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
 
-DOCUMENT_VERSION = 11
+DOCUMENT_VERSION = 13
 
 
 def document(board, document_id):
@@ -74,6 +74,9 @@ def parse_document(raw):
         if raw['version'] < 7:
             from koma.documents.sequence_migration import migrate_sequences
             board = migrate_sequences(board)
+        if raw['version'] < 12:
+            from koma.documents.audio_migration import migrate_project_audio
+            board = migrate_project_audio(board)
         board.validate()
         return board, identifier
     except (KeyError, TypeError, ValueError, AttributeError) as exc:

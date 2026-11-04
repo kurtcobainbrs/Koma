@@ -4,6 +4,7 @@ from functools import lru_cache
 from importlib.resources import files
 import json
 import re
+from math import ceil
 
 from PIL import Image, ImageDraw, ImageFont
 from koma.exports.subtitles import normalized, wrap
@@ -11,8 +12,8 @@ from koma.editor.production_numbers import shot_code, scene_code
 from koma.exports.presentation_style import configured, text_font
 
 REFERENCE_FIELDS = {
-    'project': 'Projeto', 'scene': 'Cena', 'sequence': 'Sequência', 'shot': 'Quadro', 'duration_frames': 'Duração (frames)',
-    'duration_seconds': 'Duração (segundos)', 'shot_frame': 'Frame do quadro',
+    'project': 'Projeto', 'scene': 'Cena', 'sequence': 'Sequência', 'shot': 'Shot', 'duration_frames': 'Duração (frames)',
+    'duration_seconds': 'Duração (segundos)', 'shot_frame': 'Frame do shot',
     'current_frame': 'Frame atual do vídeo', 'total_frames': 'Total de frames',
     'elapsed_seconds': 'Tempo do vídeo', 'fps': 'FPS', 'resolution': 'Resolução',
 }
@@ -63,14 +64,15 @@ def reference_values(frame, reference, *, local_frame, count, current_frame, tot
     def seconds(value):
         return f'{value:0{seconds_width}.{decimals}f}'
     return {
-        'project': f'Projeto: {normalized(reference.project.title)}' if reference.project else 'Projeto sem nome',
+        'project': f'Proj.: {normalized(reference.project.title)}' if reference.project and normalized(reference.project.title) else '',
         'scene': ' · '.join(part for part in (scene_code(reference.scene_number, identity) if reference.scene_number else reference.scene_code,
-            normalized(reference.scene.title) or 'Sem título') if part) if reference.scene else 'Sem cena',
-        'sequence': 'Sequência: ' + (' > '.join(normalized(node.title) or 'Sem título' for node in reference.groups) or '—'),
-        'shot': f'{shot_code(reference.number, identity)} · {normalized(frame.title) or "Sem título"}',
-        'duration_frames': f'Duração: {counter(count)} f',
-        'duration_seconds': f'Duração: {seconds(count / fps)} s',
-        'shot_frame': f'Frame do quadro: {counter(local_frame)}/{counter(count)}',
+            normalized(reference.scene.title)) if part) if reference.scene else '',
+        'sequence': 'Seq.: ' + ' > '.join(normalized(node.title) for node in reference.groups if normalized(node.title))
+            if any(normalized(node.title) for node in reference.groups) else '',
+        'shot': ' · '.join(part for part in (shot_code(reference.number, identity), normalized(frame.title)) if part),
+        'duration_frames': f'Dur.: {counter(count)} f',
+        'duration_seconds': f'Dur.: {seconds(count / fps)} s',
+        'shot_frame': f'Shot: {counter(local_frame)}/{counter(count)}',
         'current_frame': f'Frame: {counter(current_frame)}',
         'total_frames': f'Total: {counter(total_frames)} f',
         'elapsed_seconds': f'Tempo: {seconds((current_frame - 1) / fps)} s',
@@ -115,6 +117,23 @@ class ReferenceTypography:
                 x += self.font.getlength(run)
 
 
+def reference_rows(parts, font, width):
+    """Pack complete fields into compact lines; only oversized fields wrap."""
+    gap = max(1, ceil(font.getlength(' ')))
+    widths = tuple(min(width, ceil(font.getlength(text)) + gap) for text in parts)
+    rows, row, used = [], [], 0
+    for index, size in enumerate(widths):
+        required = size + (gap if row else 0)
+        if row and used + required > width:
+            rows.append(tuple(row))
+            row, used = [], 0
+        used += size + (gap if row else 0)
+        row.append(index)
+    if row:
+        rows.append(tuple(row))
+    return tuple(rows), widths, gap
+
+
 class ReferenceOverlay:
     def __init__(self, size, fields, options=None):
         self.fields = reference_fields(fields)
@@ -131,10 +150,14 @@ class ReferenceOverlay:
         if not self.fields:
             return picture
         font = self.font
+        parts = self.parts(values, font)
+        if not parts:
+            return picture
         maximum_height = max(1, round(self.size[1] * self.config['maximum_height_ratio']))
         while True:
             typography = ReferenceTypography(font)
-            lines = wrap(' · '.join(self.parts(values, typography)), typography, self.available)
+            rows, _, _ = reference_rows(parts, typography, self.available)
+            lines = [line for row in rows for line in wrap('  '.join(parts[index] for index in row), typography, self.available)]
             line_height = max(1, round(font.size * self.config['line_height_ratio']))
             height = len(lines) * line_height + self.padding * 2
             if height <= maximum_height or font.size == 1:
@@ -153,15 +176,4 @@ class ReferenceOverlay:
         return result
 
     def parts(self, values, font):
-        parts = []
-        for key in self.fields:
-            text = values[key]
-            # Node names cannot make a reference band occupy the whole image.
-            if key in ('project', 'scene', 'sequence', 'shot'):
-                limit = self.available * self.config['name_width_ratio']
-                while len(text) > 1 and font.getlength(text + '…') > limit:
-                    text = text[:-1]
-                if text != values[key]:
-                    text += '…'
-            parts.append(text)
-        return parts
+        return [values[key] for key in self.fields if values.get(key)]

@@ -117,6 +117,17 @@ class NodeMediaActions:
         active = frame.active_media_id if any(item.id == frame.active_media_id for item in entries) else (entries[0].id if entries else '')
         await self.commit(frame, entries, active, 'Remover mídia')
 
+    async def flip(self, identifier, axis):
+        frame = self.target(identifier)
+        if not frame or not frame.active_media or not self.ready():
+            return
+        attribute = {'horizontal': 'flip_x', 'vertical': 'flip_y'}[axis]
+        active = frame.active_media
+        transformed = replace(active, transform=replace(active.transform,
+            **{attribute: not getattr(active.transform, attribute)}))
+        entries = tuple(transformed if item.id == active.id else item for item in frame.media)
+        await self.commit(frame, entries, frame.active_media_id, 'Inverter mídia')
+
     async def commit(self, frame, entries, active, label):
         view = self.view
         board, session = view.board, view.session

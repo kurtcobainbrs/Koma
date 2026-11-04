@@ -32,6 +32,34 @@ def pcm_stream(path, position, start, duration, volume=1):
             requested = yield block
 
 
+def mixed_pcm_stream(store, tracks, position, total):
+    """Bounded live mix using the same absolute starts as the timeline/export."""
+    streams = [pcm_stream(store.audio / track.asset, position, track.start - getattr(track, 'source_offset', 0),
+        min(total, track.start + track.duration), track.volume) for track in tracks]
+    try:
+        for stream in streams:
+            next(stream)
+        remaining = max(0, round((total - position) * SAMPLE_RATE))
+        requested = yield b''
+        while remaining > 0:
+            count = min(requested, remaining)
+            mixed = [0] * (count * CHANNELS)
+            for stream in streams:
+                try:
+                    data = stream.send(count)
+                except StopIteration:
+                    continue
+                samples = array('h')
+                samples.frombytes(data)
+                for index, value in enumerate(samples):
+                    mixed[index] += value
+            remaining -= count
+            requested = yield array('h', (max(-32768, min(32767, value)) for value in mixed)).tobytes()
+    finally:
+        for stream in streams:
+            stream.close()
+
+
 class AudioTransport:
     def __init__(self, device_factory=None, clock=monotonic):
         self.factory = device_factory
@@ -49,10 +77,8 @@ class AudioTransport:
     def update(self, timeline, store, playing, position):
         tracks = (track for track in timeline.audio_tracks if not track.muted and track.volume > 0
             and track.start + track.duration > position) if timeline else ()
-        track = min(tracks, key=lambda item: item.start, default=None)
-        if track is not None and self.volume != 1:
-            track = replace(track, volume=track.volume * self.volume)
-        key = (track, store.directory, bool(playing and track))
+        tracks = tuple(replace(track, volume=track.volume * self.volume) for track in tracks)
+        key = (tracks, store.directory, bool(playing and tracks))
         now = self.clock()
         if key == self.key and (not key[-1] or abs(position - (now - self.anchor)) < .15):
             return
@@ -61,7 +87,7 @@ class AudioTransport:
         self.anchor = now - position
         if not key[-1] and (previous is None or not previous[-1]):
             return
-        self._submit(track, store, bool(playing and track), position, timeline.total if timeline else 0, now)
+        self._submit(tracks, store, bool(playing and tracks), position, timeline.playback_end if timeline else 0, now)
 
     def _submit(self, track, store, playing, position, total, requested):
         with self.lock:
@@ -98,7 +124,7 @@ class AudioTransport:
             if position >= total:
                 self._dispose()
                 return
-            self.stream = pcm_stream(store.audio / track.asset, position, track.start, total, track.volume)
+            self.stream = mixed_pcm_stream(store, track, position, total)
             next(self.stream)
             self.device.start(self.stream)
         except Exception as exc:

@@ -4,15 +4,15 @@ from dataclasses import dataclass, replace
 import math
 
 from koma.editor.timeline_navigation import frame_position
+from koma.editor.timeline_snap import SnapTargets, TimelineSnapping
 
 
 def marker_position(seconds, timeline, fps, scale, candidates=(), tolerance=0):
-    position = frame_position(seconds, timeline.total, fps)
-    if candidates:
-        target = min(candidates, key=lambda value: abs(value - position))
-        if abs(scale.pixels(target - position)) <= tolerance:
-            position = frame_position(target, timeline.total, fps)
-    return position
+    """Compatibility adapter over the shared snap resolver."""
+    positions = tuple(sorted(set(candidates)))
+    targets = SnapTargets(positions, tuple(frozenset({('target', value)}) for value in positions))
+    seconds = TimelineSnapping(tolerance).resolve(seconds, scale, targets, maximum=timeline.total)
+    return frame_position(seconds, timeline.total, fps)
 
 
 @dataclass(frozen=True)
@@ -24,10 +24,17 @@ class MarkerDrag:
     pointer_x: float
     scale: object
     previous_position: float
-    candidates: tuple
+    candidates: SnapTargets
 
 
 class MarkerEditor:
+    @property
+    def snap_enabled(self):
+        return self.player.snapping.enabled
+
+    @snap_enabled.setter
+    def snap_enabled(self, value):
+        self.player.snapping.enabled = value
     def __init__(self, player):
         self.player, self.view = player, player.view
         self.selected = None
@@ -36,30 +43,35 @@ class MarkerEditor:
         self.committing = False
         self.snap_enabled = True
 
+    def clear_selection(self):
+        selected, self.selected = self.selected, None
+        return selected is not None
+
+    async def delete_selected(self):
+        if self.selected:
+            await self.player.media.remove_marker(self.selected)
+
     def select(self, identifier):
         if not self.player.editing:
             marker = next((item for item in self.player.timeline.markers if item.id == identifier), None)
             if marker:
+                self.player.edit_selection.claim(self)
                 self.selected = identifier
                 self.player.strip.navigator.seek(marker.position)
                 self.player.focus_timeline()
 
     def begin(self, identifier, pointer_x, scale):
-        if self.player.timeline and not self.player.timeline.local_editing:
-            return None
         if self.player.editing or not self.player.opened or not self.view.editable() or not math.isfinite(pointer_x):
             return None
         timeline = self.player.timeline
         marker = next((item for item in timeline.markers if item.id == identifier), None)
         if marker is None:
             return None
-        candidates = {0.0, timeline.total, *timeline.starts}
-        candidates.update(item.position for item in timeline.markers if item.id != identifier)
-        candidates.add(self.player.position)
-        for track in timeline.audio_tracks:
-            candidates.update((track.start, track.start + track.duration))
+        self.player.edit_selection.claim(self)
+        candidates = self.player.snapping.capture(timeline, exclude=(('marker', identifier),),
+            playhead=self.player.position)
         self.drag = MarkerDrag(marker, self.view.board, self.view.session, self.player.scene_anchor,
-            pointer_x, scale, self.player.position, tuple(sorted(candidates)))
+            pointer_x, scale, self.player.position, candidates)
         self.position = marker.position
         self.selected = identifier
         self.player.pause_for_edit()
@@ -76,9 +88,10 @@ class MarkerEditor:
                 or self.player.scene_anchor != token.scope):
             self.cancel()
             return
-        position = marker_position(token.marker.position + token.scale.seconds(pointer_x - token.pointer_x),
-            self.player.timeline, token.board.fps, token.scale,
-            token.candidates if self.snap_enabled else (), self.player.strip.style.snap_distance)
+        seconds = self.player.snapping.resolve(token.marker.position + token.scale.seconds(pointer_x - token.pointer_x),
+            token.scale, token.candidates, maximum=self.player.timeline.total,
+            minimum=self.player.media.scene_offset(token.marker.scene_id))
+        position = frame_position(seconds, self.player.timeline.total, token.board.fps)
         if position != self.position:
             self.position = position
             self.player.strip.marker_lane.preview(token.marker.id)
@@ -112,7 +125,8 @@ class MarkerEditor:
                     or self.player.scene_anchor != token.scope or not self.player.opened):
                 return
             if position != token.marker.position:
-                markers = tuple(replace(item, position=position) if item.id == token.marker.id else item for item in token.board.markers)
+                offset = self.player.media.scene_offset(token.marker.scene_id)
+                markers = tuple(replace(item, position=max(0, position - offset)) if item.id == token.marker.id else item for item in token.board.markers)
                 await self.player.media.commit(replace(token.board, markers=markers), render=False, label='Mover marcador')
                 changed = True
         finally:

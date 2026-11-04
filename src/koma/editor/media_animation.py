@@ -100,8 +100,10 @@ def animation_from_document(raw):
     return values
 
 
-def retime_keyframe(transform, old_time, seconds, fps, duration):
-    time = min(key_time(seconds, fps), max(0, (round(duration * fps) - 1) / fps))
+def retime_keyframe(transform, old_time, seconds, fps, duration, *, allow_outside=False):
+    time = key_time(seconds, fps)
+    if not allow_outside:
+        time = min(time, max(0, (round(duration * fps) - 1) / fps))
     keys = tuple(replace(key, time=time) if abs(key.time - old_time) < 1e-8 else key for key in transform.keyframes)
     times = [key.time for key in keys]
     if len(set(times)) != len(times):

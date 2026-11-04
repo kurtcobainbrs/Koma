@@ -24,9 +24,9 @@ def principal(board, identifier, *, index=None):
     return None
 
 
-def scene_frames(board, root):
+def scene_frames(board, root, *, index=None):
     from koma.editor.sequences import SequenceIndex
-    index = SequenceIndex(board)
+    index = index if index is not None else SequenceIndex(board)
     frames, following = index.nodes, index.following
     result = []
     identifier = following.get(root.id)

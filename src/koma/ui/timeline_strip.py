@@ -258,7 +258,14 @@ class TimelineStrip:
     def audio_top(self):
         return self.frames_top + self.style.track_height + self.keyframe_lane.height
 
-    def reset(self):
+    @property
+    def view_total(self):
+        timeline = self.player.timeline
+        tail = self.keyframe_lane.end
+        return max(timeline.total if timeline else 0,
+            tail + 1 / self.player.view.board.fps if tail else 0)
+
+    def reset(self, *, preserve_camera=False):
         self.generation += 1
         self.scroll_requests.pending = None
         if self.native_navigation:
@@ -269,20 +276,21 @@ class TimelineStrip:
         self.marker_lane.cancel_rename()
         self.navigator.end()
         self.duration_input.cancel()
-        self.offset = 0
         self.ruler_key = None
-        self.fit_requested = True
-        self.scale = None
-        self.initial_requested = True
+        if not preserve_camera:
+            self.offset = 0
+            self.fit_requested = True
+            self.scale = None
+            self.initial_requested = True
         self.geometry_key = None
         self.sync()
         self.prepare_scroll()
         if self.native_navigation is None and self.player.presenting:
-            self.scroll_requests.request(0)
+            self.scroll_requests.request(self.offset)
 
     def ruler_seek(self, e):
         if self.scale:
-            self.navigator.seek(self.scale.seconds(e.local_position.x))
+            self.navigator.seek(self.scale.seconds(e.local_position.x), snap=True)
 
     def ruler_begin(self, e):
         if self.scale:
@@ -355,7 +363,7 @@ class TimelineStrip:
         timeline = self.player.timeline
         if timeline and timeline.total > 0 and self.width:
             self.offset = 0
-            self.scale = TimeScale.fit(self.width, timeline.total)
+            self.scale = TimeScale.fit(self.width, self.view_total)
             self.geometry_key = None
             self.sync()
             self.prepare_scroll()
@@ -369,7 +377,7 @@ class TimelineStrip:
         self.geometry_key = self.ruler_key = None
         if self.scale and self.width and self.player.timeline and self.player.timeline.total > 0:
             self.scale, self.offset = timeline_viewport.zoom_at(self.scale, self.offset, self.width,
-                self.player.timeline.total, self.player.view.board.fps, 1, self.width / 2,
+                self.view_total, self.player.view.board.fps, 1, self.width / 2,
                 self.player.view.settings.configuration.values['animatic'])
             self.prepare_scroll()
         if self.native_navigation:
@@ -436,7 +444,7 @@ class TimelineStrip:
             return
         anchor = self.width / 2 if anchor_x is None else max(0, min(self.width, anchor_x))
         self.scale, self.offset = timeline_viewport.zoom_at(self.scale, self.offset, self.width,
-            timeline.total, self.player.view.board.fps, factor, anchor,
+            self.view_total, self.player.view.board.fps, factor, anchor,
             self.player.view.settings.configuration.values['animatic'])
         self.fit_requested = False
         self.initial_requested = False
@@ -450,7 +458,7 @@ class TimelineStrip:
         timeline = self.player.timeline
         if not timeline or timeline.total <= 0 or not self.width:
             return None
-        return timeline_viewport.zoom_limits(self.width, timeline.total, self.player.view.board.fps,
+        return timeline_viewport.zoom_limits(self.width, self.view_total, self.player.view.board.fps,
             self.player.view.settings.configuration.values['animatic'])
 
     def slide_zoom(self, e):
@@ -486,7 +494,7 @@ class TimelineStrip:
             self.geometry_key = None
         fps = view.board.fps
         self.fps.value = f'{fps} FPS'
-        key = (id(timeline), self.scale)
+        key = (id(timeline), self.scale, self.keyframe_lane.end)
         if self.scale and key != self.geometry_key:
             for index, frame in enumerate(timeline.frames):
                 block = self.blocks[frame.id]
@@ -495,7 +503,7 @@ class TimelineStrip:
                 block.box.left = self.scale.pixels(timeline.starts[index])
                 span = timeline.durations[index] if hasattr(timeline, 'durations') else frame.duration
                 block.box.width = self.scale.pixels(span)
-                block.handle.disabled = not timeline.local_editing
+                block.handle.disabled = not timeline.duration_editing
                 width = max(0, block.box.width - 2)
                 height = max(0, self.style.track_height - self.style.caption_height)
                 block.labels.visible = width >= self.style.thumbnail_label_minimum
@@ -504,7 +512,7 @@ class TimelineStrip:
                 block.title.value = view.production.label(frame.id)
                 block.duration.value = f'{duration_text(frame.duration, fps, frames=True)} f'
                 block.box.tooltip = f'{block.title.value} · {block.duration.value} · {duration_text(frame.duration, fps)} s'
-            self.track.width = timeline_viewport.content_width(self.scale, self.width or 0, timeline.total,
+            self.track.width = timeline_viewport.content_width(self.scale, self.width or 0, self.view_total,
                 self.player.view.settings.configuration.values['animatic'])
             self.ruler.width = self.track.width
             self.geometry_key = key

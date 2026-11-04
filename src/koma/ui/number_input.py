@@ -52,12 +52,18 @@ class NumberInput:
         if self.slider:
             self.slider.value = number
 
+    def publish_change(self, e=None):
+        """Publish the editor and bounds alongside the consumer's preview."""
+        self.page.update(self.content)
+        self.on_change(e)
+
+    @explicit_updates
     def changed(self, e=None):
         try:
             self.sync_bounds(self.validate(self.value))
         except ValueError:
             pass
-        self.on_change(e)
+        self.publish_change(e)
 
     @explicit_updates
     def adjust(self, direction):
@@ -66,9 +72,9 @@ class NumberInput:
         except ValueError:
             return
         self.value = min(self.maximum, max(self.minimum, round(number + direction * self.step, 6)))
-        self.on_change(None)
+        self.publish_change()
 
     @explicit_updates
     def slid(self, e):
         self.value = round(e.control.value) if self.integer else round(e.control.value, 2)
-        self.on_change(e)
+        self.publish_change(e)

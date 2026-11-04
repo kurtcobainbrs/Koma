@@ -2,6 +2,10 @@ import 'package:flet/flet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+// Camera state belongs to the view's control lifetime, not its mounted widget.
+// Flet removes invisible mode widgets; weak keys avoid retaining closed projects.
+final _viewCameras = Expando<({int revision, Matrix4 matrix})>();
+
 class SpatialExtension extends FletExtension {
   @override
   Widget? createWidget(Key? key, Control control) => control.type == 'koma_spatial_view'
@@ -30,7 +34,10 @@ class _SpatialViewState extends State<SpatialView> {
   }
 
   void cameraChanged() {
-    if (!applying) scheduleReport();
+    if (!applying) {
+      _viewCameras[widget.control] = (revision: revision, matrix: camera.value.clone());
+      scheduleReport();
+    }
   }
 
   void report() {
@@ -56,8 +63,12 @@ class _SpatialViewState extends State<SpatialView> {
       revision = next;
       final zoom = control.getDouble('camera_zoom', 1)!;
       applying = true;
-      camera.value = Matrix4.diagonal3Values(zoom, zoom, 1)
-        ..setTranslationRaw(control.getDouble('camera_x', 0)!, control.getDouble('camera_y', 0)!, 0);
+      final saved = _viewCameras[control];
+      camera.value = saved != null && saved.revision == next
+          ? saved.matrix.clone()
+          : (Matrix4.diagonal3Values(zoom, zoom, 1)
+            ..setTranslationRaw(control.getDouble('camera_x', 0)!, control.getDouble('camera_y', 0)!, 0));
+      _viewCameras[control] = (revision: revision, matrix: camera.value.clone());
       applying = false;
     }
     return LayoutControl(control: control, child: InteractiveViewer(

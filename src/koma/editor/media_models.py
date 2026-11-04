@@ -46,7 +46,7 @@ class AudioTrack:
             raise ValueError('Identificador ou arquivo de áudio inválido.')
         if not isinstance(self.title, str) or len(self.title) > 200:
             raise ValueError('Nome de áudio inválido.')
-        if not finite_range(self.duration, 1 / 48000, MAX_AUDIO_SECONDS) or not finite_range(self.start, 0, maximum_time):
+        if not finite_range(self.duration, 1 / 48000, MAX_AUDIO_SECONDS) or not finite_range(self.start, -maximum_time, maximum_time):
             raise ValueError('Duração ou posição da trilha de áudio inválida.')
         if not isinstance(self.scene_id, str) or (self.scene_id and self.scene_id not in scenes):
             raise ValueError('Cena da trilha de áudio indisponível.')

@@ -44,8 +44,12 @@ class TimelineThumbnail:
         if data:
             image_width, image_height, left, top, angle = image_geometry(png_size(data),
                 (logical_width, logical_height), frame.active_media.transform)
-            self.canvas.controls = [ft.Image(src=data if image_source is None else image_source, width=image_width, height=image_height,
-                left=left, top=top, rotate=ft.Rotate(angle=angle), fit=ft.BoxFit.FILL, gapless_playback=True)]
+            transform = frame.active_media.transform
+            self.canvas.controls = [ft.Container(width=image_width, height=image_height,
+                left=left, top=top, rotate=ft.Rotate(angle=angle), content=ft.Image(
+                    src=data if image_source is None else image_source, width=image_width, height=image_height,
+                    scale=ft.Scale(scale_x=-1 if transform.flip_x else 1, scale_y=-1 if transform.flip_y else 1),
+                    fit=ft.BoxFit.FILL, gapless_playback=True))]
             if view is not None:
                 self.canvas.controls = [media_filter(view, ft.Stack(controls=self.canvas.controls,
                     clip_behavior=ft.ClipBehavior.HARD_EDGE), left=0, right=0, top=0, bottom=0)]

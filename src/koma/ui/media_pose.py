@@ -22,6 +22,8 @@ class MediaPoseControl(ft.LayoutControl):
     y: float = 0
     zoom: float = 1
     angle: float = 0
+    flip_x: bool = False
+    flip_y: bool = False
     tool: str = 'move'
     editing: bool = False
     generation: int = 0

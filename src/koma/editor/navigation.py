@@ -274,7 +274,8 @@ class CanvasNavigation:
 
     @explicit_updates
     async def key_down(self, e):
-        if self.view.references.active:
+        from koma.ui.keyboard_scope import dialog_owns_keyboard
+        if dialog_owns_keyboard(self.view.page) or self.view.references.active:
             return
         key = e.key.lower()
         if key.startswith('shift'):

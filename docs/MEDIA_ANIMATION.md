@@ -42,7 +42,8 @@ Trocar mídia não mistura animações nem altera a duração. Posições são f
 da tela, escala é proporcional e giro tem sentido horário. O tempo é local
 ao quadro, em segundos, com criação das chaves alinhada aos frames do projeto.
 Alterar a duração não destrói chaves posteriores; as que ficam fora do quadro
-são preservadas e não participam da reprodução até estender sua duração.
+são preservadas e continuam visíveis na trilha do quadro selecionado. Reprodução
+e exportação permanecem limitadas à duração do quadro.
 
 Canvas, miniaturas e PDF mostram a pose no início do quadro. O Animatic e o
 MP4 avaliam a animação no tempo local, inclusive ao exportar intervalos.
@@ -60,3 +61,17 @@ documento; o MP4 usa composição por quadro em fluxo, sem armazenar o filme.
 A reprodução das transformações usa o relógio de quadros do cliente, sem
 depender da frequência das atualizações Python ou arredondar o tempo entre
 keyframes. A edição continua alinhada a frames inteiros.
+
+O formato 12 também guarda `flip_x` e `flip_y` na transformação da mídia.
+Os botões Inverter horizontal/vertical ficam nas propriedades do node, em Mídias, e alteram
+somente a mídia ativa, em uma operação de histórico. Essa orientação é fixa,
+independente de Auto Key; preserva a animação e os arquivos originais. Canvas,
+miniaturas, preview, PDF e MP4 usam a mesma orientação. Projetos anteriores
+recebem os dois valores desligados.
+
+A trilha de keys acompanha o quadro selecionado, independentemente da agulha.
+Keys além da duração aparecem em tom discreto e podem ser selecionados,
+arrastados ou excluídos. A área de rolagem alcança esses keys, sem alterar
+o tempo dos nodes, o áudio ou a exportação. Selecionar um key fora do quadro
+não transfere a seleção para o quadro seguinte. Delete usa essa seleção
+explícita e preserva os keys dos outros nodes.

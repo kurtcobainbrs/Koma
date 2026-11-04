@@ -1,7 +1,7 @@
 """Thin retained lane for the current media's node-owned keyframes."""
 import flet as ft
 from koma.editor.keyframe_edit import KeyframeEditor
-from koma.ui.design import DRAG_INTERVAL_MS, BORDER, COMPACT_CONTROL_HEIGHT
+from koma.ui.design import DRAG_INTERVAL_MS, BORDER, MUTED, COMPACT_CONTROL_HEIGHT
 from koma.ui.event_updates import explicit_updates
 
 KEYFRAME_HIT_SIZE = COMPACT_CONTROL_HEIGHT
@@ -46,13 +46,25 @@ class KeyframeLane:
         self.owner = None
         self.points = {}
         self.height = 0
+        self.end = 0.0
         self.content = ft.Container(left=0, height=0, visible=False,
             border=ft.Border(bottom=ft.BorderSide(1, BORDER)), content=ft.Stack(clip_behavior=ft.ClipBehavior.HARD_EDGE))
 
+    def frame(self):
+        player = self.strip.player
+        selected = player.selection.active
+        return next((frame for frame in player.timeline.frames if frame.id == selected), None) if player.timeline else None
+
+    def start(self):
+        frame = self.frame()
+        timeline = self.strip.player.timeline
+        return next((start for item, start in zip(timeline.frames, timeline.starts) if frame and item.id == frame.id), 0) if timeline else 0
+
     def sync(self):
         player = self.strip.player
-        frame = player.media_transform.frame()
+        frame = self.frame()
         transform = frame.active_media.transform if frame and frame.active_media else None
+        self.end = self.start() + max((key.time for key in transform.keyframes), default=0) if transform else 0
         owner = (frame.id, frame.active_media.id) if transform else None
         if owner != self.owner:
             self.editor.selected = None
@@ -66,7 +78,7 @@ class KeyframeLane:
         if not visible or not self.strip.scale:
             self.content.content.controls = []
             return
-        keys = [key for key in transform.keyframes if key.time < frame.duration]
+        keys = transform.keyframes
         times = {key.time for key in keys}
         if self.editor.selected not in times:
             self.editor.selected = None
@@ -74,13 +86,14 @@ class KeyframeLane:
         color = player.view.settings.configuration.values['appearance']['selection']
         for key in keys:
             point = self.points[key.time]
-            point.icon.color = color if self.editor.selected == key.time else ft.Colors.ON_SURFACE
+            point.icon.color = color if self.editor.selected == key.time else MUTED if key.time >= frame.duration else ft.Colors.ON_SURFACE
             point.content.left = self.x(key.time)
-            point.content.tooltip = f'{round(key.time * player.view.board.fps) + 1:04d} f · arraste para mover; Delete para excluir'
+            point.content.tooltip = f'{round(key.time * player.view.board.fps) + 1:04d} f' + (
+                ' · fora do quadro' if key.time >= frame.duration else '') + ' · arraste para mover; Delete para excluir'
         self.content.content.controls = [point.content for point in self.points.values()]
 
     def x(self, time):
-        return self.strip.scale.pixels(self.strip.player.timeline.starts[self.strip.player.current] + time) - KEYFRAME_HIT_SIZE / 2
+        return self.strip.scale.pixels(self.start() + time) - KEYFRAME_HIT_SIZE / 2
 
     def preview(self, old_time, time):
         point = self.points.get(old_time)

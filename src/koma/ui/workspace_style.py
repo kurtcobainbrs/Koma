@@ -22,6 +22,8 @@ class WorkspaceStyle:
     media_thumbnail_width: float = 64
     slider_width: float = 112
     track_label_width: float = 96
+    audio_scope_width: float = 110
+    audio_file_width: float = 200
     ruler_height: float = COMPACT_CONTROL_HEIGHT
     marker_height: float = COMPACT_CONTROL_HEIGHT
     sequence_height: float = COMPACT_CONTROL_HEIGHT - APP_PADDING * 2

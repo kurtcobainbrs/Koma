@@ -24,6 +24,23 @@ class ProjectMontageTests(TestCase):
             markers=(TimelineMarker(title='B marker', position=.5, scene_id=b.id),))
         return self.view(), a, b, first, second
 
+    def test_entering_animatic_defaults_to_montage_even_with_a_selected_shot(self):
+        view, a, b, first, second = self.project()
+        board, history = view.board, tuple(view.history.past)
+        view.workspace.navigation.apply_selection({second.id}, second.id)
+        player = view.player
+        player.open()
+        self.assertTrue(player.project_mode)
+        self.assertIsInstance(player.timeline, ProjectTimeline)
+        self.assertEqual(tuple(frame.id for frame in player.timeline.frames), (first.id, second.id))
+        player.select_scene(a.id)
+        player.close()
+        player.open()
+        self.assertTrue(player.project_mode)
+        self.assertIsInstance(player.timeline, ProjectTimeline)
+        self.assertIs(view.board, board)
+        self.assertEqual(tuple(view.history.past), history)
+
     def test_montage_matches_export_and_scene_navigation_does_not_change_document(self):
         view, a, b, first, second = self.project()
         before = view.board
@@ -35,21 +52,21 @@ class ProjectMontageTests(TestCase):
         export = ExportSequence.from_project(before)
         self.assertEqual(player.timeline.frames, export.frames)
         self.assertEqual(player.timeline.durations, export.durations)
-        self.assertEqual(player.timeline.total, 7)
-        self.assertEqual(player.timeline.starts, [0, 4])
+        self.assertEqual(player.timeline.total, 5)
+        self.assertEqual(player.timeline.starts, [0, 2])
         self.assertIs(player.timeline.frames[0], next(frame for frame in before.frames if frame.id == first.id))
-        self.assertEqual(player.timeline.audio_tracks[1].start, 4)
-        self.assertEqual(player.timeline.markers[0].position, 4.5)
+        self.assertEqual(player.timeline.audio_tracks[1].start, 2)
+        self.assertEqual(player.timeline.markers[0].position, 2.5)
         outside = TimelineMarker(title='Outside scene', position=8, scene_id=a.id)
         projected = ProjectTimeline(replace(before, markers=(*before.markers, outside)))
         self.assertNotIn(outside.id, {marker.id for marker in projected.markers})
         with patch.object(player.audio_transport, '_submit') as submitted:
             player.audio_transport.update(player.timeline, view.store, True, 0)
-            self.assertEqual(submitted.call_args.args[0].scene_id, a.id)
-            player.audio_transport.update(player.timeline, view.store, True, 4.5)
-            self.assertEqual(submitted.call_args.args[0].scene_id, b.id)
+            self.assertEqual(submitted.call_args.args[0][0].scene_id, a.id)
+            player.audio_transport.update(player.timeline, view.store, True, 2.5)
+            self.assertEqual(submitted.call_args.args[0][0].scene_id, b.id)
         player.reference_presentation.data.sync()
-        self.assertEqual(player.reference_presentation.data.counts, (96, 72))
+        self.assertEqual(player.reference_presentation.data.counts, (48, 72))
         index = view.sequences.index
         with patch.object(index, 'playback', side_effect=AssertionError('Scene list rebuilt during seek')):
             player.strip.navigator.seek(4.5)
@@ -81,7 +98,7 @@ class ProjectMontageTests(TestCase):
         fixtures.finish(view.graph.redo())
         self.assertEqual(view.player.timeline.frames[0].id, second.id)
 
-    def test_project_selection_excludes_loose_nodes_and_unscoped_audio(self):
+    def test_project_selection_excludes_loose_nodes_and_includes_project_audio(self):
         view, a, b, first, second = self.project()
         loose, detached = StoryFrame(title='Loose'), StoryFrame(title='Detached chain')
         board = replace(view.board, frames=(*view.board.frames, loose, detached),
@@ -92,8 +109,8 @@ class ProjectMontageTests(TestCase):
         for projection in (ProjectTimeline(board), ExportSequence.from_project(board)):
             self.assertEqual(tuple(frame.id for frame in projection.frames), (first.id, second.id))
             self.assertTrue(all(any(frame is node for node in board.frames) for frame in projection.frames))
-            self.assertEqual(projection.total, 7)
-            self.assertEqual(len(projection.audio_tracks), 2)
+            self.assertEqual(projection.total, 5)
+            self.assertEqual(len(projection.audio_tracks), 3)
         self.assertIn(loose, board.frames)
         self.assertIn(detached, board.frames)
         without_scenes = Storyboard(frames=(loose, detached),

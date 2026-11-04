@@ -1,12 +1,15 @@
 """Document shortcuts remain available while text inputs own keyboard focus."""
 
 from koma.editor.shortcuts import Action
+from koma.ui.keyboard_scope import dialog_owns_keyboard
 
 DOCUMENT_ACTIONS = frozenset((Action.NEW, Action.OPEN, Action.SAVE, Action.SAVE_AS,
     Action.CLOSE_TAB, Action.NEXT_TAB, Action.PREVIOUS_TAB, Action.RECENT, Action.SEARCH))
 
 
 async def dispatch(application, e):
+    if dialog_owns_keyboard(application.page):
+        return True
     modifiers = {name for field, name in (('ctrl', 'Ctrl'), ('alt', 'Alt'), ('shift', 'Shift'), ('meta', 'Meta'))
         if getattr(e, field, False)}
     view = application.view

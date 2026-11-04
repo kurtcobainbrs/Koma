@@ -5,6 +5,7 @@ from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.image_source import media_thumbnail_source
 from koma.ui.typography import TEXT_SMALL
 from koma.ui.media_filter import media_filter
+from koma.ui.event_updates import action_event
 
 MEDIA_PAGE_SIZE = 24
 MEDIA_VISIBLE_ROWS = 4
@@ -23,7 +24,17 @@ class NodeMediaList:
         self.next = ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, tooltip='Próximas mídias',
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=lambda e: self.page(1))
         self.pagination = ft.Row([self.count, self.previous, self.next], spacing=0)
-        self.content = ft.Column([self.rows, self.pagination], spacing=APP_PADDING, tight=True)
+        self.flips = {axis: ft.IconButton(icon=icon, tooltip=label, width=COMPACT_CONTROL_HEIGHT,
+            height=COMPACT_CONTROL_HEIGHT, on_click=action_event(self.flip, axis))
+            for axis, icon, label in (('horizontal', ft.Icons.SWAP_HORIZ, 'Inverter horizontal'),
+                ('vertical', ft.Icons.SWAP_VERT, 'Inverter vertical'))}
+        self.orientation = ft.Row([ft.Text('Inverter', size=TEXT_SMALL, expand=True),
+            *self.flips.values()], spacing=0, visible=False)
+        self.content = ft.Column([self.rows, self.pagination, self.orientation], spacing=APP_PADDING, tight=True)
+
+    async def flip(self, axis):
+        if self.identifier:
+            await self.view.node_media.flip(self.identifier, axis)
 
     def page(self, delta):
         self.page_number += delta
@@ -33,6 +44,7 @@ class NodeMediaList:
 
     def sync(self, frame):
         self.content.visible = bool(frame and frame.node_type.image)
+        self.orientation.visible = bool(frame and frame.active_media)
         if not frame:
             return
         if frame.id != self.identifier:
@@ -43,6 +55,12 @@ class NodeMediaList:
                 if item.id == frame.active_media_id), 0)
             self.active_key = active_key
         self.identifier = frame.id
+        for axis, button in self.flips.items():
+            button.disabled = frame.active_media is None or not self.view.editable() or self.view.player.editing
+            button.selected = bool(frame.active_media and getattr(frame.active_media.transform,
+                'flip_x' if axis == 'horizontal' else 'flip_y'))
+            button.style = ft.ButtonStyle(animation_duration=0,
+                bgcolor=ft.Colors.PRIMARY_CONTAINER if button.selected else None)
         key = (frame.id, frame.media, frame.active_media_id, self.page_number, self.view.session)
         if key == self.key:
             return

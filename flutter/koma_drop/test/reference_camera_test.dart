@@ -39,8 +39,7 @@ void main() {
     final pose = backend.events.lastWhere((event) => event['name'] == 'pose')['data'] as Map;
     expect(pose['zoom'], greaterThan(1));
     // Mirror the server's camera-pose contract, then leave and return to Refs.
-    control.properties.addAll({'camera_zoom': pose['zoom'],
-      'camera_x': pose['x'], 'camera_y': pose['y']});
+    // Leave server properties deliberately stale: returning must not replay them.
     await tester.pumpWidget(build(false));
     await tester.pumpWidget(build(true));
     await tester.pumpAndSettle();

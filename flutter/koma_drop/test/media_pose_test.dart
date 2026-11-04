@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:koma_drop/media_pose.dart';
+import 'package:flet/src/controls/container.dart';
 import 'package:flutter/gestures.dart';
+import 'dart:convert';
 
 class PoseBackend extends FletBackend {
   PoseBackend() : super(pageUri: Uri.parse('http://localhost'), assetsDir: '', extensions: [], multiView: false);
@@ -15,6 +17,66 @@ class PoseBackend extends FletBackend {
 }
 
 void main() {
+  testWidgets('canvas zoom retains decoded media without a filtered subtree texture', (tester) async {
+    final backend = PoseBackend();
+    final control = Control(id: 200, type: 'koma_media_pose', backend: backend, properties: {});
+    final image = Control(id: 201, type: 'Image', backend: backend, parent: control,
+        properties: {'src': base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEUlEQVR4nGP8z4AATEhsPBwAM9EBBzDn4UwAAAAASUVORK5CYII='),
+          'gapless_playback': true, 'filter_quality': 'high'});
+    control.properties['content'] = image;
+    final camera = ValueNotifier<double>(1);
+    await tester.pumpWidget(ChangeNotifierProvider<FletBackend>.value(value: backend,
+        child: MaterialApp(home: Align(alignment: Alignment.topLeft,
+          child: ValueListenableBuilder<double>(valueListenable: camera,
+            builder: (_, zoom, child) => Transform.scale(scale: zoom, child: child),
+            child: SizedBox(width: 200, height: 160, child: MediaPoseView(control: control)))))));
+    await tester.runAsync(() async { await Future<void>.delayed(const Duration(milliseconds: 100)); });
+    await tester.pump();
+    final finder = find.byType(RawImage);
+    final element = tester.element(finder);
+    final decoded = tester.widget<RawImage>(finder).image;
+    expect(decoded, isNotNull);
+    for (final zoom in [.1, .5, 1.0, 2.0, 4.0, .25, 1.0]) {
+      camera.value = zoom;
+      await tester.pump();
+      expect(identical(tester.element(finder), element), isTrue);
+      expect(identical(tester.widget<RawImage>(finder).image, decoded), isTrue);
+      expect(tester.widgetList<Transform>(find.byType(Transform)).every((t) => t.filterQuality == null), isTrue);
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    camera.dispose();
+  });
+
+  testWidgets('flip updates cached media without rebuilding its body', (tester) async {
+    final backend = PoseBackend();
+    final control = Control(id: 100, type: 'koma_media_pose', backend: backend, properties: {});
+    final scene = Control(id: 101, type: 'Stack', backend: backend, parent: control,
+        properties: {'width': 100.0, 'height': 100.0, '_internals': {'host_positioned': true}});
+    final image = Control(id: 102, type: 'Container', backend: backend, parent: scene,
+        properties: {'left': 0.0, 'top': 0.0, 'width': 50.0, 'height': 50.0, 'bgcolor': '#ff0000'});
+    scene.properties['controls'] = [image];
+    control.properties['content'] = scene;
+    Widget build() => ChangeNotifierProvider<FletBackend>.value(value: backend,
+        child: MaterialApp(home: Align(alignment: Alignment.topLeft,
+            child: SizedBox(width: 100, height: 100, child: MediaPoseView(control: control)))));
+    final finder = find.byWidgetPredicate((widget) => widget is ContainerControl && widget.control.id == 102);
+    Offset center() => tester.renderObject<RenderBox>(finder).localToGlobal(const Offset(25, 25));
+    await tester.pumpWidget(build());
+    await tester.pumpAndSettle();
+    final element = tester.element(finder);
+    expect(center(), const Offset(25, 25));
+    control.properties['flip_x'] = true;
+    await tester.pumpWidget(build());
+    await tester.pump();
+    expect(center(), const Offset(75, 25));
+    control.properties['flip_y'] = true;
+    await tester.pumpWidget(build());
+    await tester.pump();
+    expect(center(), const Offset(75, 75));
+    expect(identical(tester.element(finder), element), isTrue);
+    expect(tester.takeException(), isNull);
+  });
   test('linear and held evaluation matches normalized project poses', () {
     final keys = [
       {'time': 0.0, 'x': 0.0, 'y': 0.0, 'scale': 1.0, 'rotation': 0.0, 'interpolation': 'linear'},
@@ -65,6 +127,39 @@ void main() {
     await tester.pump(const Duration(milliseconds: 8));
     expect(translation(), greaterThan(first));
     expect(backend.events.where((event) => event['name'] == 'commit'), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('linear playback stays continuous across presentation updates and seeks explicitly', (tester) async {
+    final backend = PoseBackend();
+    final control = Control(id: 1, type: 'koma_media_pose', backend: backend,
+        properties: {'playing': true, 'generation': 1, 'maximum_time': 2.0, 'keyframes': [
+          {'time': 0.0, 'x': 0.0, 'y': 0.0, 'scale': 1.0, 'rotation': 0.0, 'interpolation': 'linear'},
+          {'time': 2.0, 'x': 1.0, 'y': 0.0, 'scale': 1.0, 'rotation': 0.0, 'interpolation': 'linear'},
+        ]});
+    Widget build() => ChangeNotifierProvider<FletBackend>.value(value: backend,
+        child: MaterialApp(home: Align(alignment: Alignment.topLeft,
+            child: SizedBox(width: 400, height: 300, child: MediaPoseView(control: control)))));
+    double translation() => tester.widgetList<Transform>(find.byType(Transform))
+        .map((widget) => widget.transform.storage[12]).fold(0.0, (a, b) => a + b);
+    await tester.pumpWidget(build());
+    await tester.pump();
+    for (var frame = 0; frame < 30; frame++) {
+      final before = translation();
+      if (frame % 3 == 0) {
+        control.properties['generation'] = frame + 2;
+        control.properties['x'] = -1.0;
+        await tester.pumpWidget(build());
+        expect(translation(), closeTo(before, .00001));
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(translation() - before, closeTo(3.2, .00001));
+    }
+    control.properties.addAll({'playback_revision': 1, 'seconds': .25});
+    await tester.pumpWidget(build());
+    expect(translation(), closeTo(50, .00001));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(translation(), closeTo(53.2, .00001));
     await tester.pumpWidget(const SizedBox());
   });
 

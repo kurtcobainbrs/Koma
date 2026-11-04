@@ -20,14 +20,59 @@ class ReferenceOverlayTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_all_fields_keep_complete_names_and_wrap_in_a_narrow_preview(self):
+        from koma.ui.reference_readout import ReferenceReadout
+        project = Storyboard(title='Projeto com um nome longo para identificar a montagem inteira')
+        scene = StoryFrame(kind='main', title='Cena com identificação completa')
+        frame = StoryFrame(title='Quadro com descrição completa para o trabalho de animação')
+        values = reference_values(frame, FrameReference(scene, 3, project), local_frame=2, count=48,
+            current_frame=50, total_frames=120, fps=24, size=(1080, 1920))
+        overlay = ReferenceOverlay((1080, 1920), tuple(REFERENCE_FIELDS))
+        self.assertEqual(overlay.parts(values, overlay.font), [values[key] for key in REFERENCE_FIELDS if values[key]])
+        self.assertIn(project.title, values['project'])
+        self.assertIn(frame.title, values['shot'])
+        self.assertTrue(values['project'].startswith('Proj.:'))
+        readout = ReferenceReadout()
+        readout.sync(values, tuple(REFERENCE_FIELDS), size=(180, 320))
+        self.assertIsInstance(readout.row, ft.Column)
+        for key, cell in readout.cells.items():
+            self.assertEqual(cell.content.value, values[key])
+            self.assertIsNone(cell.content.max_lines)
+            self.assertEqual(cell.content.no_wrap, readout.metrics.getlength(values[key]) <= 164)
+            self.assertLessEqual(cell.width, 180 - 2 * readout.content.left)
+            self.assertNotIn('…', cell.content.value)
+        self.assertEqual(sum(len(row.controls) for row in readout.row.controls), sum(bool(value) for value in values.values()))
+        for row in readout.row.controls:
+            self.assertLessEqual(sum(cell.width for cell in row.controls) + row.spacing * (len(row.controls) - 1), 164)
+
+    def test_empty_names_are_omitted_without_hiding_production_codes(self):
+        from koma.ui.reference_readout import ReferenceReadout
+        project = Storyboard(title='  ')
+        scene = StoryFrame(kind='main', title='')
+        frame = StoryFrame(title='')
+        values = reference_values(frame, FrameReference(scene, 3, project, scene_number=2),
+            local_frame=1, count=48, current_frame=1, total_frames=48, fps=24, size=(320, 180))
+        self.assertEqual(values['project'], '')
+        self.assertEqual(values['sequence'], '')
+        self.assertEqual(values['scene'], 'Scene_02')
+        self.assertEqual(values['shot'], 'shot_0003')
+        fields = ('project', 'sequence')
+        readout = ReferenceReadout()
+        readout.sync(values, fields)
+        self.assertFalse(readout.content.visible)
+        overlay = ReferenceOverlay((320, 180), fields)
+        picture = Image.new('RGB', (320, 180))
+        self.assertEqual(overlay.parts(values, overlay.font), [])
+        self.assertIs(overlay.apply(picture, values), picture)
+
     def test_fields_are_independent_and_counters_match_encoded_spans(self):
         scene = StoryFrame(kind='main', title='Cena 02')
         shot = StoryFrame(title='Plano A')
         values = reference_values(shot, FrameReference(scene, 3), local_frame=2, count=48,
             current_frame=50, total_frames=120, fps=24, size=(1920, 1080))
-        self.assertEqual(values['duration_frames'], 'Duração: 0048 f')
-        self.assertEqual(values['duration_seconds'], 'Duração: 0002.000 s')
-        self.assertEqual(values['shot_frame'], 'Frame do quadro: 0002/0048')
+        self.assertEqual(values['duration_frames'], 'Dur.: 0048 f')
+        self.assertEqual(values['duration_seconds'], 'Dur.: 0002.000 s')
+        self.assertEqual(values['shot_frame'], 'Shot: 0002/0048')
         self.assertEqual(values['current_frame'], 'Frame: 0050')
         overlay = ReferenceOverlay((1920, 1080), ('fps', 'current_frame'))
         self.assertEqual(overlay.parts(values, overlay.font), ['Frame: 0050', '24 FPS'])

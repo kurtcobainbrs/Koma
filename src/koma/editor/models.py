@@ -226,7 +226,7 @@ class Storyboard:
             for item in collection:
                 item.validate(scenes, MAX_CARDS * MAX_DURATION)
         if len({track.scene_id for track in self.audio_tracks}) != len(self.audio_tracks):
-            raise ValueError('Cada cena aceita uma trilha de áudio. Substitua a trilha existente.')
+            raise ValueError('O projeto e cada cena aceitam uma trilha de áudio própria. Substitua a trilha existente.')
         identifiers = {frame.id for frame in self.frames}
         from koma.editor.sequences import SequenceIndex
         hierarchy = SequenceIndex(self)

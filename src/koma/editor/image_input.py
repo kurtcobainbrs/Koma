@@ -19,6 +19,36 @@ class StoryboardImageInput:
     def __init__(self, view):
         self.view = view
 
+    async def create_from_assets(self, entries, *, label):
+        """Create new nodes from validated project assets, independent of selection."""
+        view = self.view
+        entries = tuple(entries)
+        if not entries or not view.editable():
+            return ()
+        board = view.board
+        if len(board.frames) + len(entries) > MAX_CARDS:
+            raise ValueError(f'O projeto aceita até {MAX_CARDS} nodes.')
+        x, y = insertion_position(view.workspace)
+        spacing = view.settings.configuration.values['canvas']['spacing']
+        from koma.editor.geometry import NODE_WIDTH
+        frames = []
+        for asset, title in entries:
+            if not (view.store.images / asset).is_file():
+                raise ValueError('Imagem indisponível no projeto.')
+            frame = with_image(StoryFrame(title=title, x=coordinate(x, snap=False),
+                y=coordinate(y, snap=False)), asset, title)
+            frames.append(frame)
+            x += NODE_WIDTH + spacing
+        identifiers = tuple(frame.id for frame in frames)
+        updated = view.workspace.scope.attach_new(replace(board, frames=(*board.frames, *frames)), identifiers)
+        updated.validate()
+        view.changed(updated, label=label)
+        view.refresh()
+        view.workspace.navigation.apply_selection(set(identifiers), identifiers[-1])
+        view.page.update(view.content)
+        await view.persist()
+        return identifiers
+
     async def drop(self, paths, position, identifier=None):
         """Destino capturado no drop, validado antes de qualquer alteração."""
         view = self.view

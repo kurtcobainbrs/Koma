@@ -49,10 +49,15 @@ class StoryboardFiles:
         }
         self.menu = popup_menu(tooltip='Arquivo', items=list(self.commands.values()))
 
-    async def initial(self, *, exporting=False):
+    async def initial(self, *, exporting=False, purpose=None):
         files = self.view.settings.configuration.values['files']
         folder = files['export_folder' if exporting else 'import_folder']
+        if purpose:
+            return await self.view.settings.dialog_directories.initial(purpose, folder or self.directory)
         return await asyncio.to_thread(initial_directory, folder or self.directory)
+
+    async def remember_directory(self, purpose, selected_file):
+        await self.view.settings.dialog_directories.remember(purpose, selected_file)
 
     def track_task(self):
         self.task = asyncio.current_task()

@@ -1,8 +1,20 @@
 """Event contract for interactions that publish their own local UI updates."""
 from functools import wraps
-from inspect import iscoroutinefunction
+from inspect import iscoroutinefunction, isawaitable
 
 import flet as ft
+
+
+def action_event(action, *args, **kwargs):
+    """Bind a parameterized command to Flet and await its completion if needed.
+
+    The UI event is deliberately not passed to the command. Arguments express
+    the operation explicitly, including keyword-only command parameters.
+    """
+    async def invoke(e=None):
+        result = action(*args, **kwargs)
+        return await result if isawaitable(result) else result
+    return invoke
 
 
 def explicit_updates(handler):

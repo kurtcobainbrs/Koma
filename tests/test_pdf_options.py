@@ -95,6 +95,29 @@ class PdfOptionTests(TestCase):
             self.assertAlmostEqual(width / height, board.frame_format.aspect_ratio, delta=.03)
             self.assertTrue(any(g > 200 and r < 50 and b < 50 for r, g, b in pixels))
 
+    def test_column_buttons_publish_value_bounds_and_preview_together(self):
+        self.session.board = self.project()
+        view = self.view()
+        before, history = view.board, tuple(view.history.past)
+        panel = PdfExportPanel(view)
+        panel.open()
+        columns = panel.controls['columns']
+        columns.value = columns.maximum
+        self.assertTrue(columns.more.disabled)
+        view.page.update.reset_mock()
+        columns.adjust(-1)
+        self.assertEqual(int(columns.entry.value), columns.maximum - 1)
+        self.assertFalse(columns.more.disabled)
+        view.page.update.assert_any_call(columns.content)
+        view.page.update.assert_any_call(panel.preview, panel.status)
+        self.assertTrue(panel.summary.value.startswith(f'{columns.maximum - 1} ×'))
+        columns.adjust(1)
+        self.assertEqual(int(columns.entry.value), columns.maximum)
+        self.assertTrue(columns.more.disabled)
+        self.assertTrue(panel.summary.value.startswith(f'{columns.maximum} ×'))
+        self.assertIs(view.board, before)
+        self.assertEqual(tuple(view.history.past), history)
+
     def test_export_dialog_cancel_and_confirm_preserve_document_and_capture_options(self):
         self.session.board = self.project()
         view = self.view()

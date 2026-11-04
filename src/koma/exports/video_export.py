@@ -71,7 +71,7 @@ class FrameComposer:
         if original is not None:
             image = ImageOps.exif_transpose(original).convert('RGBA')
             transform = frame.active_media.transform if frame.active_media else frame.image_defaults
-            if transform.at(seconds) != MediaPose():
+            if transform.at(seconds) != MediaPose() or transform.flip_x or transform.flip_y:
                 image = image.transform(size, Image.Transform.AFFINE,
                     inverse_affine(image.size, size, transform, seconds), Image.Resampling.BICUBIC)
             elif frame.image_fit == 'cover':

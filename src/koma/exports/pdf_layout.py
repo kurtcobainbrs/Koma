@@ -114,11 +114,16 @@ class StoryboardSheet(Flowable):
         c.rect(vx, vy, vw, vh, stroke=0, fill=1)
         if frame.image:
             path = self.store.images / frame.image
-            if self.options.filter_matrix is not None:
+            transform = frame.active_media.transform
+            if self.options.filter_matrix is not None or transform.flip_x or transform.flip_y:
                 with Image.open(path) as original:
                     media = ImageOps.exif_transpose(original).convert('RGBA')
+                    if transform.flip_x:
+                        media = ImageOps.mirror(media)
+                    if transform.flip_y:
+                        media = ImageOps.flip(media)
                     media.thumbnail((max(1, round(vw * 3)), max(1, round(vh * 3))), Image.Resampling.LANCZOS)
-                    reader = ImageReader(transform_media(media, self.options.filter_matrix))
+                    reader = ImageReader(transform_media(media, self.options.filter_matrix) if self.options.filter_matrix is not None else media)
             else:
                 reader = ImageReader(str(path))
             dw, dh, dx, dy = placement(reader.getSize(), (vw, vh), frame.image_fit, frame.crop_x, frame.crop_y)

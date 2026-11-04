@@ -1,6 +1,6 @@
 """Audio offset drag: transient preview, captured target, one undoable commit."""
 from dataclasses import replace
-from koma.editor.timeline_navigation import frame_position
+from koma.editor.timeline_navigation import signed_frame_position
 from koma.editor.models import MAX_CARDS, MAX_DURATION
 
 
@@ -9,6 +9,8 @@ class AudioDrag:
         self.player = player
         self.snapshot = None
         self.start = None
+        self.targets = None
+        self.offset = 0
 
     def begin(self, e):
         player = self.player
@@ -20,6 +22,8 @@ class AudioDrag:
         player.strip.marker_lane.cancel_rename()
         player.playing = False
         self.snapshot = (player.view.board, player.view.session, track, e.global_position.x, player.strip.scale)
+        self.offset = player.media.scene_offset(track.scene_id)
+        self.targets = player.snapping.capture(player.timeline, exclude=(('audio', track.id),), playhead=player.position)
         self.start = track.start
         player.render()
         player.focus_timeline()
@@ -31,15 +35,20 @@ class AudioDrag:
         if self.player.view.board is not board or self.player.view.session is not session:
             self.cancel()
             return
-        seconds = max(0, track.start + scale.seconds(e.global_position.x - origin))
-        self.start = frame_position(seconds, MAX_CARDS * MAX_DURATION, board.fps)
+        limit = MAX_CARDS * MAX_DURATION
+        seconds = self.player.snapping.resolve(self.offset + track.start + scale.seconds(e.global_position.x - origin),
+            scale, self.targets, minimum=self.offset - limit, maximum=self.offset + limit, edges=(0, track.duration))
+        self.start = signed_frame_position(seconds - self.offset, limit, board.fps)
         lane = self.player.strip.audio_lane
         lane.sync()
         self.player.view.page.update(lane.content)
 
     async def end(self, e=None):
+        if e is not None and getattr(e, 'global_position', None) is not None:
+            self.move(e)
         snapshot, start = self.snapshot, self.start
         self.snapshot = self.start = None
+        self.targets = None
         if snapshot:
             board, session, track, _, _ = snapshot
             if self.player.view.board is board and self.player.view.session is session and self.player.opened:
@@ -50,5 +59,6 @@ class AudioDrag:
 
     def cancel(self, e=None, *, update=True):
         self.snapshot = self.start = None
+        self.targets = None
         if update and self.player.opened:
             self.player.render()

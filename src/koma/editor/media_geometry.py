@@ -20,10 +20,15 @@ def inverse_affine(source, viewport, transform, seconds=0):
     c, s = cos(angle), sin(angle)
     fit = width / source[0]
     ox, oy = vw * (.5 + pose.x), vh * (.5 + pose.y)
-    return (c / (pose.scale * fit), s / (pose.scale * fit),
+    values = (c / (pose.scale * fit), s / (pose.scale * fit),
         (vw / 2 - left - (c * ox + s * oy) / pose.scale) / fit,
         -s / (pose.scale * fit), c / (pose.scale * fit),
         (vh / 2 - top + (s * ox - c * oy) / pose.scale) / fit)
+    a, b, tx, d, e, ty = values
+    return (-a if transform.flip_x else a, -b if transform.flip_x else b,
+        source[0] - tx if transform.flip_x else tx,
+        -d if transform.flip_y else d, -e if transform.flip_y else e,
+        source[1] - ty if transform.flip_y else ty)
 
 
 def image_geometry(source, viewport, transform, seconds=0, *, pose=None):

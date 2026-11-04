@@ -10,6 +10,7 @@ import wave
 import av
 from koma.documents.audio import SAMPLE_RATE, CHANNELS, validate_audio
 from koma.editor.media_models import MAX_AUDIO_TRACKS
+from koma.editor.models import MAX_CARDS
 
 AUDIO_BLOCK_SAMPLES = 1024
 AUDIO_BIT_RATE = 192000
@@ -41,17 +42,20 @@ class AudioInput:
 
 class AudioMixer:
     def __init__(self, tracks, samples):
-        if len(tracks) > MAX_AUDIO_TRACKS:
+        if len(tracks) > MAX_AUDIO_TRACKS * MAX_CARDS or len({track.path for track in tracks}) > MAX_AUDIO_TRACKS:
             raise ValueError('Há trilhas demais para exportar.')
         self.tracks, self.samples = tracks, samples
 
     def blocks(self, cancelled):
         with ExitStack() as resources:
             tracks = []
+            sources = {}
             for track in self.tracks:
                 if track.volume == 0:
                     continue
-                source = resources.enter_context(wave.open(str(track.path), 'rb'))
+                source = sources.get(track.path)
+                if source is None:
+                    source = sources[track.path] = resources.enter_context(wave.open(str(track.path), 'rb'))
                 offset = min(source.getnframes(), round(track.offset * SAMPLE_RATE))
                 length = source.getnframes() - offset
                 if track.duration is not None:

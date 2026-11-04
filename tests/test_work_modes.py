@@ -14,6 +14,46 @@ class WorkModeTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_open_dialog_blocks_workspace_shortcuts_until_closed(self):
+        import flet as ft
+        from koma.ui.keyboard_scope import dialog_owns_keyboard
+        from koma.editor.application_commands import dispatch
+        view, player = self.editor()
+        player.open()
+        popup = ft.AlertDialog(open=True)
+        view.page._dialogs = Data(controls=[popup])
+        app = Data(page=view.page)
+        board, history = view.board, tuple(view.history.past)
+        with patch.object(player.drawing_surface, 'toggle_tools') as picker:
+            for key in ('Tab', 'Space', 'Delete', '1'):
+                self.assertTrue(fixtures.finish(dispatch(app, Data(key=key))))
+                fixtures.finish(player.key_down(Data(key=key)))
+                fixtures.finish(view.workspace.navigation.key_down(Data(key=key)))
+            picker.assert_not_called()
+        self.assertTrue(player.opened)
+        self.assertIs(view.board, board)
+        self.assertEqual(tuple(view.history.past), history)
+        nested = ft.AlertDialog(open=True)
+        view.page._dialogs.controls.append(nested)
+        popup.open = False
+        self.assertTrue(dialog_owns_keyboard(view.page))
+        nested.open = False
+        self.assertFalse(dialog_owns_keyboard(view.page))
+        view.page._dialogs.controls.append(ft.SnackBar(content=ft.Text('Pronto'), open=True))
+        self.assertFalse(dialog_owns_keyboard(view.page))
+
+    def test_escape_does_not_leave_animatic_when_no_modal_gesture_is_active(self):
+        view, player = self.editor()
+        player.open()
+        board, past = view.board, tuple(view.history.past)
+        with patch.object(player, 'close', side_effect=AssertionError('Escape changed workspace')):
+            fixtures.finish(player.key_down(Data(key='Escape')))
+            fixtures.finish(player.key_down(Data(key='Escape')))
+        self.assertTrue(player.opened)
+        self.assertIs(view.work_modes.active_surface, view.work_modes.animatic)
+        self.assertIs(view.board, board)
+        self.assertEqual(tuple(view.history.past), past)
+
     def test_mode_shortcuts_use_top_row_digits_and_respect_field_focus_and_remapping(self):
         from koma.editor.shortcuts import Action
         view, player = self.editor()
@@ -180,7 +220,8 @@ class WorkModeTests(TestCase):
         self.assertEqual(view.player.scene_anchor, b.id)
         self.assertEqual(view.player.selection.active, second.id)
         self.assertEqual(view.properties.active, second.id)
-        self.assertEqual(view.player.media.scope, b.id)
+        self.assertEqual(view.player.media.scope, '')
+        self.assertEqual(view.player.position, first.duration)
         self.assertIs(view.board, snapshot)
         self.assertEqual(len(view.history.past), history)
 
@@ -212,12 +253,12 @@ class WorkModeTests(TestCase):
         player.scene_choice.value = b.id
         player.choose_scene()
         previous = player.timeline
-        player.position = .5
+        player.position = first.duration + .5
         player.close()
         player.open()
         self.assertIs(player.timeline, previous)
         self.assertEqual(player.scene_anchor, b.id)
-        self.assertEqual(player.position, .5)
+        self.assertEqual(player.position, first.duration + .5)
         self.assertFalse(view.workspace.navigation.selection.ids)
         player.close()
         view.workspace.navigation.apply_selection({first.id}, first.id)

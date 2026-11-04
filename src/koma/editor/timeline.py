@@ -13,6 +13,12 @@ from koma.editor.scenes import principal, scene_frames
 
 class Timeline:
     local_editing = True
+    duration_editing = True
+    playback_start = 0.0
+
+    @property
+    def playback_end(self):
+        return self.total
     def __init__(self, board, active=None):
         self.board = board
         sequence_board = ordered(board)
@@ -34,8 +40,6 @@ class Timeline:
         scope = self.root.id if self.root else ''
         self.audio_tracks = tuple(track for track in board.audio_tracks if track.scene_id == scope)
         self.markers = tuple(sorted((marker for marker in board.markers if marker.scene_id == scope), key=lambda marker: (marker.position, marker.id)))
-        if self.frames:
-            self.total = max(self.total, *(track.start + track.duration for track in self.audio_tracks), self.total)
 
     def index_at(self, seconds):
         return max(0, min(len(self.frames) - 1, bisect_right(self.starts, seconds) - 1))
@@ -64,8 +68,7 @@ class Timeline:
         for frame in preview.frames:
             preview.starts.append(preview.picture_total)
             preview.picture_total += frame.duration
-        preview.total = max(preview.picture_total,
-            *(track.start + track.duration for track in preview.audio_tracks), preview.picture_total) if preview.frames else 0
+        preview.total = preview.picture_total
         return preview
 
     def with_durations(self, values):
@@ -85,8 +88,7 @@ class Timeline:
             preview.starts.append(start + delta)
             delta += values.get(frame.id, frame.duration) - frame.duration
         preview.picture_total = self.picture_total + delta
-        preview.total = max(preview.picture_total,
-            *(track.start + track.duration for track in self.audio_tracks), preview.picture_total)
+        preview.total = preview.picture_total
         return preview
 
 

@@ -44,7 +44,9 @@ class FrameDrawingEditor:
             self.clear_selection()
 
     def clear_selection(self):
+        selected = self.selected
         self.selected = self.selection_owner = None
+        return selected is not None
 
     def selected_index(self):
         frame = self.active_frame()
@@ -75,6 +77,7 @@ class FrameDrawingEditor:
         frame = self.active_frame()
         if not frame or not player.opened or not view.editable() or player.editing:
             return
+        player.edit_selection.claim(self)
         view.properties.release_field_focus()
         if not frame.drawing.visible:
             view.notify('Mostre a camada de desenho antes de editar.', 'info')

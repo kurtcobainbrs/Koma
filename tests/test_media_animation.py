@@ -16,6 +16,8 @@ from koma.exports.video_export import FrameComposer
 from koma.editor.media_geometry import image_geometry, inverse_affine
 from tests import test_storyboard as fixtures
 import json
+from inspect import iscoroutinefunction
+from uuid import uuid4
 
 
 class MediaAnimationTests(TestCase):
@@ -29,6 +31,80 @@ class MediaAnimationTests(TestCase):
         editor = view.player.media_transform
         editor.enabled = True
         return view, editor
+
+    def test_button_handlers_await_record_overwrite_delete_and_flip_commands(self):
+        view, editor = self.editor()
+        flips = view.properties.media_list.flips
+        for button in (editor.ui.key, editor.ui.delete_key, *flips.values()):
+            self.assertTrue(iscoroutinefunction(button.on_click))
+        before, count = view.board, len(view.history.past)
+        fixtures.finish(editor.ui.key.on_click(None))
+        self.assertEqual(len(editor.frame().active_media.transform.keyframes), 1)
+        self.assertEqual(len(view.history.past), count + 1)
+        editor.show_temporary(MediaPose(.2))
+        fixtures.finish(editor.ui.key.on_click(None))
+        keys = editor.frame().active_media.transform.keyframes
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(keys[0].pose.x, .2)
+        fixtures.finish(editor.ui.delete_key.on_click(None))
+        self.assertEqual(editor.frame().active_media.transform.keyframes, ())
+        fixtures.finish(view.graph.undo())
+        self.assertEqual(editor.frame().active_media.transform.keyframes, keys)
+        fixtures.finish(view.graph.redo())
+        self.assertEqual(editor.frame().active_media.transform.keyframes, ())
+        fixtures.finish(flips['horizontal'].on_click(None))
+        self.assertTrue(editor.frame().active_media.transform.flip_x)
+        self.assertEqual(before.frames[0].active_media.transform.keyframes, ())
+
+    def test_flip_properties_target_selected_node_instead_of_playhead_and_update_native_view(self):
+        with patch('koma.ui.drop_runtime.supports', side_effect=lambda capability: capability == 'media_pose_v1'):
+            view = self.view()
+            fixtures.finish(view.import_paths([self.source, self.source]))
+            first, second = view.board.frames
+            player = view.player
+            player.open()
+            player.select_node(first.id, seek=True)
+            player.select_node(second.id)
+            controls = view.properties.media_list
+            self.assertEqual(controls.identifier, second.id)
+            self.assertEqual(player.timeline.frames[player.current].id, first.id)
+            before = view.board
+            fixtures.finish(controls.flips['horizontal'].on_click(None))
+            self.assertFalse(next(frame for frame in view.board.frames if frame.id == first.id).active_media.transform.flip_x)
+            self.assertTrue(next(frame for frame in view.board.frames if frame.id == second.id).active_media.transform.flip_x)
+            self.assertTrue(view.cards[second.id].viewport.pose_control.flip_x)
+            self.assertFalse(player.preview.pose_control.flip_x)
+            self.assertFalse(hasattr(player.media_transform.ui, 'flips'))
+            fixtures.finish(view.graph.undo())
+            self.assertEqual(view.board, before)
+            fixtures.finish(view.graph.redo())
+            self.assertTrue(view.cards[second.id].viewport.pose_control.flip_x)
+
+    def test_playback_clock_restarts_for_new_shot_with_same_image_but_not_periodic_updates(self):
+        with patch('koma.ui.drop_runtime.supports', side_effect=lambda capability: capability == 'media_pose_v1'):
+            view = self.view()
+            fixtures.finish(view.import_paths([self.source]))
+            first = replace(view.board.frames[0], duration=1 / view.board.fps)
+            second = replace(first, id=uuid4().hex, duration=1)
+            view.changed(replace(view.board, frames=(first, second)))
+            view.refresh()
+            player = view.player
+            player.open()
+            player.position = 0
+            player.playing = True
+            player.render()
+            native = player.preview.pose_control
+            revision = native.playback_revision
+            player.position = first.duration + .01
+            player.render_position()
+            self.assertIs(player.preview.pose_control, native)
+            self.assertEqual(native.playback_revision, revision + 1)
+            self.assertAlmostEqual(native.seconds, .01)
+            revision = native.playback_revision
+            for seconds in (.02, .03, .04):
+                player.position = first.duration + seconds
+                player.render_position()
+                self.assertEqual(native.playback_revision, revision)
 
     def test_clicking_blocks_immediately_publishes_their_keys_without_play_or_edit(self):
         view = self.view()

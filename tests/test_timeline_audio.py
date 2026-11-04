@@ -150,8 +150,8 @@ class MediaModelTests(TestCase):
             audio_tracks=(track,), markers=(marker,))
         board.validate()
         timeline = Timeline(board, main.id)
-        self.assertEqual(timeline.total, 3.5)
-        self.assertEqual(timeline_frame_counts(timeline, 24), [84])
+        self.assertEqual(timeline.total, 1)
+        self.assertEqual(timeline_frame_counts(timeline, 24), [24])
         self.assertEqual(Timeline(board, other.id).audio_tracks, ())
         self.assertEqual(Timeline(board, other.id).markers, ())
         removed = graph.remove_frames(board, {main.id})
@@ -230,10 +230,11 @@ class MediaEditingTests(TestCase):
         asyncio.run(media.load_waveform(track))
         self.assertFalse(media.failed)
         media.cancelled.clear()
-        waveform = object()
+        from koma.documents.audio import Waveform
+        waveform = Waveform((array('h', [-1, 1]),), 240)
         with patch('koma.editor.timeline_media.load_waveform', return_value=waveform):
             asyncio.run(media.load_waveform(track))
-        self.assertIs(media.waveforms[(view.store.directory, track.asset)], waveform)
+        self.assertEqual(media.waveforms[(view.store.directory, track.asset)], waveform)
 
 
 class TransportTests(TestCase):

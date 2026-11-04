@@ -27,6 +27,7 @@ class MediaTransformEditor:
         self.drag = None
         self.committing = False
         self.last_time = 0
+        self.playback_owner = None
         self.temporary = None
         options = self.view.settings.configuration.values['animatic']
         self.auto_key = options['media_auto_key']
@@ -96,13 +97,18 @@ class MediaTransformEditor:
             with retain_children(native.content):
                 self.view.page.update(native, *(scrub.text for scrub in self.ui.scrubs.values()), self.ui.temporary_hint)
         else:
-            self.view.page.update(self.player.preview.image, *(scrub.text for scrub in self.ui.scrubs.values()), self.ui.temporary_hint)
+            self.view.page.update(self.player.preview.image_host, *(scrub.text for scrub in self.ui.scrubs.values()), self.ui.temporary_hint)
 
     async def reset(self, channel):
         if self.player.editing:
             return
         values = {'move': {'x': 0, 'y': 0}, 'rotate': {'rotation': 0}, 'scale': {'scale': 1}}
         await self.apply_pose(replace(self.effective_pose(), **values[channel]))
+
+    async def flip(self, axis):
+        frame = self.frame()
+        if frame:
+            await self.view.node_media.flip(frame.id, axis)
 
     def seek_preview(self):
         native = self.player.preview.pose_control
@@ -111,7 +117,10 @@ class MediaTransformEditor:
             self.temporary = None
             self.player.preview.set_time(time)
         if native and self.player.playing:
-            reset = not native.playing or time < self.last_time
+            frame = self.frame()
+            owner = (frame.id, frame.active_media_id) if frame else None
+            reset = not native.playing or owner != self.playback_owner or time < self.last_time
+            self.playback_owner = owner
             self.last_time = time
             if reset:
                 native.seconds, native.playing = time, True
@@ -247,8 +256,8 @@ class MediaTransformEditor:
         except ValueError as exc:
             self.view.notify(str(exc), 'warning')
 
-    async def remove_key(self, time):
-        frame = self.frame()
+    async def remove_key(self, time, *, frame=None):
+        frame = frame or self.frame()
         if self.player.editing or not frame or not frame.active_media or not self.view.editable():
             return
         transform = remove_keyframe(frame.active_media.transform, time)
@@ -256,8 +265,9 @@ class MediaTransformEditor:
             return
         # Keep the visible pose as an unrecorded preview. The saved base and
         # history contain only the key deletion, so Play still uses saved data.
-        pose = self.effective_pose()
-        self.temporary = TemporaryMediaPose(self.owner(), pose)
+        if frame is self.frame():
+            pose = self.effective_pose()
+            self.temporary = TemporaryMediaPose(self.owner(), pose)
         await self.commit(frame, transform, label='Remover keyframe')
 
     async def _edit_key(self, *, remove_only=False):

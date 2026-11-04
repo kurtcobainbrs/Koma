@@ -110,7 +110,9 @@ class ReferenceCanvas:
             ft.Row([
             self.button(ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED, 'Importar imagens', self.actions.pick),
             self.button(ft.Icons.CONTENT_PASTE, 'Colar imagem', self.actions.paste),
-            self.button(ft.Icons.CONTENT_COPY, 'Duplicar', self.actions.duplicate),
+            self.button(ft.Icons.CONTENT_COPY, view.keymap.describe('Copiar imagem', Action.COPY), self.actions.copy_image),
+            self.button(ft.Icons.CONTROL_POINT_DUPLICATE, 'Duplicar', self.actions.duplicate),
+            self.button(ft.Icons.ARROW_FORWARD, 'Enviar selecionadas ao Canvas', self.actions.send_to_canvas),
             self.button(ft.Icons.DELETE_OUTLINE, 'Excluir', self.actions.delete)], spacing=0, tight=True),
             self.tool_separator(),
             self.button(ft.Icons.FIT_SCREEN, 'Enquadrar', self.fit)], spacing=APP_PADDING,
@@ -542,6 +544,10 @@ class ReferenceCanvas:
         self.overlays.refresh_grid(publish=True)
 
     async def restore_camera(self, revision):
+        if isinstance(self.viewer, SpatialView) and self.camera_used:
+            # Native view retains the exact matrix across mode remounts. Replaying
+            # an asynchronous server snapshot here can overwrite the last gesture.
+            return
         # Fit from real layout measurements, not a fixed startup delay.
         try:
             await asyncio.wait_for(self.layout_ready.wait(), timeout=1)
@@ -589,6 +595,7 @@ class ReferenceCanvas:
             self.transform_mode.start(scale=action == Action.SCALE_REFS)
             return
         handlers = {Action.IMPORT_IMAGES: self.actions.pick, Action.PASTE: self.actions.paste,
+            Action.COPY: self.actions.copy_image,
             Action.DUPLICATE: self.actions.duplicate, Action.DELETE: self.actions.delete,
             Action.UNDO: self.view.graph.undo, Action.REDO: self.view.graph.redo,
             Action.FIT: self.fit, Action.FOCUS: self.fit}
@@ -608,7 +615,8 @@ class ReferenceCanvas:
 
     @explicit_updates
     async def key_down(self, e):
-        if not self.active or not self.view.editable():
+        from koma.ui.keyboard_scope import dialog_owns_keyboard
+        if dialog_owns_keyboard(self.view.page) or not self.active or not self.view.editable():
             return
         key = e.key.lower()
         for prefix, modifier in (('shift', 'Shift'), ('control', 'Ctrl'), ('alt', 'Alt'), ('meta', 'Meta')):

@@ -19,16 +19,20 @@ class MediaTransform:
     crop_y: float = 0
     pose: MediaPose = field(default_factory=MediaPose)
     keyframes: tuple[MediaKeyframe, ...] = ()
+    flip_x: bool = False
+    flip_y: bool = False
 
     @property
     def base_signature(self):
-        return self.fit, self.crop_x, self.crop_y, self.pose
+        return self.fit, self.crop_x, self.crop_y, self.pose, self.flip_x, self.flip_y
 
     def at(self, seconds=0):
         return evaluate_pose(self.pose, self.keyframes, seconds)
 
     def validate(self):
         validate_animation(self.pose, self.keyframes)
+        if type(self.flip_x) is not bool or type(self.flip_y) is not bool:
+            raise ValueError('Inversão da mídia inválida.')
         if self.fit not in ('cover', 'contain'):
             raise ValueError('Enquadramento de mídia inválido.')
         if any(type(n) not in (int, float) or not math.isfinite(n) or not -1 <= n <= 1

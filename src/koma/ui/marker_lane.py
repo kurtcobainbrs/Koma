@@ -5,6 +5,7 @@ import flet as ft
 
 from koma.ui.design import BORDER, MUTED, SURFACE, CONTROL_HEIGHT, DRAG_INTERVAL_MS, input_style
 from koma.ui.typography import TEXT_SMALL
+from koma.ui.menus import DesktopContextMenu, menu_item
 
 
 class MarkerFlag:
@@ -22,6 +23,17 @@ class MarkerFlag:
                 on_pan_down=self.pointer_down, on_pan_start=self.begin, on_pan_update=self.move,
                 on_pan_end=self.finish, on_pan_cancel=self.cancel, drag_interval=DRAG_INTERVAL_MS,
                 mouse_cursor=ft.MouseCursor.MOVE))
+        self.box.content = DesktopContextMenu(content=self.box.content, items=[
+            menu_item('Renomear', icon=ft.Icons.EDIT_OUTLINED, on_click=self.rename),
+            menu_item('Remover', icon=ft.Icons.DELETE_OUTLINE, on_click=self.remove)])
+
+    async def remove(self, e=None):
+        player = self.lane.player
+        if player.editing or not player.view.editable():
+            return
+        if any(marker.id == self.identifier for marker in player.timeline.markers):
+            await player.media.remove_marker(self.identifier)
+            player.focus_timeline()
 
     def select(self, e=None):
         self.lane.editor.select(self.identifier)
@@ -146,9 +158,6 @@ class MarkerLane:
 
     def rename(self, e=None):
         if self.player.editing or not self.player.view.editable():
-            return
-        if not self.player.timeline.local_editing:
-            self.player.view.notify('Abra a cena para renomear marcadores.', 'info')
             return
         marker = next((item for item in self.player.timeline.markers if item.id == self.editor.selected), None)
         if marker:

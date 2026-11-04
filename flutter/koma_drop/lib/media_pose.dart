@@ -47,6 +47,7 @@ class _MediaPoseState extends State<MediaPoseView> with SingleTickerProviderStat
   Widget? mediaChild;
   late final Ticker ticker;
   int playbackRevision = -1;
+  bool playbackActive = false;
   List<dynamic> keys = [];
   double anchor = 0;
   Matrix4? pointerMatrix;
@@ -128,6 +129,7 @@ class _MediaPoseState extends State<MediaPoseView> with SingleTickerProviderStat
       if (!mounted || dragging || pending) return;
       final seconds = math.min(widget.control.getDouble('maximum_time', 3600)!, anchor + elapsed.inMicroseconds / 1000000);
       final pose = evaluateMediaPose(keys, seconds, [x, y, scale, angle]);
+      if (pose[0] == x && pose[1] == y && pose[2] == scale && pose[3] == angle) return;
       setState(() { x = pose[0]; y = pose[1]; scale = pose[2]; angle = pose[3]; });
     });
   }
@@ -160,17 +162,24 @@ class _MediaPoseState extends State<MediaPoseView> with SingleTickerProviderStat
     final c = widget.control;
     final next = c.getInt('generation', 0)!;
     final changed = next != generation;
-    if (changed) { generation = next; dragging = false; pending = false; stopRouting(); readPose(); }
     final revision = c.getInt('playback_revision', 0)!;
     final playing = c.getBool('playing', false)!;
-    if (changed || revision != playbackRevision || ticker.isActive != playing) {
+    if (changed) { generation = next; dragging = false; pending = false; stopRouting(); }
+    // Presentation/gesture generations are not playback seeks. Parent updates
+    // must never replay a stale server pose or restart the display-frame clock.
+    if (changed || revision != playbackRevision) keys = c.get<List<dynamic>>('keyframes', [])!;
+    if (revision != playbackRevision || playbackActive != playing) {
       playbackRevision = revision;
+      playbackActive = playing;
       ticker.stop();
-      keys = c.get<List<dynamic>>('keyframes', [])!;
       anchor = c.getDouble('seconds', 0)!;
-      if (playing && keys.isNotEmpty) ticker.start();
+      if (playing) {
+        final pose = evaluateMediaPose(keys, anchor, [x, y, scale, angle]);
+        x = pose[0]; y = pose[1]; scale = pose[2]; angle = pose[3];
+        ticker.start();
+      }
     }
-    if (!dragging && !pending && !ticker.isActive) readPose();
+    if (!dragging && !pending && (!playing || keys.isEmpty)) readPose();
     final nextContent = c.get('content');
     if (mediaChild == null || !identical(contentToken, nextContent)) {
       contentToken = nextContent;
@@ -190,10 +199,15 @@ class _MediaPoseState extends State<MediaPoseView> with SingleTickerProviderStat
       }
       final rect = c.get<List<dynamic>>('rect', [0, 0, 1, 1])!;
       final positionedMedia = ClipRect(child: Transform.translate(offset: Offset(x * width, y * height),
+          // Filter the image itself, not a raster snapshot of the whole media
+          // subtree. An ImageFilter on this transform creates an offscreen
+          // texture that must be regenerated as the outer canvas zoom changes.
           child: Transform.rotate(angle: angle * math.pi / 180, child: Transform.scale(scale: scale,
               child: SizedBox(width: width, height: height, child: Stack(clipBehavior: Clip.none, children: [
                 Positioned(left: (rect[0] as num) * width, top: (rect[1] as num) * height,
-                    width: (rect[2] as num) * width, height: (rect[3] as num) * height, child: child)
+                    width: (rect[2] as num) * width, height: (rect[3] as num) * height,
+                    child: Transform.flip(flipX: c.getBool('flip_x', false)!,
+                        flipY: c.getBool('flip_y', false)!, child: child))
               ]))))));
       final media = Stack(fit: StackFit.expand, children: [positionedMedia,
         if (dragging && axis != null) IgnorePointer(child: CustomPaint(

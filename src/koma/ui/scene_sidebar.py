@@ -23,7 +23,7 @@ class SceneSidebar:
         self.list = RetainedListView(hold_updates=lambda: False, expand=True, spacing=APP_PADDING,
             item_extent=WORKSPACE_STYLE.media_row_height)
         self.project = ft.OutlinedButton('Montagem', icon=ft.Icons.VIEW_TIMELINE_OUTLINED,
-            height=CONTROL_HEIGHT, tooltip='Projeto completo, incluindo quadros sem cena',
+            height=CONTROL_HEIGHT, tooltip='Montagem das cenas do projeto',
             on_click=lambda e: player.select_scene(None))
         self.content = ft.Container(width=WORKSPACE_STYLE.scenes_width, padding=APP_PADDING,
             border=ft.Border(right=ft.BorderSide(1, BORDER)), content=ft.Column([

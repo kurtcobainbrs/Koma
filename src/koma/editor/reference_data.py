@@ -24,13 +24,9 @@ class ReferenceData:
             fps = self.player.view.board.fps
             counts = duration_frame_counts(getattr(timeline, 'durations', None) or (frame.duration for frame in timeline.frames), fps)
             total = int((Decimal(str(timeline.total)) * fps).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-            if counts:
-                counts[-1] += max(0, total - sum(counts))
-            starts, elapsed = [], 0
-            for count in counts:
-                starts.append(elapsed)
-                elapsed += count
-            self.starts, self.counts, self.total = tuple(starts), tuple(counts), elapsed
+            starts = tuple(int((Decimal(str(start)) * fps).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+                for start in timeline.starts)
+            self.starts, self.counts, self.total = starts, tuple(counts), total
             self.timing = timeline
 
     def values(self, index, position=None):
