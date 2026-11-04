@@ -29,7 +29,7 @@ class ExternalImageDrop:
             self.control.session_token = self.view.session.directory.name
             self.control.origin_x = float(self.view.workspace.extent.origin_x)
             self.control.origin_y = float(self.view.workspace.extent.origin_y)
-            self.control.disabled = not self.view.editable() or self.view.player.opened
+            self.control.disabled = not self.view.editable() or self.view.player.opened or bool(getattr(self.view, 'references', None) and self.view.references.active)
 
     async def handle(self, e):
         view = self.view

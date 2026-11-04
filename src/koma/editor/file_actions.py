@@ -346,7 +346,7 @@ class StoryboardFiles:
             source = StoryboardFrames(tuple(timeline.frames), view.store, tuple(size), tuple(counts),
                 include_subtitles, tuple(getattr(timeline, 'source_offsets', ())),
                 tuple(reference_fields), tuple(getattr(timeline, 'references', ())),
-                view.settings.configuration.values)
+                view.settings.configuration.values, media_filter=view.board.media_filter)
             if reference_fields and not source.references:
                 from dataclasses import replace
                 from koma.exports.reference_overlay import frame_references

@@ -24,10 +24,16 @@ class WorkspaceDesignTests(TestCase):
     def test_node_body_and_ports_follow_format_without_waiting_for_a_size_event(self):
         view, player = self.editor()
         for format in (FrameFormat(1080, 1920), FrameFormat(1000, 1000), FrameFormat()):
+            old_card = view.cards[view.board.frames[0].id]
+            view.workspace.node_heights[old_card.identifier] = old_card.layout.height(old_card.body.height)
             view.changed(replace(view.board, frame_format=format))
             view.refresh()
             card = view.cards[view.board.frames[0].id]
             self.assertEqual(card.body.height, card.viewport.height)
+            self.assertAlmostEqual(card.viewport.width / card.viewport.height, format.aspect_ratio)
+            self.assertAlmostEqual(card.viewport.width, card.layout.image_width(card.width))
+            self.assertAlmostEqual(card.content.width - card.viewport.width,
+                card.layout.inset * 2 + card.layout.socket_size)
             self.assertEqual(card.output_socket.top, (card.body.height - card.output_socket.height) / 2)
             anchor = view.workspace.links.port(card.identifier, True)
             self.assertAlmostEqual(anchor[1] - card.content.top,

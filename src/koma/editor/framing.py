@@ -14,6 +14,7 @@ from koma.ui.drawing_overlay import DrawingOverlay
 from koma.ui.image_source import thumbnail_source
 from koma.ui.node_layout import NODE_LAYOUT
 from koma.ui.retained_container import RetainedContainer
+from koma.ui.media_filter import media_filter
 
 
 def png_size(data):
@@ -43,7 +44,6 @@ class ImageViewport:
     def __init__(self, view, identifier=None, height=180, *, show_drawing=True):
         self.view, self.identifier = view, identifier
         self.width, self.height = NODE_LAYOUT.image_width(NODE_WIDTH), height
-        self.maximum_height = height
         self.format = None
         self.frame = None
         self.source = FrameFormat().size
@@ -67,7 +67,7 @@ class ImageViewport:
             self.format = format
             self.content.aspect_ratio = format.aspect_ratio
             if self.identifier is not None:
-                self.width, self.height = format.fit(NODE_LAYOUT.image_width(NODE_WIDTH), self.maximum_height)
+                self.width, self.height = NODE_LAYOUT.image_size(NODE_WIDTH, format)
                 self.content.width, self.content.height = self.width, self.height
         data = self.view.thumbnails.get(frame.image)
         changed_image = self.frame is None or self.frame.image != frame.image or self.image_data is not data
@@ -77,7 +77,9 @@ class ImageViewport:
             self.source = png_size(data)
             self.image = ft.Image(src=thumbnail_source(self.view, frame.image),
                 fit=ft.BoxFit.FILL, gapless_playback=True) if data else None
-            self.stack.controls = [self.image] if data else [ft.Container(left=0, top=0,
+            self.stack.controls = [media_filter(self.view,
+                ft.Stack(controls=[self.image], clip_behavior=ft.ClipBehavior.HARD_EDGE),
+                left=0, right=0, top=0, bottom=0)] if data else [ft.Container(left=0, top=0,
                 width=self.width, height=self.height, alignment=ft.Alignment.CENTER,
                 content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=28, color=MUTED))]
             if self.drawing:

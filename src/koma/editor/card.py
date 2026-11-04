@@ -181,8 +181,11 @@ class StoryCard:
             self.composite_body.sync(frame)
             body = self.composite_body.content
         self.body_content.content = body
+        previous_height = self.body.height
         self.body.height = self.composite_body.content.height if self.composite_body else (
             self.viewport.height if frame.node_type.image else self.main_body.height)
+        if self.body.height != previous_height:
+            self.view.workspace.node_heights.pop(self.identifier, None)
         self.input_socket.top = self.output_socket.top = (self.body.height - NODE_LAYOUT.socket_size) / 2
         self.header.visible = not frame.node_type.starts_scene
         self.footer.visible = frame.node_type.timed or frame.node_type.contains_frames

@@ -6,6 +6,7 @@ from koma.ui.design import MUTED, RADIUS
 from koma.ui.drawing_overlay import DrawingOverlay
 from koma.editor.frame_format import FrameFormat
 from koma.ui.retained_container import RetainedStack
+from koma.ui.media_filter import media_filter
 
 
 class TimelineThumbnail:
@@ -20,7 +21,7 @@ class TimelineThumbnail:
             clip_behavior=ft.ClipBehavior.HARD_EDGE, bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
             ignore_interactions=True)
 
-    def sync(self, frame, thumbnails, width, height, *, image_source=None, frame_format=None):
+    def sync(self, frame, thumbnails, width, height, *, image_source=None, frame_format=None, view=None):
         data = thumbnails.get(frame.image)
         format = frame_format or FrameFormat()
         logical_height = max(1, height)
@@ -44,6 +45,9 @@ class TimelineThumbnail:
                 frame.image_fit, frame.crop_x, frame.crop_y)
             self.canvas.controls = [ft.Image(src=data if image_source is None else image_source, width=image_width, height=image_height,
                 left=left, top=top, fit=ft.BoxFit.FILL, gapless_playback=True)]
+            if view is not None:
+                self.canvas.controls = [media_filter(view, ft.Stack(controls=self.canvas.controls,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE), left=0, right=0, top=0, bottom=0)]
         else:
             self.canvas.controls = [ft.Container(width=logical_width, height=logical_height,
                 alignment=ft.Alignment.CENTER, content=ft.Icon(ft.Icons.IMAGE_OUTLINED,

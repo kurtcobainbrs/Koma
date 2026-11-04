@@ -5,6 +5,8 @@ import 'package:koma_drop/desktop_menus.dart';
 import 'package:koma_drop/secondary_pan.dart';
 import 'package:koma_drop/dialog_actions.dart';
 import 'package:koma_drop/navigation_view.dart';
+import 'package:koma_drop/spatial_view.dart';
+import 'package:koma_drop/media_filter.dart';
 
 // The command-line protocol matches the official Flet 1.0.5 desktop client.
 Future<void> main(List<String> args) async {
@@ -16,6 +18,6 @@ Future<void> main(List<String> args) async {
   extension.ensureInitialized();
   runApp(FletApp(
     title: 'Koma', pageUrl: args[0], assetsDir: args.length > 2 ? args[2] : '',
-    extensions: [extension, DesktopMenusExtension(), CanvasGesturesExtension(), DialogActionsExtension(), NavigationExtension()], errorsHandler: FletAppErrorsHandler(),
+    extensions: [extension, DesktopMenusExtension(), CanvasGesturesExtension(), DialogActionsExtension(), NavigationExtension(), SpatialExtension(), MediaFilterExtension()], errorsHandler: FletAppErrorsHandler(),
   ));
 }

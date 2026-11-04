@@ -274,6 +274,8 @@ class CanvasNavigation:
 
     @explicit_updates
     async def key_down(self, e):
+        if self.view.references.active:
+            return
         key = e.key.lower()
         if key.startswith('shift'):
             self.shift_keys.add(key)

@@ -167,6 +167,7 @@ class TimelineStrip:
         self.width = None
         self.scale = None
         self.fit_requested = True
+        self.initial_requested = True
         self.blocks = {}
         self.geometry_key = None
         self.active = None
@@ -263,6 +264,7 @@ class TimelineStrip:
         self.ruler_key = None
         self.fit_requested = True
         self.scale = None
+        self.initial_requested = True
         self.geometry_key = None
         self.sync()
         self.prepare_scroll()
@@ -324,7 +326,13 @@ class TimelineStrip:
         if e.width > 0 and e.width != self.width:
             self.width = e.width
             if self.editor.drag is None:
-                if self.fit_requested:
+                if self.initial_requested:
+                    self.scale = None
+                    self.geometry_key = None
+                    self.sync()
+                    self.prepare_scroll()
+                    self.publish_geometry()
+                elif self.fit_requested:
                     self.fit()
                 else:
                     self.sync()
@@ -334,6 +342,7 @@ class TimelineStrip:
         if self.player.editing or self.navigator.gesture or self.duration_input.focused:
             return
         self.fit_requested = True
+        self.initial_requested = False
         timeline = self.player.timeline
         if timeline and timeline.total > 0 and self.width:
             self.offset = 0
@@ -356,6 +365,7 @@ class TimelineStrip:
             self.prepare_scroll()
         if self.native_navigation:
             options = self.player.view.settings.configuration.values['animatic']
+            self.native_navigation.zoom_modifiers = list(self.player.view.keymap.bindings(Action.DRAG_ZOOM))
             self.native_navigation.wheel_sensitivity = options['timeline_wheel_sensitivity']
             self.native_navigation.pan_speed = options['timeline_pan_speed']
 
@@ -420,6 +430,7 @@ class TimelineStrip:
             timeline.total, self.player.view.board.fps, factor, anchor,
             self.player.view.settings.configuration.values['animatic'])
         self.fit_requested = False
+        self.initial_requested = False
         self.geometry_key = None
         self.sync()
         self.prepare_scroll()
@@ -446,7 +457,8 @@ class TimelineStrip:
         if timeline is None:
             return
         if self.scale is None and self.width and timeline.total > 0:
-            self.scale = TimeScale.fit(self.width, timeline.total)
+            self.scale = timeline_viewport.initial_scale(self.width, timeline.total, view.board.fps,
+                view.settings.configuration.values['animatic'])
         identifiers = tuple(frame.id for frame in timeline.frames)
         self.sequence_lane.sync(identifiers)
         self.sequence_label.height = self.sequence_lane.height
@@ -477,7 +489,7 @@ class TimelineStrip:
                 height = max(0, self.style.track_height - self.style.caption_height)
                 block.labels.visible = width >= self.style.thumbnail_label_minimum
                 block.thumbnail.sync(frame, view.thumbnails, width, height,
-                    image_source=thumbnail_source(view, frame.image), frame_format=view.board.frame_format)
+                    image_source=thumbnail_source(view, frame.image), frame_format=view.board.frame_format, view=view)
                 block.title.value = view.production.label(frame.id)
                 block.duration.value = f'{duration_text(frame.duration, fps, frames=True)} f'
                 block.box.tooltip = f'{block.title.value} · {block.duration.value} · {duration_text(frame.duration, fps)} s'

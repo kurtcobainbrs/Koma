@@ -145,10 +145,26 @@ class GraphActions:
             workspace.cancel_drag(workspace.drag.identifier)
         workspace.box_selection.cancel()
         workspace.links.cancel()
-        board = self.view.history.redo(self.view.board) if redo else self.view.history.undo(self.view.board)
+        before = self.view.board
+        board = self.view.history.redo(before) if redo else self.view.history.undo(before)
         if board == self.view.board:
             return
         self.view.board = board
+        if replace(board, references=before.references, media_filter=before.media_filter) == before:
+            self.view.revision += 1
+            references_changed = board.references != before.references
+            if references_changed:
+                self.view.references.models.clear()
+                self.view.references.sync()
+            self.sync_history()
+            self.view.chrome.sync()
+            if references_changed and self.view.references.active:
+                self.page.update(self.view.references.scene, self.view.references.tools,
+                    self.view.chrome.content, self.view.chrome.status)
+            else:
+                self.page.update(self.view.chrome.content)
+            await self.view.persist()
+            return
         missing = tuple(frame for frame in board.frames if frame.image and frame.image not in self.view.thumbnails)
         if missing:
             self.view.lock(True)

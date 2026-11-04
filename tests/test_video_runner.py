@@ -210,7 +210,7 @@ class ExportCommandTests(unittest.TestCase):
         view = self.view()
         fixtures.finish(view.add_frame())
         track = AudioTrack(asset='a' * 32 + '.wav', duration=1, volume=.5)
-        view.changed(replace(view.board, audio_tracks=(track,)))
+        view.changed(replace(view.board, audio_tracks=(track,), media_filter='grayscale'))
         before = view.board
         selection = ExportSequence.from_timelines([Timeline(before)]).window(.25, .75)
         destination = self.root / 'export.mp4'
@@ -224,6 +224,7 @@ class ExportCommandTests(unittest.TestCase):
         self.assertEqual(args[0].counts, (12,))
         self.assertEqual(args[0].offsets, (.25,))
         self.assertFalse(args[0].include_subtitles)
+        self.assertEqual(args[0].media_filter, before.media_filter)
         audio = options['audio_tracks'][0]
         self.assertEqual((audio['start'], audio['offset'], audio['duration'], audio['volume']), (0, .25, .5, .5))
         self.assertIs(view.board, before)

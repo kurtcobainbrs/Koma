@@ -13,6 +13,20 @@ from tests.test_storyboard_selection import finish
 
 
 class MenuGroupTests(TestCase):
+    def test_parent_lock_and_unlock_propagate_to_retained_submenu_leaves(self):
+        leaf = menu_item('Ação', on_click=lambda e: None)
+        entry = _MenuEntry(submenu('Grupo', [leaf]))
+        child = entry.children[0]
+        entry.sync(inherited_disabled=True)
+        self.assertTrue(entry.control.disabled)
+        self.assertTrue(child.control.disabled)
+        self.assertFalse(leaf.disabled)
+        entry.opened()
+        self.assertTrue(entry.children[0].control.disabled)
+        entry.sync(inherited_disabled=False)
+        self.assertFalse(entry.control.disabled)
+        self.assertFalse(entry.children[0].control.disabled)
+
     def test_dynamic_groups_refresh_only_when_their_key_changes_or_they_open(self):
         commands = [menu_item('Um')]
         load = Mock(side_effect=lambda: list(commands))
@@ -36,6 +50,27 @@ class MenuGroupTests(TestCase):
 class FileMenuTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
+
+    def test_pdf_menu_unlocks_after_loading_and_opens_without_node_selection(self):
+        from unittest.mock import patch
+        view = self.view()
+        fixtures.finish(view.add_frame())
+        view.workspace.navigation.apply_selection(set())
+        export_group = next(entry for entry in view.chrome.menus.entries
+            if isinstance(entry.command.data, MenuGroup) and view.files.commands['pdf'] in entry.command.data.items)
+        pdf = next(entry for entry in export_group.children if entry.command is view.files.commands['pdf'])
+        view.lock(True)
+        self.assertTrue(pdf.control.disabled)
+        view.lock(False)
+        self.assertFalse(pdf.control.disabled)
+        self.assertFalse(view.workspace.navigation.selection.ids)
+        with patch('koma.ui.pdf_export_panel.PdfExportPanel') as panel:
+            fixtures.finish(pdf.control.on_click(None))
+            panel.assert_called_once_with(view)
+            panel.return_value.open.assert_called_once()
+        view.workspace.navigation.select_node(view.board.frames[0].id)
+        view.workspace.navigation.apply_selection(set())
+        self.assertFalse(pdf.control.disabled)
 
     def test_editor_menus_group_existing_commands_without_positional_state_bindings(self):
         view = self.view()

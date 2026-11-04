@@ -59,8 +59,10 @@ class AnimaticPlayer:
         self.preview = ImageViewport(view, height=400, show_drawing=False)
         self.reference_presentation = ReferencePresentation(self)
         self.subtitles = SubtitlePreview(self)
+        from koma.ui.guide_presentation import GuidePresentation
+        self.guides = GuidePresentation(self)
         self.screen = ft.Container(aspect_ratio=view.board.frame_format.aspect_ratio, content=ft.Stack(
-            [self.preview.content, self.drawing_surface.content, self.subtitles.content,
+            [self.preview.content, self.drawing_surface.content, self.guides.content, self.subtitles.content,
                 self.reference_presentation.preview.content], fit=ft.StackFit.EXPAND))
         self.caption = ft.Text(size=TEXT_SMALL, font_family=FONT_HEADING, max_lines=1,
             overflow=ft.TextOverflow.ELLIPSIS)
@@ -99,6 +101,8 @@ class AnimaticPlayer:
         self.drawing_slot = ft.Container(content=self.drawing_surface.tools, expand=True)
         self.header = ft.Row([
                 self.scene_choice, self.title, self.drawing_slot,
+                ft.IconButton(icon=ft.Icons.GRID_4X4, tooltip='Guias e câmera',
+                    width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, on_click=self.guides.preferences),
                 ft.IconButton(icon=ft.Icons.PERM_MEDIA_OUTLINED, tooltip='Mídias do quadro',
                     width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT,
                     on_click=lambda e: self.view.node_media.open_editor(self.selection.active)
@@ -345,6 +349,7 @@ class AnimaticPlayer:
         self.previous_button.disabled = self.next_button.disabled = editing or not self.timeline.frames
         self.strip.sync()
         self.sync_inspector(update=update)
+        self.guides.sync()
         self.drawing_surface.sync()
         self.sync_video()
         self.audio_transport.update(self.timeline, self.view.store, self.playing and self.opened, self.position)
@@ -393,7 +398,7 @@ class AnimaticPlayer:
         index = self.timeline.index_at(self.position)
         if index != old_index:
             self.render(update=False)
-            controls = [self.preview.content, self.subtitles.content, self.caption,
+            controls = [self.preview.content, self.guides.content, self.subtitles.content, self.caption,
                 self.drawing_surface.content, self.drawing_surface.visibility,
                 self.strip.duration_input.field,
                 *[self.strip.blocks[self.timeline.frames[i].id].box
@@ -488,6 +493,8 @@ class AnimaticPlayer:
 
     @explicit_updates
     async def key_down(self, e):
+        if self.view.references.active:
+            return
         modifiers = {name for field, name in (('ctrl', 'Ctrl'), ('alt', 'Alt'),
             ('shift', 'Shift'), ('meta', 'Meta')) if getattr(e, field, False)}
         self.modifiers = modifiers
@@ -551,6 +558,8 @@ class AnimaticPlayer:
                 self.close()
             return
         if self.editing or not self.view.editable():
+            return
+        if self.view.work_modes.execute(action):
             return
         if action == Action.DRAWING_TOOLS:
             await self.drawing_surface.toggle_tools()

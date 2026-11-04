@@ -1,4 +1,4 @@
-"""Folhas de apresentação com seis quadros; geometria independente da interface."""
+"""Proportional print sheets; layout independent from editor controls."""
 
 from xml.sax.saxutils import escape
 
@@ -7,8 +7,10 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Flowable, Paragraph
 
 from koma.editor.framing import placement
-from koma.editor.frame_format import FrameFormat
 from koma.exports.drawings import paint_pdf
+from koma.exports.pdf_options import PdfOptions, CARD_GAP, CARD_PADDING, SHEET_HEADER
+from koma.media_filters import transform_media
+from PIL import Image, ImageOps
 
 
 def paragraph(value, style):
@@ -36,29 +38,32 @@ def duration(seconds):
 
 
 class StoryboardSheet(Flowable):
-    def __init__(self, board, scene, frames, numbers, store, palette, width, height, date):
+    def __init__(self, board, scene, frames, codes, store, palette, width, height, date, options=None):
         super().__init__()
         self.width, self.height = width, height
-        self.board, self.scene, self.frames, self.numbers = board, scene, frames, numbers
+        self.board, self.scene, self.frames, self.codes = board, scene, frames, codes
         self.store, self.palette, self.date = store, palette, date
+        self.options = options or PdfOptions()
+        self.geometry = self.options.geometry(board.frame_format, width, height)
         self.body = ParagraphStyle('CardBody', fontName='StoryboardBody', fontSize=7,
             leading=9, textColor=palette['muted'])
         self.title = ParagraphStyle('CardTitle', parent=self.body,
             fontName='StoryboardHeading', fontSize=8, leading=10, textColor=palette['ink'])
         self.overflow = []
         self.cards = []
-        card_width = (width - 24) / 3
-        card_height = (height - 96) / 2
+        card_width, card_height = self.geometry.card_width, self.geometry.card_height
         text_width = card_width - 16
         for frame in frames:
             title, clipped = fitted(frame.title.strip() or 'Sem título', self.title, text_width, 10)
             lines = []
-            for label, value, rows in [('AÇÃO', frame.action, 2), ('ÁUDIO', frame.audio, 1), ('NOTAS', frame.notes, 1)]:
+            for key, label, value, rows in [('action', 'AÇÃO', frame.action, 2), ('audio', 'ÁUDIO', frame.audio, 1), ('notes', 'NOTAS', frame.notes, 1)]:
+                if not getattr(self.options, key):
+                    continue
                 text, shortened = fitted(f'{label}: {value.strip() or "-"}', self.body, text_width, 9 * rows)
                 clipped |= shortened
                 lines.append((text, 9 * rows))
             self.cards.append((frame, title, lines, clipped))
-            if clipped:
+            if clipped and self.options.details:
                 self.overflow.append(frame)
         self.card_width, self.card_height = card_width, card_height
 
@@ -69,14 +74,10 @@ class StoryboardSheet(Flowable):
 
     def draw(self):
         c, p, h, w = self.canv, self.palette, self.height, self.width
-        c.setFillColor(p['accent'])
-        c.setFont('StoryboardHeading', 16)
-        c.drawString(0, h - 15, 'KOMA')
         c.setFillColor(p['ink'])
-        c.drawString(57, h - 15, 'STORYBOARD')
-        c.setFont('StoryboardBody', 8)
-        c.setFillColor(p['muted'])
-        c.drawRightString(w, h - 13, 'SEQUÊNCIA VISUAL')
+        header_style = ParagraphStyle('SheetTitle', parent=self.title, fontSize=16, leading=18)
+        self.draw_text(self.options.title, 0, h, w * .7, 20, header_style)
+        self.draw_text(self.options.subtitle, w * .72, h - 3, w * .28, 16)
         box_y, box_h = h - 71, 36
         main_w = w * .43
         c.setFillColor(p['title_background'])
@@ -95,8 +96,8 @@ class StoryboardSheet(Flowable):
             self.draw_text(label, x + 10, box_y + 28, meta_w - 20, 10, self.title)
             self.draw_text(value, x + 10, box_y + 14, meta_w - 20, 9)
         for index, (frame, title, lines, clipped) in enumerate(self.cards):
-            x = (index % 3) * (self.card_width + 12)
-            top = h - 84 - (index // 3) * (self.card_height + 12)
+            x = (index % self.geometry.columns) * (self.card_width + CARD_GAP)
+            top = h - SHEET_HEADER - (index // self.geometry.columns) * (self.card_height + CARD_GAP)
             self.draw_card(frame, title, lines, clipped, x, top)
 
     def draw_card(self, frame, title, lines, clipped, x, top):
@@ -104,15 +105,22 @@ class StoryboardSheet(Flowable):
         width, height = self.card_width, self.card_height
         c.setFillColor(p['paper'])
         c.rect(x, top - height, width, height, stroke=0, fill=1)
-        ix, iw = x + 8, width - 16
-        ih = iw / FrameFormat().aspect_ratio
-        iy = top - 8 - ih
+        ix, iw = x + CARD_PADDING, width - 2 * CARD_PADDING
+        ih = height - self.options.text_height
+        iy = top - CARD_PADDING - ih
         c.setFillColor(p['placeholder'])
-        vw, vh = self.board.frame_format.fit(iw, ih)
+        vw, vh = self.geometry.image_width, self.geometry.image_height
         vx, vy = ix + (iw - vw) / 2, iy + (ih - vh) / 2
         c.rect(vx, vy, vw, vh, stroke=0, fill=1)
         if frame.image:
-            reader = ImageReader(str(self.store.images / frame.image))
+            path = self.store.images / frame.image
+            if self.options.filter_matrix is not None:
+                with Image.open(path) as original:
+                    media = ImageOps.exif_transpose(original).convert('RGBA')
+                    media.thumbnail((max(1, round(vw * 3)), max(1, round(vh * 3))), Image.Resampling.LANCZOS)
+                    reader = ImageReader(transform_media(media, self.options.filter_matrix))
+            else:
+                reader = ImageReader(str(path))
             dw, dh, dx, dy = placement(reader.getSize(), (vw, vh), frame.image_fit, frame.crop_x, frame.crop_y)
             c.saveState()
             path = c.beginPath()
@@ -124,12 +132,14 @@ class StoryboardSheet(Flowable):
             c.setFillColor(p['muted'])
             c.setFont('StoryboardBody', 9)
             c.drawCentredString(ix + iw / 2, iy + ih / 2, 'Sem imagem')
-        paint_pdf(c, frame.drawing, vx, vy, vw, vh)
+        if self.options.drawing:
+            paint_pdf(c, frame.drawing, vx, vy, vw, vh)
+        code = self.codes[frame.id]
+        badge_width = min(iw, max(25, c.stringWidth(code, 'StoryboardHeading', 8) + 12))
         c.setFillColor(p['accent'])
-        c.rect(ix, top - 28, 25, 20, stroke=0, fill=1)
-        c.setFillColor(p['paper'])
-        c.setFont('StoryboardHeading', 10)
-        c.drawCentredString(ix + 12.5, top - 22, f'{self.numbers[frame.id]:02d}')
+        c.rect(ix, top - 26, badge_width, 18, stroke=0, fill=1)
+        badge_style = ParagraphStyle('ShotCode', parent=self.title, textColor=p['paper'])
+        self.draw_text(code, ix + 6, top - 12, badge_width - 12, 10, badge_style)
         c.setStrokeColor(p['rule'])
         c.line(ix, iy - 6, ix + iw, iy - 6)
         c.setStrokeColor(p['accent'])
@@ -137,13 +147,10 @@ class StoryboardSheet(Flowable):
         c.line(ix, iy - 6, ix + 28, iy - 6)
         title.wrap(iw, 10)
         title.drawOn(c, ix, iy - 20)
-        cursor = iy - 25
+        cursor = iy - 22
         for text, reserved in lines:
             _, used = text.wrap(iw, reserved)
             text.drawOn(c, ix, cursor - used)
             cursor -= reserved
-        self.draw_text(f'DURAÇÃO: {duration(frame.duration)}', ix, top - height + 15, iw, 9)
-        if clipped:
-            c.setFillColor(p['muted'])
-            c.setFont('StoryboardBody', 6)
-            c.drawRightString(ix + iw, top - height + 6, 'Texto completo nos detalhes')
+        if self.options.duration:
+            self.draw_text(f'DURAÇÃO: {duration(frame.duration)}', ix, top - height + 15, iw, 9)

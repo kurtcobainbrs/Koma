@@ -8,6 +8,7 @@ from koma.ui.theme import load_theme
 from koma.exports.subtitles import render_subtitle
 from koma.editor.frame_format import FrameFormat
 from koma.exports.drawings import paint_image
+from koma.media_filters import filter_media
 
 
 def frame_counts(frames, fps, *, durations=None):
@@ -42,17 +43,25 @@ def timeline_frame_counts(timeline, fps):
 
 class FrameComposer:
     """Prepare the node's fixed overlays once, then compose changing video frames."""
-    def __init__(self, frame, size, *, include_subtitles=True, preferences=None):
+    def __init__(self, frame, size, *, include_subtitles=True, preferences=None, media_filter='none'):
         self.frame, self.size = frame, size
         self.preferences = preferences
+        self.media_filter = media_filter
         self.colors = load_theme().colors
         self.overlay = None
         if (frame.drawing.visible and frame.drawing.strokes) or (include_subtitles and frame.subtitle.strip()):
             self.overlay = Image.new('RGBA', size)
             paint_image(self.overlay, frame.drawing)
-            if include_subtitles and frame.subtitle.strip():
-                self.overlay.alpha_composite(render_subtitle(frame.subtitle, size,
-                    preferences['subtitles'] if preferences else None))
+        if preferences and 'guides' in preferences:
+            options = preferences['guides']
+            if options['export'] or (options['camera_export'] and frame.camera.visible and frame.camera.preset != 'none'):
+                from koma.exports.guides import render_guides
+                if self.overlay is None:
+                    self.overlay = Image.new('RGBA', size)
+                self.overlay.alpha_composite(render_guides(frame.camera, size, options, exporting=True))
+        if include_subtitles and frame.subtitle.strip():
+            self.overlay.alpha_composite(render_subtitle(frame.subtitle, size,
+                preferences['subtitles'] if preferences else None))
 
     def compose(self, original):
         frame, size = self.frame, self.size
@@ -64,6 +73,7 @@ class FrameComposer:
                     centering=((frame.crop_x + 1) / 2, (frame.crop_y + 1) / 2))
             else:
                 image = ImageOps.contain(image, size, Image.Resampling.LANCZOS)
+            image = filter_media(image, self.media_filter)
             target.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2), image)
         else:
             ImageDraw.Draw(target).text((size[0] // 2, size[1] // 2), 'Sem imagem',

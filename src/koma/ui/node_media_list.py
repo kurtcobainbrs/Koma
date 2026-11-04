@@ -4,6 +4,7 @@ from koma.ui.design import COMPACT_CONTROL_HEIGHT, APP_PADDING, BORDER, MUTED, d
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.image_source import media_thumbnail_source
 from koma.ui.typography import TEXT_SMALL
+from koma.ui.media_filter import media_filter
 
 MEDIA_PAGE_SIZE = 24
 MEDIA_VISIBLE_ROWS = 4
@@ -66,9 +67,9 @@ class NodeMediaList:
                 content=ft.Row([ft.Icon(ft.Icons.RADIO_BUTTON_CHECKED if item.id == frame.active_media_id
                     else ft.Icons.RADIO_BUTTON_UNCHECKED, color=ft.Colors.PRIMARY if item.id == frame.active_media_id else MUTED,
                     size=18),
-                ft.Image(src=source, width=WORKSPACE_STYLE.media_thumbnail_width,
+                media_filter(self.view, ft.Image(src=source, width=WORKSPACE_STYLE.media_thumbnail_width,
                     height=WORKSPACE_STYLE.media_row_height - APP_PADDING * 2, fit=ft.BoxFit.COVER,
-                    cache_width=128) if (source := media_thumbnail_source(self.view, item)) else
+                    cache_width=128)) if (source := media_thumbnail_source(self.view, item)) else
                     ft.Icon(ft.Icons.VIDEOCAM_OUTLINED if item.kind == 'video' else ft.Icons.IMAGE_OUTLINED,
                         size=COMPACT_CONTROL_HEIGHT),
                 ft.Text(item.label or (('Vídeo' if item.kind == 'video' else 'Imagem') +

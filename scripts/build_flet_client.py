@@ -128,7 +128,7 @@ def main():
         shutil.copy2(dll, staging / dll.name)
     files = {path.relative_to(staging).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(staging.rglob('*')) if path.is_file()}
-    manifest = dict(protocol=1, flet='1.0.5', flutter=FLUTTER_VERSION, features=['navigation_v1'],
+    manifest = dict(protocol=1, flet='1.0.5', flutter=FLUTTER_VERSION, features=['navigation_v1', 'spatial_camera_v1', 'media_filter_v1'],
         source_fingerprint=source_fingerprint(ROOT), files=files)
     (staging / 'koma-client.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     destination = publish_client(staging)

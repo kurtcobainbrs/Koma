@@ -1,5 +1,5 @@
 """Native camera controls; no node state and no Python pointer-move traffic."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import flet as ft
 from flet.controls.base_control import control
 from flet.controls.control_event import Event, EventHandler
@@ -33,6 +33,7 @@ class NativeNavigation(ft.LayoutControl):
     maximum_zoom: float = 16
     wheel_sensitivity: float = 1
     pan_speed: float = 1
+    zoom_modifiers: list[str] = field(default_factory=list)
     content_coordinates: bool = False
     generation: int = 0
     revision: int = 0
@@ -66,6 +67,8 @@ class PreviewNavigation:
         options = self.player.view.settings.configuration.values['animatic']
         minimum, maximum = options['preview_min_zoom'] / 100, options['preview_max_zoom'] / 100
         if self.native:
+            from koma.editor.shortcuts import Action
+            self.content.zoom_modifiers = list(self.player.view.keymap.bindings(Action.DRAG_ZOOM))
             self.content.minimum_zoom, self.content.maximum_zoom = minimum, maximum
             self.content.wheel_sensitivity = options['preview_wheel_sensitivity']
             self.content.pan_speed = options['preview_pan_speed']

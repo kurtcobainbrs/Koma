@@ -7,6 +7,12 @@ def zoom_limits(width, total, fps, options):
     return minimum, max(minimum, width * fps / options['timeline_max_frames'])
 
 
+def initial_scale(width, total, fps, options):
+    if options['timeline_initial_zoom'] == 'Mínimo':
+        return TimeScale(zoom_limits(width, total, fps, options)[0])
+    return TimeScale.fit(width, total)
+
+
 def content_width(scale, width, total, options):
     return max(width, scale.pixels(total) + width * options['timeline_tail'])
 

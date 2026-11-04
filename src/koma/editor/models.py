@@ -10,6 +10,8 @@ from koma.editor.media_models import AudioTrack, TimelineMarker, MAX_AUDIO_TRACK
 from koma.editor.drawing_models import DrawingLayer
 from koma.editor.sequence_models import SequenceState
 from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
+from koma.editor.reference_models import ReferenceImage, MAX_REFERENCES
+from koma.editor.camera_models import CameraMotion
 
 MAX_CARDS = 500
 TEXT_LIMIT = 20000
@@ -52,6 +54,7 @@ class StoryFrame:
     media: tuple[NodeMedia, ...] = ()
     active_media_id: str = ''
     image_defaults: MediaTransform = field(default_factory=MediaTransform)
+    camera: CameraMotion = field(default_factory=CameraMotion)
 
     def __init__(self, **values):
         # Old constructors and replace(..., image/crop_*=...) remain adapters;
@@ -123,6 +126,9 @@ class StoryFrame:
         return node_type(self.kind)
 
     def validate(self):
+        if not isinstance(self.camera, CameraMotion):
+            raise ValueError('Indicação de câmera inválida.')
+        self.camera.validate()
         spec = node_type(self.kind)
         if (not isinstance(self.media, tuple) or len(self.media) > MAX_MEDIA_ITEMS
                 or any(not isinstance(entry, NodeMedia) for entry in self.media)):
@@ -184,8 +190,20 @@ class Storyboard:
     audio_tracks: tuple[AudioTrack, ...] = ()
     markers: tuple[TimelineMarker, ...] = ()
     frame_format: FrameFormat = field(default_factory=FrameFormat)
+    references: tuple[ReferenceImage, ...] = ()
+    media_filter: str = 'none'
 
     def validate(self):
+        from koma.media_filters import selected_filter
+        selected_filter(self.media_filter)
+        if not isinstance(self.references, tuple) or len(self.references) > MAX_REFERENCES:
+            raise ValueError(f'O projeto aceita até {MAX_REFERENCES} referências.')
+        if any(not isinstance(item, ReferenceImage) for item in self.references):
+            raise ValueError('Referência inválida.')
+        for item in self.references:
+            item.validate()
+        if len({item.id for item in self.references}) != len(self.references):
+            raise ValueError('Referências repetidas no projeto.')
         if not isinstance(self.frame_format, FrameFormat):
             raise ValueError('Formato do projeto inválido.')
         self.frame_format.validate()

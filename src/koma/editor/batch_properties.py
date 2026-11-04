@@ -4,7 +4,7 @@ from dataclasses import replace
 
 def property_targets(board, identifiers, key):
     frames = [frame for frame in board.frames if frame.id in identifiers]
-    if key in ('duration', 'subtitle', 'audio', 'drawing'):
+    if key in ('duration', 'subtitle', 'audio', 'drawing', 'camera'):
         return [frame for frame in frames if frame.node_type.timed]
     if key in ('image', 'image_fit', 'crop_x', 'crop_y'):
         return [frame for frame in frames if frame.node_type.image]

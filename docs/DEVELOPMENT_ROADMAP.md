@@ -19,15 +19,19 @@ entram no catálogo e no painel existente; não ficam espalhadas nas telas.
 4. **Transformação da mídia:** mover, escalar e girar a mídia ativa; gesto
    temporário, confirmação única e Esc. Contrato preparado para propriedades
    animáveis e tempo local do quadro, sem introduzir keyframes incompletos.
-5. **Guias e câmera:** terços, centro, áreas seguras e guias personalizadas;
-   exibição e exportação independentes. Indicações de pan, tilt, zoom e
-   deslocamento pertencem ao node; preferências de exibição são globais.
-6. **Filtros:** preto e branco, saturação, brilho e contraste não destrutivos
-   na mídia, com composição compartilhada na prévia e exportação.
-7. **Referências:** canvas próprio de imagens livres, sem fluxo narrativo;
-   seleção, movimento, escala, duplicação, grupos e ordem de sobreposição.
-   Dados persistidos em estruturas proprietárias dos elementos, sem mapas
-   paralelos de propriedades por referência.
+5. **Guias e câmera — implementado:** terços, centro, grade, áreas seguras e
+   guias personalizadas; exibição e exportação independentes. Indicações de
+   pan, tilt, zoom, dolly, deslocamento e órbita pertencem ao node; preferências
+   de exibição são globais. Consulte `GUIDES_CAMERA.md`.
+6. **Filtros — preto e branco implementado:** propriedade não destrutiva do projeto,
+   com seletor único para Canvas, Animatic, PDF e MP4; Refs preserva as cores.
+   A exportação segue o filtro ativo, preservando transparência e anotações.
+   Saturação, brilho e contraste permanecem para uma etapa posterior.
+7. **Referências — primeira versão implementada:** modo Refs com importação,
+   soltura, colagem, seleção por caixa, movimento, escala proporcional,
+   duplicação, exclusão, zoom e pan. Dados no projeto e histórico compartilhado;
+   padrões nas Preferências. Grupos, anotações e comandos de sobreposição
+   permanecem para uma etapa posterior. Consulte `REFERENCE_CANVAS.md`.
 
 Mudanças de formato exigem migração explícita e proteção dos arquivos antigos.
 Verificações automatizadas devem focar salvar/abrir, copiar, desfazer/refazer e

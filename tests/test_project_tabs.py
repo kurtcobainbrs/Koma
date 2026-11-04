@@ -94,6 +94,28 @@ class ProjectTabsTests(unittest.TestCase):
         self.assertEqual(first.board, board)
         self.assertEqual(tuple(first.history.past), history)
 
+    def test_switch_before_first_animatic_open_in_canvas_and_refs_preserves_documents(self):
+        first = self.view
+        self.assertIsNone(first.player.timeline)
+        controls = first.player.strip.audio_controls
+        controls.sync()
+        self.assertTrue(all(control.disabled for control in (controls.import_button,
+            controls.add_marker, controls.start, controls.mute, controls.remove, controls.volume)))
+        board, history = first.board, tuple(first.history.past)
+        second = self.second()
+        self.assertIsNone(second.player.timeline)
+        self.assertTrue(finish(self.app.select_view(first)))
+        first.work_modes.show_references()
+        self.assertTrue(finish(self.app.select_view(second)))
+        self.assertFalse(first.active)
+        self.assertTrue(first.references.active)
+        self.assertTrue(finish(self.app.select_view(first)))
+        self.assertTrue(first.references.active)
+        self.assertIsNone(first.player.timeline)
+        self.assertEqual(first.board, board)
+        self.assertEqual(tuple(first.history.past), history)
+        self.assertFalse(self.app.transitioning)
+
     def test_drag_reorders_tabs_without_switching_or_changing_documents(self):
         first = self.view
         finish(first.add_frame())

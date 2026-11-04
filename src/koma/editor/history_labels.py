@@ -12,6 +12,8 @@ def change_label(before, after):
         return 'Alterar formato'
     if before.fps != after.fps:
         return 'Alterar FPS'
+    if before.media_filter != after.media_filter:
+        return 'Alterar filtro'
     if before.title != after.title:
         return 'Renomear projeto'
     if before.audio_tracks != after.audio_tracks:

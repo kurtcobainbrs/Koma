@@ -10,6 +10,8 @@ class ShortcutCommands:
 
     async def execute(self, action):
         nav, ws, view = self.nav, self.nav.workspace, self.nav.view
+        if view.work_modes.execute(action):
+            return
         modes = {tool.action: tool.key for tool in nav.definitions.values()}
         if action in modes:
             nav.set_mode(modes[action])

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'navigation_pose.dart';
+import 'gesture_modifiers.dart';
 
 class NavigationExtension extends FletExtension {
   @override
@@ -26,6 +27,8 @@ class _NavigationViewState extends State<NavigationView> {
   final _camera = ValueNotifier(const NavigationPose());
   ScrollableState? _scroll;
   Offset? _last;
+  Offset? _zoomAnchor;
+  bool _dragZoom = false;
   int? _pointer;
   final _batch = ZoomBatch();
   bool _scheduled = false;
@@ -119,7 +122,13 @@ class _NavigationViewState extends State<NavigationView> {
 
   void _down(PointerDownEvent event) {
     if (!_enabled) return;
-    if (event.buttons != kMiddleMouseButton) { _reportPose(); return; }
+    final zoom = event.buttons == kPrimaryMouseButton && matchesGestureModifiers(widget.control, 'zoom_modifiers');
+    if (!zoom && event.buttons != kMiddleMouseButton) { _reportPose(); return; }
+    _dragZoom = zoom;
+    _zoomAnchor = event.localPosition;
+    if (!_spatial && widget.control.getBool('content_coordinates', false)!) {
+      _zoomAnchor = Offset(_zoomAnchor!.dx - (_position()?.pixels ?? 0), _zoomAnchor!.dy);
+    }
     _last = event.position;
     _pointer = event.pointer;
     widget.control.triggerEvent('engage');
@@ -128,8 +137,16 @@ class _NavigationViewState extends State<NavigationView> {
 
   void _move(PointerMoveEvent event) {
     if (_last == null || event.pointer != _pointer || !_enabled) return;
-    final delta = (event.position - _last!) * widget.control.getDouble('pan_speed', 1)!;
+    final rawDelta = event.position - _last!;
     _last = event.position;
+    if (_dragZoom) {
+      final anchor = _zoomAnchor!;
+      final offset = !_spatial && widget.control.getBool('content_coordinates', false)! ? (_position()?.pixels ?? 0) : 0.0;
+      _zoom(math.exp((rawDelta.dx - rawDelta.dy) * widget.control.getDouble('wheel_sensitivity', 1)! / 240),
+          Offset(anchor.dx + offset, anchor.dy));
+      return;
+    }
+    final delta = rawDelta * widget.control.getDouble('pan_speed', 1)!;
     if (_spatial) {
       _camera.value = _camera.value.pan(delta.dx, delta.dy);
     } else {
@@ -138,7 +155,7 @@ class _NavigationViewState extends State<NavigationView> {
   }
 
   void _end(PointerEvent event) {
-    if (event.pointer == _pointer) { _pointer = null; _last = null; _reportPose(); }
+    if (event.pointer == _pointer) { _pointer = null; _last = null; _dragZoom = false; _reportPose(); }
   }
 
   void _reportPose() {
@@ -192,7 +209,9 @@ class _NavigationViewState extends State<NavigationView> {
       onExit: (_) { _reportPose(); widget.control.triggerEvent('deactivate'); },
       child: RawGestureDetector(gestures: {
         EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
-          () => EagerGestureRecognizer(allowedButtonsFilter: (buttons) => buttons == kMiddleMouseButton && _enabled), (_) {}),
+          () => EagerGestureRecognizer(allowedButtonsFilter: (buttons) => _enabled &&
+              (buttons == kMiddleMouseButton || buttons == kPrimaryMouseButton &&
+                  matchesGestureModifiers(widget.control, 'zoom_modifiers'))), (_) {}),
       }, child: Listener(behavior: HitTestBehavior.translucent,
         onPointerSignal: _signal, onPointerDown: _down, onPointerMove: _move,
         onPointerUp: _end, onPointerCancel: _end,

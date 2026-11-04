@@ -99,4 +99,5 @@ def board_assets(board):
     for frame in board.frames:
         assets.update(frame_assets(frame))
     assets.update(('audio', track.asset) for track in board.audio_tracks)
+    assets.update(('images', item.asset) for item in board.references)
     return assets

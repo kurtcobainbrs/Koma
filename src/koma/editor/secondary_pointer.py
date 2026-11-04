@@ -35,6 +35,9 @@ class SecondaryPointer:
                 and ws.navigation.effective_mode != 'cut' and not ws.drag
                 and not ws.box_selection.active and not ws.box_zoom.active and not ws.focusing_region)
             self.native.reserved_modifiers = list(ws.view.keymap.bindings(Action.CUT_DRAG))
+            self.native.zoom_modifiers = list(ws.view.keymap.bindings(Action.DRAG_ZOOM))
+            self.native.zoom_enabled = self.native.pan_enabled
+            self.native.zoom_sensitivity = ws.view.settings.configuration.values['canvas']['zoom']
 
     @explicit_updates
     async def native_navigation(self, e):

@@ -22,5 +22,8 @@ class NativeSecondaryPan(ft.LayoutControl):
     content: ft.Control | None = None
     pan_enabled: bool = True
     reserved_modifiers: list[str] = field(default_factory=list)
+    zoom_modifiers: list[str] = field(default_factory=list)
+    zoom_enabled: bool = True
+    zoom_sensitivity: float = 1
     drag_threshold: float = 6
     on_navigation: EventHandler[CanvasNavigationEvent] | None = None

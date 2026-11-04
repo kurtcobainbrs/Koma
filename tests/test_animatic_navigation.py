@@ -25,6 +25,7 @@ class AnimaticNavigationTests(TestCase):
         view, strip = player.view, player.strip
         board, past, position = view.board, tuple(view.history.past), player.position
         native = strip.native_navigation
+        strip.fit()
         initial = strip.scale.seconds(strip.offset + 300)
         strip.native_zoom(Data(factor=2, anchor_x=300, pixels=strip.offset, generation=strip.generation))
         self.assertAlmostEqual(strip.scale.seconds(strip.offset + 300), initial)
@@ -47,6 +48,21 @@ class AnimaticNavigationTests(TestCase):
         self.assertEqual(tuple(view.history.past), past)
         self.assertEqual(player.position, position)
         self.assertEqual(view.store.load(), board)
+
+    def test_new_timelines_start_at_global_minimum_and_fit_remains_explicit(self):
+        player = self.player()
+        strip = player.strip
+        self.assertEqual(strip.scale.pixels_per_second, strip.zoom_limits()[0])
+        self.assertEqual(strip.zoom_slider.value, 0)
+        board, past = player.view.board, tuple(player.view.history.past)
+        strip.resized(Data(width=1200))
+        self.assertEqual(strip.scale.pixels_per_second, strip.zoom_limits()[0])
+        strip.fit()
+        self.assertEqual(strip.scale.pixels(player.timeline.total), strip.width)
+        strip.reset()
+        self.assertEqual(strip.scale.pixels_per_second, strip.zoom_limits()[0])
+        self.assertIs(player.view.board, board)
+        self.assertEqual(tuple(player.view.history.past), past)
 
     def test_track_host_uses_only_the_active_navigation_handler(self):
         player = self.player()

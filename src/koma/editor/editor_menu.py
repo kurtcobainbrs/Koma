@@ -14,6 +14,7 @@ class _MenuEntry:
         self.children = []
         self.key = object()
         self.check = None
+        self.inherited_disabled = False
         leading = ft.Icon(command.icon, size=MENU_ICON_SIZE) if command.icon else None
         if isinstance(command.data, MenuSeparator):
             self.control = ft.Divider(height=MENU_VERTICAL_PADDING * 2, thickness=1, color=BORDER)
@@ -28,12 +29,16 @@ class _MenuEntry:
                 style=menu_button_style(), on_click=command.on_click)
         self.sync()
 
-    def sync(self, *, force=False):
+    def sync(self, *, force=False, inherited_disabled=None):
+        if inherited_disabled is not None:
+            self.inherited_disabled = inherited_disabled
         command = self.command
         if isinstance(command.data, MenuSeparator):
             return
         self.control.content.value = command.content
-        self.control.disabled = bool(command.disabled)
+        # Explicitly patch leaves as well as parents. Retained native menu
+        # widgets otherwise keep the parent's loading state until rebuilt.
+        self.control.disabled = bool(command.disabled or self.inherited_disabled)
         self.control.tooltip = command.tooltip
         if self.check is not None:
             self.check.visible = bool(command.checked)
@@ -46,7 +51,7 @@ class _MenuEntry:
             self.children = [_MenuEntry(child) for child in commands]
             self.control.controls = [child.control for child in self.children]
         for child in self.children:
-            child.sync()
+            child.sync(inherited_disabled=self.control.disabled)
 
     def opened(self, e=None):
         self.sync(force=True)
@@ -64,14 +69,14 @@ class EditorMenuBar:
             target = ft.SubmenuButton(content=ft.Text(source.content.content.value, size=TEXT_BODY),
                 controls=[entry.control for entry in entries], height=COMPACT_CONTROL_HEIGHT,
                 style=menu_button_style(), menu_style=menu_panel_style())
-            self.menus.append((source, target, is_file))
+            self.menus.append((source, target, is_file, entries))
         # MenuBar mantém os menus no mesmo grupo de navegação, sem rota modal
         # que consumiria o primeiro clique em outro título.
-        self.content = ft.MenuBar(controls=[target for _, target, _ in self.menus],
+        self.content = ft.MenuBar(controls=[target for _, target, _, _ in self.menus],
             style=ft.MenuStyle(bgcolor=ft.Colors.TRANSPARENT, elevation=0, padding=0))
 
     def sync(self, toolbar_disabled=False):
-        for source, target, is_file in self.menus:
+        for source, target, is_file, entries in self.menus:
             target.disabled = bool(source.disabled or (toolbar_disabled and not is_file))
-        for entry in self.entries:
-            entry.sync()
+            for entry in entries:
+                entry.sync(inherited_disabled=target.disabled)

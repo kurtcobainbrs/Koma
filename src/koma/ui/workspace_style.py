@@ -10,6 +10,7 @@ class WorkspaceStyle:
     inspector_minimum: float = 260
     inspector_maximum: float = 520
     mode_button_width: float = 90
+    mode_tab_width: float = 76
     scene_choice_width: float = 144
     scenes_width: float = SCENES_WIDTH
     scenes_minimum: float = SCENES_MINIMUM

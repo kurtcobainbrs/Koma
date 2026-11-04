@@ -11,6 +11,9 @@ from koma.editor.node_types import NODE_TYPES
 from koma.editor.shortcuts import Action
 from koma.ui.node_icons import node_icon
 from koma.ui.workspace_style import WORKSPACE_STYLE
+from inspect import isawaitable
+from koma.ui.mode_tabs import ModeTab, ModeTabs
+from koma.ui.filter_selector import FilterSelector
 
 
 def item(label, handler, icon=None):
@@ -35,7 +38,7 @@ class StoryboardChrome:
         self.shortcut_items = []
         self.wide = True
         self.compact = False
-        self.edit_commands = {action: self.shortcut_item(label, action, handler, icon)
+        self.edit_commands = {action: self.shortcut_item(label, action, self.edit_handler(action, handler), icon)
             for action, label, handler, icon in (
                 (Action.UNDO, 'Desfazer', view.graph.undo, ft.Icons.UNDO),
                 (Action.REDO, 'Refazer', view.graph.redo, ft.Icons.REDO),
@@ -113,12 +116,15 @@ class StoryboardChrome:
             entry.label_text_style = ft.TextStyle(size=TEXT_BODY)
         self.menus = EditorMenuBar([(files, True),
             *[(source, False) for source in self.toolbar.controls]])
-        self.play = ft.OutlinedButton('Animatic', width=WORKSPACE_STYLE.mode_button_width,
-            tooltip='Abrir animatic da cena ativa', height=COMPACT_CONTROL_HEIGHT,
-            on_click=view.player.open)
-        self.canvas_mode = ft.OutlinedButton('Canvas', width=WORKSPACE_STYLE.mode_button_width,
-            tooltip='Modo Canvas', height=COMPACT_CONTROL_HEIGHT, on_click=view.player.close)
-        self.modes = ft.Row([self.canvas_mode, self.play], tight=True, spacing=0)
+        self.mode_tabs = ModeTabs((
+            ModeTab('canvas', 'Canvas', lambda e: view.work_modes.show_canvas(), 'Modo Canvas'),
+            ModeTab('animatic', 'Animatic', view.player.open, 'Abrir animatic da cena ativa'),
+            ModeTab('references', 'Refs', lambda e: view.work_modes.show_references(), 'Canvas de referências')))
+        self.canvas_mode = self.mode_tabs.buttons['canvas']
+        self.play = self.mode_tabs.buttons['animatic']
+        self.reference_mode = self.mode_tabs.buttons['references']
+        self.modes = self.mode_tabs.content
+        self.filter_selector = FilterSelector(view)
         view.properties.toggle_button.width = view.properties.toggle_button.height = COMPACT_CONTROL_HEIGHT
         view.properties.toggle_button.visible = False
         self.content = ft.Container(bgcolor=SURFACE, border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
@@ -127,7 +133,7 @@ class StoryboardChrome:
                 ft.Container(expand=True, content=ft.Row([self.menus.content],
                     scroll=ft.ScrollMode.AUTO, spacing=0)),
                 self.modes,
-                ft.Container(expand=True, content=ft.Row([view.properties.toggle_button],
+                ft.Container(expand=True, content=ft.Row([self.filter_selector.content, view.properties.toggle_button],
                     alignment=ft.MainAxisAlignment.END, spacing=0)),
             ], spacing=4, height=COMPACT_CONTROL_HEIGHT))
         # A seleção ocupa o rodapé; ações de edição ficam nos menus.
@@ -160,6 +166,16 @@ class StoryboardChrome:
 
     def shortcut_item(self, title, action, handler, icon=None):
         return self.track_shortcut(item(title, handler, icon), title, action)
+
+    def edit_handler(self, action, fallback):
+        async def execute(e=None):
+            if self.view.references.active:
+                await self.view.references.execute(action)
+            else:
+                result = fallback(e)
+                if isawaitable(result):
+                    await result
+        return execute
 
     def track_shortcut(self, entry, title, action):
         entry.content = self.view.keymap.describe(title, action)
@@ -206,6 +222,9 @@ class StoryboardChrome:
         await self.view.close_project()
 
     def refresh_shortcuts(self):
+        for key, title, action in (('canvas', 'Canvas', Action.MODE_CANVAS),
+                ('animatic', 'Animatic', Action.MODE_ANIMATIC), ('references', 'Refs', Action.MODE_REFS)):
+            self.mode_tabs.buttons[key].tooltip = self.view.keymap.describe(title, action)
         for entry, title, action in self.shortcut_items:
             entry.content = self.view.keymap.describe(title, action)
         self.view.graph.undo_button.tooltip = self.view.keymap.describe('Desfazer', Action.UNDO)
@@ -213,12 +232,15 @@ class StoryboardChrome:
         self.view.properties.toggle_button.tooltip = self.view.keymap.describe('Propriedades', Action.PROPERTIES)
 
     async def fit_active(self, e=None):
-        if self.view.player.opened:
+        if self.view.references.active:
+            await self.view.references.fit()
+        elif self.view.player.opened:
             self.view.player.strip.fit()
         else:
             await self.workspace.fit(e)
 
     def sync(self):
+        self.filter_selector.sync()
         if self.view.loaded and not self.view.closing and self.view.on_state:
             self.view.on_state(self.view)
         edit = self.edit_commands
@@ -230,9 +252,7 @@ class StoryboardChrome:
         self.nav.selection_count.value = f'{len(self.view.edit_selection.ids)} selecionados'
         for action in (Action.CUT_NODES, Action.COPY, Action.DUPLICATE, Action.MOVE, Action.DELETE):
             edit[action].disabled = not selected
-        active = next((frame for frame in self.view.board.frames if frame.id == self.nav.selected), None)
-        clipboard = getattr(self.view, 'node_clipboard', None)
-        edit[Action.PASTE].disabled = not (clipboard and clipboard.payload) and (not active or not active.node_type.image)
+        edit[Action.PASTE].disabled = False
         for command in ('group', 'disconnect', 'remove_preserving'):
             self.view.graph.commands[command].disabled = not selected
         self.snap_item.checked = self.workspace.snap_enabled
@@ -242,13 +262,13 @@ class StoryboardChrome:
         self.nav.selection_bar.visible = selected
         self.play.disabled = not self.view.editable() or not self.view.board.frames
         self.canvas_mode.disabled = not self.view.editable()
-        for button, active in ((self.canvas_mode, not self.view.player.opened), (self.play, self.view.player.opened)):
-            button.style = ft.ButtonStyle(animation_duration=0,
-                bgcolor=ft.Colors.PRIMARY_CONTAINER if active else None,
-                side=ft.BorderSide(1, ft.Colors.PRIMARY if active else BORDER))
-        self.workspace.controls.visible = not self.view.player.opened
+        self.reference_mode.disabled = not self.view.editable()
+        self.mode_tabs.select('references' if self.view.references.active else
+            'animatic' if self.view.player.opened else 'canvas')
+        self.workspace.controls.visible = not self.view.player.opened and not self.view.references.active
         for command in self.canvas_view_commands:
-            command.disabled = self.view.player.opened
+            command.disabled = self.view.player.opened or self.view.references.active
+        self.props_item.disabled = self.view.references.active
         self.fit_all.content = self.view.keymap.describe(
             'Enquadrar timeline' if self.view.player.opened else 'Enquadrar tudo',
             Action.FOCUS if self.view.player.opened else Action.FIT)
@@ -257,6 +277,10 @@ class StoryboardChrome:
                 edit[action].disabled = True
         for source in (self.selection_menu, self.add_menu, self.node_menu):
             source.disabled = self.view.player.opened or self.toolbar.disabled
+        if self.view.references.active:
+            self.node_menu.disabled = self.add_menu.disabled = True
+            for action in (Action.COPY, Action.CUT_NODES, Action.MOVE):
+                edit[action].disabled = True
         self.menus.sync(self.toolbar.disabled)
         self.sync_status()
 
@@ -306,13 +330,26 @@ class StoryboardChrome:
         self.page.update(self.nav.tools, self.content)
 
     def select_all(self, e=None):
+        if self.view.references.active:
+            self.page.run_task(self.view.references.execute, Action.ALL)
+            return
         self.nav.apply_selection({key for key, card in self.view.cards.items() if card.content.visible})
         self.nav.focus_keyboard()
 
     def select_none(self, e=None):
+        if self.view.references.active:
+            self.view.references.clear()
+            return
         self.nav.apply_selection(set())
         self.nav.focus_keyboard()
 
     def invert(self, e=None):
+        if self.view.references.active:
+            canvas = self.view.references
+            canvas.selection.replace({item.id for item in self.view.board.references} - canvas.selection.ids)
+            canvas.paint()
+            canvas.publish_cards(canvas.cards)
+            canvas.selection_changed()
+            return
         self.nav.apply_selection({key for key, card in self.view.cards.items() if card.content.visible} - self.nav.selection.ids)
         self.nav.focus_keyboard()

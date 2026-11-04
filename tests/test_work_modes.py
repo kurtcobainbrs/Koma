@@ -14,6 +14,31 @@ class WorkModeTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_mode_shortcuts_use_top_row_digits_and_respect_field_focus_and_remapping(self):
+        from koma.editor.shortcuts import Action
+        view, player = self.editor()
+        board, past = view.board, tuple(view.history.past)
+        nav = view.workspace.navigation
+        self.assertIsNone(view.keymap.resolve('Numpad 2', (), 'canvas'))
+        fixtures.finish(nav.key_down(Data(key='2')))
+        self.assertTrue(player.opened)
+        player.strip.duration_input.focus()
+        fixtures.finish(player.key_down(Data(key='3')))
+        self.assertFalse(view.references.active)
+        player.strip.duration_input.cancel()
+        fixtures.finish(player.key_down(Data(key='3')))
+        self.assertTrue(view.references.active)
+        fixtures.finish(view.references.key_down(Data(key='1')))
+        self.assertFalse(view.references.active)
+        self.assertFalse(player.opened)
+        view.keymap.rebind(Action.MODE_REFS, ('4',))
+        self.assertIsNone(view.keymap.resolve('3', (), 'canvas'))
+        fixtures.finish(nav.key_down(Data(key='4')))
+        self.assertTrue(view.references.active)
+        self.assertIn('4', view.chrome.reference_mode.tooltip)
+        self.assertIs(view.board, board)
+        self.assertEqual(tuple(view.history.past), past)
+
     def editor(self):
         view = self.view()
         for _ in range(3):
@@ -29,7 +54,7 @@ class WorkModeTests(TestCase):
         inspector = view.properties.content
         player.open()
         self.assertIs(view.work_modes.active_surface, view.work_modes.animatic)
-        self.assertIs(view.work_modes.center.controls[-1], view.work_modes.animatic)
+        self.assertIn(view.work_modes.animatic, view.work_modes.center.controls)
         self.assertIs(view.work_modes.animatic.content, player.surface)
         self.assertIs(view.properties.content, inspector)
         self.assertTrue(all(frame is board.frames[i] for i, frame in enumerate(player.timeline.frames)))
@@ -251,7 +276,7 @@ class WorkModeTests(TestCase):
         packed = msgpack.packb(patch_.to_message(), default=encoder)
         self.assertTrue(packed)
         self.assertIs(player.drawing_slot.content, player.drawing_surface.tools)
-        self.assertIn(view.properties.content, view.work_modes.upper.controls)
+        self.assertIn(view.properties.content, view.work_modes.inspector.controls)
         self.assertIs(player.keyboard.content, view.work_modes.editor)
         self.assertTrue(view.work_modes.content.expand)
         self.assertIs(view.work_modes.content.content, player.keyboard)

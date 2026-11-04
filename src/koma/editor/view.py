@@ -85,6 +85,8 @@ class StoryboardView:
         self.count = ft.Text(size=TEXT_SMALL, color=MUTED)
         self.workspace = StoryboardCanvas(self)
         self.image_input = StoryboardImageInput(self)
+        from koma.ui.reference_canvas import ReferenceCanvas
+        self.references = ReferenceCanvas(self)
         self.project_properties = ProjectProperties(self)
         self.properties = FrameProperties(self)
         self.properties_splitter = Splitter(page, self.properties.content,
@@ -125,6 +127,8 @@ class StoryboardView:
 
     @property
     def edit_selection(self):
+        if self.references.active:
+            return self.references.selection
         return self.player.selection if self.player.opened else self.workspace.navigation.selection
 
     def field_focus(self, identifier, key, focused):
@@ -141,6 +145,15 @@ class StoryboardView:
 
     def shortcuts_changed(self):
         self.workspace.navigation.refresh_shortcuts()
+        self.player.preview_navigation.configure()
+        self.player.strip.configure_navigation()
+        if self.player.opened:
+            self.page.update(self.player.preview_navigation.content, self.player.layout.timeline)
+        if self.references.secondary_pan:
+            from koma.editor.shortcuts import Action
+            self.references.secondary_pan.zoom_modifiers = list(self.keymap.bindings(Action.DRAG_ZOOM))
+            if self.references.active:
+                self.page.update(self.references.secondary_pan)
         self.chrome.refresh_shortcuts()
         self.chrome.sync()
         self.external_drop.sync()
@@ -185,7 +198,11 @@ class StoryboardView:
         if self.loaded:
             self.preference_bindings.apply()
             if not self.load_error:
-                if self.player.suspended:
+                if self.references.active:
+                    self.references.sync()
+                    self.references.focus()
+                    self.references.restore()
+                elif self.player.suspended:
                     self.player.resume()
                 else:
                     await self.workspace.resume()
@@ -234,6 +251,7 @@ class StoryboardView:
             self.page.update(self.content)
 
     def refresh(self):
+        self.references.sync()
         trim_thumbnails(self)
         ids = {frame.id for frame in self.board.frames}
         self.cards = {key: card for key, card in self.cards.items() if key in ids}
@@ -539,6 +557,9 @@ class StoryboardView:
         await self.persist()
 
     async def pick_image(self, identifier=None):
+        if self.references.active:
+            await self.references.actions.pick()
+            return
         if not self.editable():
             return
         self.lock(True)
@@ -594,6 +615,12 @@ class StoryboardView:
     async def export(self, e=None):
         if not self.editable() or not self.board.frames:
             return
+        from koma.ui.pdf_export_panel import PdfExportPanel
+        PdfExportPanel(self).open()
+
+    async def export_pdf_file(self, *, options=None, preferences=None):
+        if not self.editable() or not self.board.frames:
+            return
         self.lock(True)
         try:
             root = str(self.session.path.parent) if self.session.path else ''
@@ -606,7 +633,8 @@ class StoryboardView:
                 file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=['pdf'])
             if destination and not self.closing:
                 self.notify('Gerando PDF…', 'working')
-                saved = await asyncio.to_thread(export_pdf, self.board, self.store, Path(destination))
+                saved = await asyncio.to_thread(export_pdf, self.board, self.store, Path(destination),
+                    options=options, preferences=preferences or self.settings.configuration.values)
                 self.notify(f'PDF exportado: {saved}', 'success')
         except (OSError, ValueError, RuntimeError) as exc:
             self.notify(f'Não foi possível exportar: {exc}', 'error')
@@ -616,6 +644,9 @@ class StoryboardView:
     async def deactivate(self):
         """Suspende gestos/player ao sair da aba, preservando documento e histórico."""
         self.focus.suspend()
+        if self.references.gesture:
+            self.references.cancel()
+        self.references.suspend_camera()
         self.workspace.camera_memory.remember()
         self.workspace.cancel_gestures()
         self.properties.end_adjust()
@@ -632,6 +663,7 @@ class StoryboardView:
         self.active = False
 
     async def shutdown(self):
+        self.references.suspend_camera()
         if hasattr(self, 'preference_bindings'):
             self.preference_bindings.close()
         self.focus.suspend()

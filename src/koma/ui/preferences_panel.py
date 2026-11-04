@@ -6,10 +6,7 @@ from koma.ui.design import (dialog, input_style, APP_PADDING, PAGE_PADDING,
     CONTROL_HEIGHT, MUTED, BORDER, SURFACE, SELECTION, RADIUS)
 from koma.ui.typography import TEXT_BODY, TEXT_SMALL, FONT_HEADING
 from koma.ui.event_updates import explicit_updates
-from koma.ui.color_input import ColorInput
-from koma.ui.number_input import NumberInput
-from koma.ui.choice_input import ChoiceInput
-from koma.ui.path_input import PathInput
+from koma.ui.preference_input import preference_input
 from koma.ui.form_layout import FORM_LAYOUT, form_row
 
 
@@ -120,27 +117,9 @@ class PreferencesPanel:
         boolean_row = None
         for field in category.fields:
             value = self.values[category.key][field.key]
-            if field.kind == 'color':
-                control = ColorInput(self.page, field.label, value, validate=field.parse,
-                    on_change=self.changed, on_submit=self.save)
-            elif field.kind == 'path':
-                control = PathInput(self.page, field.label, value, on_change=self.changed, on_submit=self.save)
-            elif field.kind in ('int', 'float') and not field.choices:
-                control = NumberInput(self.page, field.label, value, validate=field.parse,
-                    minimum=field.minimum, maximum=field.maximum, integer=field.kind == 'int',
-                    slider=field.slider, on_change=self.changed, on_submit=self.save)
-            elif field.kind == 'bool':
-                control = ft.Checkbox(label=field.label, value=value,
-                    visual_density=ft.VisualDensity.COMPACT, on_change=self.changed)
-            elif field.choices:
-                control = ChoiceInput(field.label, value, field.choices, on_change=self.changed)
-            else:
-                control = ft.TextField(value=str(value), width=FORM_LAYOUT.text_width,
-                    on_change=self.changed, on_submit=self.save, **input_style(FORM_LAYOUT.row_height))
+            control, presented = preference_input(self.page, field, value,
+                on_change=self.changed, on_submit=self.save)
             self.controls[field.key] = control
-            presented = control.content if isinstance(control, (ColorInput, NumberInput, ChoiceInput, PathInput)) else control
-            if isinstance(control, (ft.TextField, ft.Dropdown)):
-                presented = form_row(field.label, control)
             if field.group:
                 boolean_row = None
                 if field.group not in groups:

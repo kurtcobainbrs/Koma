@@ -1,6 +1,6 @@
 # Preferências globais
 
-Abra **Editar > Preferências…**. A janela reúne 13 categorias em uma navegação
+Abra **Editar > Preferências…**. A janela reúne categorias em uma navegação
 lateral, com campos compactos, prévia de identificação e estilos e restauração
 por seção. Os atalhos editam o mapa compartilhado, com validação de conflitos.
 
@@ -35,6 +35,13 @@ sem uma segunda cópia autoritativa no arquivo de preferências visuais.
 - **Aparência e canvas:** fundo, cores de seleção, marcadores e grade,
   espaçamento, zoom e enquadramento inicial. O fundo da imagem também compõe
   o MP4; o espaçamento da grade também orienta o snap ao confirmar movimentos.
+- **PDF:** título e subtítulo editáveis, página A4/A3/Carta, orientação, colunas
+  e linhas automáticas ou definidas. A proporção do projeto orienta as imagens
+  e a disposição. A exportação abre um painel compacto com prévia do arranjo,
+  opções de ação, áudio, notas, duração, desenhos e textos completos. Alterações
+  valem para essa exportação; Usar como padrão salva os valores nas Preferências.
+  Cenas e quadros usam os mesmos códigos de produção e a mesma ordem da montagem,
+  sem criar uma segunda numeração; quadros mutados não renumeram os restantes.
 - **Timeline:** frames ou segundos, decimais e contadores, snap inicial dos
   marcadores e volume de monitoração. Esse volume não modifica os áudios do
   documento nem a mixagem exportada.
@@ -42,6 +49,13 @@ sem uma segunda cópia autoritativa no arquivo de preferências visuais.
   sem seleção na última visualização, montagem completa ou primeira cena.
   Limites de zoom, sensibilidade da roda e velocidade de pan independentes
   para prévia e timeline; espaço adicional ao fim da timeline configurável.
+  O zoom inicial da timeline usa Mínimo por padrão; Enquadrar é uma alternativa.
+  Cenas e montagem compartilham esse padrão. F continua enquadrando toda a trilha.
+- **Referências:** fundo do modo Refs, largura de novas imagens, deslocamento
+  ao duplicar e limites/sensibilidade de zoom. Posições e tamanhos existentes
+  permanecem no projeto, sem alterações ao aplicar padrões globais.
+  Também define grade inicial, espaçamento, snap e alinhamento inteligente com
+  distância em pixels da tela. A grade usa a cor de Aparência.
 - **Desenho:** cor e espessura iniciais, borracha independente e lembrança da
   ferramenta. Traços existentes permanecem intactos. O estado da ferramenta
   é salvo separadamente em `tool-state.json`, com uma escrita em andamento.
@@ -66,6 +80,16 @@ O intervalo controla apenas as cópias completas adicionais em
 `backups/<document_id>/`. A última sessão restaura arquivos salvos; documentos
 sem caminho continuam disponíveis no fluxo de recuperação.
 
+## Filtro do projeto
+
+O seletor no canto superior direito edita o filtro do projeto ativo, não as
+Preferências globais. Sem filtro e Preto e branco são independentes entre abas
+e ficam salvos no `.koma`, com desfazer/refazer. Canvas, Animatic, PDF e MP4
+consomem a mesma seleção; Refs preserva as cores. Somente as mídias são filtradas,
+preservando transparência, desenhos, legendas e interface. O formato 10 adiciona
+`media_filter`; documentos anteriores migram para Sem filtro, sem herdar a antiga
+configuração global. As mídias originais não são alteradas.
+
 `preference_catalog` define categorias, campos, tipos, limites e validação.
 `global_preferences` valida contratos cruzados e publica snapshots imutáveis.
 `preference_draft` permanece apenas para compatibilidade com o protótipo.
@@ -87,6 +111,9 @@ O formato dos documentos `.koma` permanece inalterado.
 
 A roda aproxima ou afasta mantendo o ponto sob o cursor. Arrastar com o botão
 do meio move a visualização. Na timeline, Shift + roda também desloca a trilha.
+Alt+Shift+arrastar com o botão esquerdo aplica zoom suave na prévia e na timeline,
+ancorado no clique inicial. Usa o mesmo atalho configurável do Canvas e de Refs,
+com a sensibilidade própria de cada área e sem alterar os tempos dos quadros.
 F enquadra a área sob o mouse; a prévia também oferece um botão de enquadrar
 junto ao indicador de zoom. O zoom da prévia é relativo à imagem enquadrada.
 
@@ -96,3 +123,6 @@ No cliente atualizado, o pan ocorre localmente e a timeline mantém apenas um
 pedido de zoom em andamento, agrupando os movimentos seguintes. Clientes
 anteriores usam a navegação compatível disponível; reabra o aplicativo para
 carregar o cliente compilado com a nova navegação.
+- **Guias e câmera:** terços, centro, grade, áreas seguras, guias em percentuais,
+  cor, espessura e opacidade. Prévia e MP4 têm opções de inclusão independentes.
+  Movimentos e notas são editados no node, em Propriedades > Câmera.

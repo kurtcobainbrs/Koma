@@ -14,7 +14,7 @@ from koma.editor.drawing_models import DrawingLayer
 from koma.editor.sequence_models import SequenceState
 from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
 
-DOCUMENT_VERSION = 7
+DOCUMENT_VERSION = 10
 
 
 def document(board, document_id):
@@ -24,7 +24,7 @@ def document(board, document_id):
 
 def parse_document(raw):
     try:
-        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in (1, 2, 3, 4, 5, 6, DOCUMENT_VERSION):
+        if not isinstance(raw, dict) or raw.get('format') != 'koma' or type(raw.get('version')) is not int or raw['version'] not in range(1, DOCUMENT_VERSION + 1):
             raise ValueError('Formato ou versão Koma não reconhecidos.')
         identifier = raw['document_id']
         if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
@@ -44,7 +44,7 @@ def parse_document(raw):
             if not isinstance(frame, dict):
                 raise ValueError('Quadro inválido.')
             values = dict(frame)
-            if raw['version'] == DOCUMENT_VERSION and values.get('sequence') is not None:
+            if raw['version'] >= 7 and values.get('sequence') is not None:
                 if not {'entry', 'exit'} <= values['sequence'].keys():
                     raise ValueError('A sequência não informa sua Entrada e Saída.')
             entries = values.pop('media', [])
@@ -54,15 +54,23 @@ def parse_document(raw):
                 values['media'] = tuple(NodeMedia.from_document(entry) for entry in entries)
             values['image_defaults'] = MediaTransform(**values.pop('image_defaults', {}))
             values['drawing'] = DrawingLayer.from_document(values.pop('drawing', {}))
+            from koma.editor.camera_models import CameraMotion
+            values['camera'] = CameraMotion.from_document(values.pop('camera', {}) if raw['version'] >= 9 else {})
             values['sequence'] = SequenceState.from_document(values.pop('sequence', None), MAX_CARDS)
             parsed_frames.append(StoryFrame(**values))
+        from koma.editor.reference_models import ReferenceImage, MAX_REFERENCES
+        references = raw.get('references', []) if raw['version'] >= 8 else []
+        if not isinstance(references, list) or len(references) > MAX_REFERENCES:
+            raise ValueError('Lista de referências inválida.')
         board = Storyboard(raw['title'], tuple(parsed_frames),
             tuple(StoryLink(**link) for link in links),
             tuple(StoryGroup(group['id'], group['title'], tuple(group['members'])) for group in groups),
             fps=raw.get('fps', 24), audio_tracks=tuple(AudioTrack(**track) for track in tracks),
             markers=tuple(TimelineMarker(**marker) for marker in markers),
-            frame_format=FrameFormat(**raw.get('frame_format', {})))
-        if raw['version'] < DOCUMENT_VERSION:
+            frame_format=FrameFormat(**raw.get('frame_format', {})),
+            references=tuple(ReferenceImage(**item) for item in references),
+            media_filter=raw['media_filter'] if raw['version'] >= 10 else 'none')
+        if raw['version'] < 7:
             from koma.documents.sequence_migration import migrate_sequences
             board = migrate_sequences(board)
         board.validate()

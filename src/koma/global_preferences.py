@@ -13,6 +13,9 @@ def freeze(values):
 
 def validate_configuration(values):
     candidate = validated(values)
+    from koma.editor.guide_geometry import guide_positions
+    guide_positions(candidate['guides']['vertical'])
+    guide_positions(candidate['guides']['horizontal'])
     from koma.file_defaults import validate_template
     from koma.editor.frame_format import FrameFormat
     from koma.editor.drawing_models import MAX_BRUSH_WIDTH

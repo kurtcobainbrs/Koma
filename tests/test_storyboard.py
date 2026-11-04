@@ -514,12 +514,12 @@ class StoryboardTests(unittest.TestCase):
         picker.save_file = AsyncMock(return_value=None)
         with patch('koma.editor.view.ft.FilePicker', return_value=picker), \
                 patch('koma.editor.view.export_pdf') as export:
-            finish(view.export())
+            finish(view.export_pdf_file())
             export.assert_not_called()
             self.assertFalse(view.busy)
             picker.save_file.return_value = str(self.root / 'presentation.pdf')
             export.side_effect = ValueError('missing image')
-            finish(view.export())
+            finish(view.export_pdf_file())
         self.assertFalse(view.busy)
         self.assertEqual(view.board, before)
         self.assertEqual(view.feedback.state, 'error')

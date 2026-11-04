@@ -13,6 +13,7 @@ from PIL import Image, ImageOps
 from koma.documents.images import IMAGE_LIMIT
 from koma.documents.store import document, parse_document
 from koma.editor.models import MAX_CARDS
+from koma.editor.reference_models import MAX_REFERENCES
 from koma.editor.media_models import MAX_AUDIO_TRACKS
 from koma.documents.audio import validate_audio, MAX_AUDIO_BYTES
 from koma.editor.node_media import board_assets, MAX_MEDIA_ITEMS, MAX_VIDEO_BYTES
@@ -118,7 +119,7 @@ def restore_bundle(source, store):
         with ZipFile(source) as archive:
             entries = archive.infolist()
             names = [entry.filename for entry in entries]
-            if len(names) != len(set(names)) or len(names) > MAX_MEDIA_ITEMS * 2 + MAX_AUDIO_TRACKS + 1:
+            if len(names) != len(set(names)) or len(names) > MAX_MEDIA_ITEMS * 2 + MAX_AUDIO_TRACKS + MAX_REFERENCES + 1:
                 raise ValueError('Arquivos duplicados ou em excesso no documento.')
             if sum(entry.file_size for entry in entries) > MAX_BUNDLE_BYTES:
                 raise ValueError('O documento ultrapassa 2 GB.')

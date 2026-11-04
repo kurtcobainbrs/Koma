@@ -8,6 +8,7 @@ from koma.ui.image_source import thumbnail_source
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.event_updates import explicit_updates
 from koma.ui.retained_container import RetainedListView
+from koma.ui.media_filter import media_filter
 
 
 class SceneSidebar:
@@ -67,8 +68,8 @@ class SceneSidebar:
                     *(track.start + track.duration for track in self.view.board.audio_tracks if track.scene_id == root.id), 0) if frames else 0
                 image = next((frame.image for frame in frames if frame.image), '')
                 source = thumbnail_source(self.view, image) if image else None
-                preview = ft.Image(src=source, width=WORKSPACE_STYLE.media_thumbnail_width,
-                    height=CONTROL_HEIGHT, fit=ft.BoxFit.COVER) if source else ft.Icon(ft.Icons.MOVIE_OUTLINED, color=MUTED)
+                preview = media_filter(self.view, ft.Image(src=source, width=WORKSPACE_STYLE.media_thumbnail_width,
+                    height=CONTROL_HEIGHT, fit=ft.BoxFit.COVER)) if source else ft.Icon(ft.Icons.MOVIE_OUTLINED, color=MUTED)
                 label = self.view.production.label(root.id)
                 row = ft.Container(padding=APP_PADDING, height=WORKSPACE_STYLE.media_row_height,
                     opacity=.5 if root.muted else 1,

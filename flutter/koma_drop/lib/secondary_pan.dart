@@ -1,10 +1,11 @@
 /// Secondary-button pan uses the existing InteractiveViewer controller locally.
 library;
+import 'dart:math' as math;
 
 import 'package:flet/flet.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'gesture_modifiers.dart';
 
 class CanvasGesturesExtension extends FletExtension {
   @override
@@ -26,21 +27,18 @@ class _SecondaryPanState extends State<_SecondaryPan> {
   Rect? _boundary;
   Offset? _origin, _last, _scenePress;
   bool _moved = false;
+  bool _zooming = false;
+  double _minimum = .05, _maximum = 16;
   int? _pointer;
 
-  bool get _allowed {
-    if (widget.control.disabled || !widget.control.getBool('pan_enabled', true)!) return false;
-    final keyboard = HardwareKeyboard.instance;
-    final pressed = <String>{
-      if (keyboard.isControlPressed) 'Ctrl',
-      if (keyboard.isAltPressed) 'Alt',
-      if (keyboard.isShiftPressed) 'Shift',
-      if (keyboard.isMetaPressed) 'Meta',
-    };
-    final reserved = widget.control.get<List<dynamic>>('reserved_modifiers', [])!;
-    return !reserved.any((combo) =>
-        (combo as String).split('+').every(pressed.contains));
+  bool _matches(String property) {
+    return matchesGestureModifiers(widget.control, property);
   }
+
+  bool get _allowed => !widget.control.disabled && widget.control.getBool('pan_enabled', true)!
+      && !_matches('reserved_modifiers');
+  bool get _zoomAllowed => !widget.control.disabled && widget.control.getBool('zoom_enabled', true)!
+      && _matches('zoom_modifiers');
 
   // Read the public InteractiveViewer API, without depending on Flet's private
   // State or control IDs. The existing viewer retains its zoom and pan methods.
@@ -71,13 +69,17 @@ class _SecondaryPanState extends State<_SecondaryPan> {
     if (viewer.transformationController == null || viewport is! RenderBox ||
         scene == null || !scene!.hasSize) return false;
     _camera = viewer.transformationController;
+    _minimum = viewer.minScale;
+    _maximum = viewer.maxScale;
     _viewport = viewport;
     _boundary = viewer.boundaryMargin.inflateRect(Offset.zero & scene!.size);
     return true;
   }
 
   void _down(PointerDownEvent event) {
-    if (event.buttons != kSecondaryMouseButton || !_allowed || !_findCamera()) return;
+    final zooming = event.buttons == kPrimaryMouseButton && _zoomAllowed;
+    if ((!zooming && (event.buttons != kSecondaryMouseButton || !_allowed)) || !_findCamera()) return;
+    _zooming = zooming;
     _origin = _last = event.position;
     _pointer = event.pointer;
     _scenePress = _camera!.toScene(_viewport!.globalToLocal(event.position));
@@ -94,6 +96,18 @@ class _SecondaryPanState extends State<_SecondaryPan> {
     final translation = matrix.getTranslation();
     final delta = event.position - _last!;
     _last = event.position;
+    if (_zooming) {
+      final sensitivity = widget.control.getDouble('zoom_sensitivity', 1)!;
+      final target = (scale * math.exp((delta.dx - delta.dy) * sensitivity / 240)).clamp(_minimum, _maximum);
+      final anchor = _viewport!.globalToLocal(_origin!);
+      final ratio = target / scale;
+      matrix.scaleByDouble(ratio, ratio, ratio, 1);
+      translation.x = anchor.dx - _scenePress!.dx * target;
+      translation.y = anchor.dy - _scenePress!.dy * target;
+      matrix.setTranslation(translation);
+      _camera!.value = matrix;
+      return;
+    }
     final bounds = _boundary!;
     final size = _viewport!.size;
     final minX = size.width - bounds.right * scale;
@@ -116,7 +130,7 @@ class _SecondaryPanState extends State<_SecondaryPan> {
     _pointer = null;
     if (cancelled && !_moved) return;
     widget.control.triggerEvent('navigation', {
-      'moved': _moved || cancelled,
+      'moved': _moved || cancelled || _zooming,
       'zoom': matrix.getMaxScaleOnAxis(),
       'translation_x': translation.x, 'translation_y': translation.y,
       'local_position': {'x': _scenePress!.dx, 'y': _scenePress!.dy},
@@ -130,7 +144,7 @@ class _SecondaryPanState extends State<_SecondaryPan> {
       gestures: {
         EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
           () => EagerGestureRecognizer(allowedButtonsFilter: (buttons) =>
-              buttons == kSecondaryMouseButton && _allowed), (_) {}),
+              buttons == kSecondaryMouseButton && _allowed || buttons == kPrimaryMouseButton && _zoomAllowed), (_) {}),
       },
       child: Listener(onPointerDown: _down, onPointerMove: _move,
         onPointerUp: _end, onPointerCancel: (event) => _end(event, cancelled: true),

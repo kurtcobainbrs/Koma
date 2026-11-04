@@ -86,6 +86,7 @@ class TimelineEditingTests(TestCase):
     def test_wheel_zoom_preserves_time_under_cursor_and_f_fits_sequence(self):
         view, player = self.editor()
         strip = player.strip
+        strip.fit()
         before = view.board
         history = len(view.history.past)
         event = Data(scroll_delta=Data(y=-120), local_position=Data(x=200))
@@ -226,6 +227,7 @@ class TimelineEditingTests(TestCase):
     def test_ruler_hit_test_uses_track_coordinates_and_zoom_keeps_center_time(self):
         view, player = self.editor()
         strip = player.strip
+        strip.fit()
         strip.zoom(4)
         self.assertEqual(strip.scale.pixels_per_second, 800)
         strip.scrolled(Data(pixels=1200))

@@ -31,6 +31,10 @@ class NodeLayout:
     def image_width(self, node_width):
         return node_width - self.inset * 2 - self.socket_size
 
+    def image_size(self, node_width, frame_format):
+        width = self.image_width(node_width)
+        return width, width / frame_format.aspect_ratio
+
     def height(self, body_height, *, compact=False):
         return self.inset * 2 + body_height + (0 if compact else self.header_height + self.footer_height + self.spacing * 2)
 

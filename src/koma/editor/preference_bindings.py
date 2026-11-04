@@ -28,6 +28,13 @@ class PreferenceBindings:
         from koma.preview_cache import PREVIEW_BUDGET_SHARES
         view.settings.preview_cache.resize(values['system']['cache'] / PREVIEW_BUDGET_SHARES)
         ws, player = view.workspace, view.player
+        if changed == {'pdf'}:
+            self.revision, self.previous = config.revision, values
+            return
+        if changed & {'references', 'appearance', 'system'}:
+            view.references.configure()
+            if view.references.active:
+                view.page.update(view.references.content)
         if self.previous is not None and self.previous['system']['cache'] != values['system']['cache']:
             player.media.waveforms.clear()
         if 'animatic' in changed:
@@ -61,6 +68,12 @@ class PreferenceBindings:
         if changed == {'reference'}:
             self.revision, self.previous = config.revision, values
             player.reference_presentation.refresh()
+            return
+        if changed == {'guides'}:
+            self.revision, self.previous = config.revision, values
+            player.guides.sync()
+            if player.presenting:
+                view.page.update(player.guides.content)
             return
         ws.content.bgcolor = values['appearance']['canvas']
         ws.viewer.scale_factor = WHEEL_ZOOM_FACTOR / values['canvas']['zoom']

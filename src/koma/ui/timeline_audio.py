@@ -176,11 +176,12 @@ class AudioControls:
         if self.target and (not track or self.target[0] != track.id or self.target[2] is not player.view.session):
             self.focused = False
             self.target = None
-        locked = not player.view.editable() or player.editing
-        self.import_button.disabled = self.add_marker.disabled = locked or not player.timeline.local_editing
+        local_timeline = player.timeline is not None and player.timeline.local_editing
+        locked = not player.presenting or not player.view.editable() or player.editing
+        self.import_button.disabled = self.add_marker.disabled = locked or not local_timeline
         for button in (self.start, self.mute, self.remove):
-            button.disabled = locked or track is None
-        self.volume.disabled = (locked and self.gain.snapshot is None) or track is None
+            button.disabled = locked or not local_timeline or track is None
+        self.volume.disabled = (locked and self.gain.snapshot is None) or not local_timeline or track is None
         if self.gain.snapshot is None:
             self.volume.value = track.volume if track else 1
         self.volume.tooltip = f'Volume · {self.volume.value * 100:.0f}%'

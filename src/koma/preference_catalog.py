@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 import math
 import re
 from koma.editor.animatic_settings import SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM
+from koma.exports.pdf_options import PAPERS, ORIENTATIONS, ROW_MODES, MAX_COLUMNS, PDF_DEFAULTS
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class Field:
     maximum: float = 10000
     slider: bool = False
     group: str = ''
+    choice_labels: tuple = ()
 
     def parse(self, value):
         if self.kind == 'bool':
@@ -119,6 +121,19 @@ CATEGORIES = (
     Category('drawing', 'Desenho', (
         Field('color', 'Cor inicial', '#FF5050', 'color'), number('width', 'Espessura (px)', 4, 1, 64),
         number('eraser', 'Borracha (px)', 24, 1, 200), Field('remember', 'Lembrar ferramenta', True, 'bool'))),
+    Category('references', 'Referências', (
+        choice('initial_view', 'Primeira abertura', 'Enquadrar imagens', 'Enquadrar imagens', 'Última visualização'),
+        Field('background', 'Fundo', '#181818', 'color'),
+        Field('grid', 'Mostrar grade', False, 'bool'),
+        Field('grid_snap', 'Ajustar à grade', False, 'bool'),
+        number('grid_spacing', 'Espaçamento da grade', 24, 4, 500),
+        Field('smart_align', 'Alinhamento inteligente', True, 'bool'),
+        number('align_distance', 'Distância de alinhamento (px)', 8, 1, 32),
+        number('image_width', 'Largura inicial', 320, 32, 2000),
+        number('duplicate_offset', 'Deslocamento ao duplicar', 24, 1, 500),
+        number('min_zoom', 'Zoom mínimo (%)', 5, 1, 100),
+        number('max_zoom', 'Zoom máximo (%)', 1600, 100, 6400),
+        number('wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True))),
     Category('animatic', 'Animatic', (
         Field('scenes_visible', 'Mostrar lista de cenas', True, 'bool'),
         number('scenes_width', 'Largura da lista (px)', SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM),
@@ -130,12 +145,27 @@ CATEGORIES = (
             number('preview_wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True),
             number('preview_pan_speed', 'Sensibilidade do pan', 1, .1, 5, decimal=True)),
         *group('Timeline',
+            choice('timeline_initial_zoom', 'Zoom inicial', 'Mínimo', 'Mínimo', 'Enquadrar'),
             number('timeline_min_zoom', 'Zoom mínimo (%)', 10, 1, 100),
             number('timeline_max_frames', 'Frames no zoom máximo', 1, 1, 100),
             number('timeline_wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True),
             number('timeline_pan_speed', 'Sensibilidade do pan', 1, .1, 5, decimal=True),
             number('timeline_tail', 'Espaço após o fim (telas)', 0, 0, 5, decimal=True)))),
     Category('shortcuts', 'Atalhos', (), presentation='shortcuts'),
+    Category('guides', 'Guias e câmera', (
+        *group('Guias', Field('preview', 'Mostrar na prévia', False, 'bool'),
+            Field('export', 'Incluir no MP4', False, 'bool'),
+            Field('thirds', 'Terços', True, 'bool'), Field('center', 'Centro', False, 'bool'),
+            Field('grid', 'Grade', False, 'bool'), number('columns', 'Colunas', 4, 2, 16), number('rows', 'Linhas', 4, 2, 16),
+            Field('safe_action', 'Área segura de ação', False, 'bool'), number('action_margin', 'Margem de ação (%)', 5, 0, 40, decimal=True),
+            Field('safe_title', 'Área segura de títulos', False, 'bool'), number('title_margin', 'Margem de títulos (%)', 10, 0, 40, decimal=True),
+            Field('vertical', 'Verticais (%) · use ;', ''), Field('horizontal', 'Horizontais (%) · use ;', ''),
+            Field('color', 'Cor das guias', '#FFFFFF', 'color'), number('width', 'Espessura', 1, 1, 6),
+            number('opacity', 'Opacidade (%)', 60, 1, 100)),
+        *group('Indicações de câmera', Field('camera_preview', 'Mostrar na prévia', True, 'bool'),
+            Field('camera_export', 'Incluir no MP4', False, 'bool'),
+            Field('camera_label', 'Mostrar nome e nota', True, 'bool'),
+            Field('camera_color', 'Cor', '#7DAA9B', 'color')))),
     Category('system', 'Salvamento e desempenho', (
         *group('Recuperação', number('interval', 'Backup a cada (min)', 2, 1, 60),
             number('backups', 'Cópias mantidas', 10, 1, 100),
@@ -149,6 +179,14 @@ CATEGORIES = (
         number('recent', 'Projetos recentes', 20, 1, 100),
         choice('quality', 'Qualidade do MP4', 'Alta', 'Média', 'Alta'),
         Field('filename', 'Nome do arquivo', '{project}_{scene}'))),
+    Category('pdf', 'PDF', (
+        Field('title', 'Título', PDF_DEFAULTS.title), Field('subtitle', 'Subtítulo', PDF_DEFAULTS.subtitle),
+        choice('paper', 'Página', PDF_DEFAULTS.paper, *PAPERS),
+        choice('orientation', 'Orientação', PDF_DEFAULTS.orientation, *ORIENTATIONS),
+        number('columns', 'Colunas', PDF_DEFAULTS.columns, 1, MAX_COLUMNS), choice('rows', 'Linhas', 'Automático', *ROW_MODES),
+        Field('action', 'Ação', True, 'bool'), Field('audio', 'Áudio', True, 'bool'),
+        Field('notes', 'Notas', True, 'bool'), Field('duration', 'Duração', True, 'bool'),
+        Field('drawing', 'Desenhos', True, 'bool'), Field('details', 'Textos completos', True, 'bool'))),
     Category('confirmations', 'Confirmações', (
         Field('delete', 'Confirmar exclusão', False, 'bool'),
         Field('close', 'Avisar sobre alterações ao fechar', True, 'bool')), action='Restaurar avisos', action_key='restore_confirmations'),

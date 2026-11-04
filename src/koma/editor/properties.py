@@ -66,8 +66,11 @@ class FrameProperties:
             height=COMPACT_CONTROL_HEIGHT, on_click=lambda e: self.set_drawing(strokes=()))
         self.drawing_section = CollapsibleSection(view.page, 'Desenho', [self.drawing_count,
             ft.Row([self.drawing_visibility, self.drawing_clear], spacing=APP_PADDING)], expanded=False)
+        from koma.ui.camera_properties import CameraProperties
+        self.camera = CameraProperties(view)
+        self.camera_section = CollapsibleSection(view.page, 'Câmera', [self.camera.content], expanded=False)
         self.fields = ft.Column([self.title, self.color_button, self.timing,
-            self.image_section.content, self.script_section.content, self.drawing_section.content], visible=False, spacing=8,
+            self.image_section.content, self.camera_section.content, self.script_section.content, self.drawing_section.content], visible=False, spacing=8,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.toggle_button = ft.IconButton(icon=ft.Icons.TUNE, tooltip=view.keymap.describe('Propriedades do quadro ativo', Action.PROPERTIES),
             on_click=self.toggle, width=CONTROL_HEIGHT, height=CONTROL_HEIGHT)
@@ -170,6 +173,8 @@ class FrameProperties:
                     if key == 'duration' and len(values) != 1:
                         self.duration_frames.value = ''
         self.content.disabled = not self.view.editable() or self.view.player.editing
+        self.camera_section.content.visible = bool(property_targets(self.view.board, self.view.edit_selection.ids, 'camera'))
+        self.camera.sync()
 
     def sync_path(self):
         selection = self.view.edit_selection

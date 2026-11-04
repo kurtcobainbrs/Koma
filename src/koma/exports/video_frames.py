@@ -38,6 +38,7 @@ class StoryboardFrames:
     reference_fields: tuple = ()
     references: tuple = ()
     preferences: object = None
+    media_filter: str = 'none'
 
     @property
     def count(self):
@@ -50,6 +51,8 @@ class StoryboardFrames:
             else self.store.images / frame.image) for frame in self.frames if frame.image})
 
     def validate(self):
+        from koma.media_filters import selected_filter
+        selected_filter(self.media_filter)
         validate_counts(self.frames, self.counts)
         FrameFormat(*self.size).validate()
         reference_fields(self.reference_fields)
@@ -73,7 +76,8 @@ class StoryboardFrames:
         done, total = 0, self.count
         try:
             for i, (frame, count) in enumerate(zip(self.frames, self.counts)):
-                composer = FrameComposer(frame, size, include_subtitles=self.include_subtitles, preferences=self.preferences)
+                composer = FrameComposer(frame, size, include_subtitles=self.include_subtitles,
+                    preferences=self.preferences, media_filter=self.media_filter)
                 video = frame.active_media and frame.active_media.kind == 'video'
                 if not video:
                     if frame.image:

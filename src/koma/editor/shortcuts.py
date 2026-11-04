@@ -5,6 +5,9 @@ from koma.keymap import Keymap, ShortcutAction
 
 
 class Action(StrEnum):
+    MODE_CANVAS = 'workspace.canvas'
+    MODE_ANIMATIC = 'workspace.animatic'
+    MODE_REFS = 'workspace.references'
     CLOSE_TAB = 'document.close_tab'
     NEXT_TAB = 'document.next_tab'
     PREVIOUS_TAB = 'document.previous_tab'
@@ -23,6 +26,7 @@ class Action(StrEnum):
     CUT = 'storyboard.tool.cut'
     TEMP_PAN = 'storyboard.pan.temporary'
     MOVE = 'storyboard.node.move'
+    SCALE_REFS = 'references.scale'
     MUTE = 'storyboard.node.mute'
     INSERT = 'storyboard.insert.menu'
     DUPLICATE = 'storyboard.node.duplicate'
@@ -43,6 +47,7 @@ class Action(StrEnum):
     ADD_SELECTION = 'storyboard.selection.add'
     SUBTRACT_SELECTION = 'storyboard.selection.subtract'
     CUT_DRAG = 'storyboard.wire.cut_drag'
+    DRAG_ZOOM = 'workspace.zoom.drag'
     PLAY = 'timeline.play'
     ADD_MARKER = 'timeline.marker.add'
     SNAP = 'timeline.marker.snap'
@@ -62,6 +67,9 @@ class Action(StrEnum):
 
 
 ACTIONS = (
+    ShortcutAction(Action.MODE_CANVAS, 'Modo Canvas', ('1',), contexts=('canvas', 'timeline')),
+    ShortcutAction(Action.MODE_ANIMATIC, 'Modo Animatic', ('2',), contexts=('canvas', 'timeline')),
+    ShortcutAction(Action.MODE_REFS, 'Modo Refs', ('3',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.CLOSE_TAB, 'Fechar aba', ('Ctrl+W',)),
     ShortcutAction(Action.NEXT_TAB, 'Próxima aba', ('Ctrl+Tab',)),
     ShortcutAction(Action.PREVIOUS_TAB, 'Aba anterior', ('Ctrl+Shift+Tab',)),
@@ -80,6 +88,7 @@ ACTIONS = (
     ShortcutAction(Action.CUT, 'Cortar ligações', ('K',)),
     ShortcutAction(Action.TEMP_PAN, 'Pan temporário', ('Space',), trigger='hold'),
     ShortcutAction(Action.MOVE, 'Mover', ('G',)),
+    ShortcutAction(Action.SCALE_REFS, 'Escalar referências', ('S',)),
     ShortcutAction(Action.MUTE, 'Mutar/desmutar nodes', ('M',)),
     ShortcutAction(Action.INSERT, 'Inserir', ('Shift+A',)),
     ShortcutAction(Action.DUPLICATE, 'Duplicar', ('Ctrl+D', 'Shift+D')),
@@ -100,6 +109,7 @@ ACTIONS = (
     ShortcutAction(Action.ADD_SELECTION, 'Adicionar à seleção', ('Shift',), contexts=('selection',), trigger='modifier'),
     ShortcutAction(Action.SUBTRACT_SELECTION, 'Remover da seleção', ('Ctrl',), contexts=('selection',), trigger='modifier'),
     ShortcutAction(Action.CUT_DRAG, 'Cortar com botão direito', ('Ctrl',), contexts=('wire_drag',), trigger='modifier'),
+    ShortcutAction(Action.DRAG_ZOOM, 'Zoom suave ao arrastar', ('Alt+Shift',), contexts=('view_drag',), trigger='modifier'),
     ShortcutAction(Action.PLAY, 'Reproduzir / pausar', ('Space',), contexts=('timeline',)),
     ShortcutAction(Action.ADD_MARKER, 'Criar marcador na agulha', ('M',), contexts=('timeline',)),
     ShortcutAction(Action.SNAP, 'Snap de marcadores', ('S',), contexts=('timeline',)),
