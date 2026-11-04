@@ -8,8 +8,9 @@ from koma.ui.typography import TEXT_BODY
 
 
 class ChoiceInput:
-    def __init__(self, label, value, choices, *, on_change, labels=None):
+    def __init__(self, label, value, choices, *, on_change, labels=None, icon=None):
         self._value, self.on_change = value, on_change
+        self.label, self.icon = label, icon
         self.labels = labels or {}
         self.error_text = None
         self.text = ft.Text(self.labels.get(value, str(value)), size=TEXT_BODY, expand=True, max_lines=1,
@@ -30,6 +31,11 @@ class ChoiceInput:
                     spacing=APP_PADDING)),
             items=[menu_item(self.labels.get(option, str(option)), on_click=choose(option)) for option in choices])
         self.content = form_row(label, self.button)
+        if icon is not None:
+            self.button.width = FORM_LAYOUT.row_height + APP_PADDING
+            self.button.content = ft.Row([ft.Icon(icon, size=MENU_ICON_SIZE),
+                ft.Icon(ft.Icons.EXPAND_MORE, size=MENU_ICON_SIZE - 4)], tight=True, spacing=0)
+            self.button.tooltip = f'{label} · {self.labels.get(value, str(value))}'
 
     @property
     def value(self):
@@ -39,3 +45,5 @@ class ChoiceInput:
     def value(self, value):
         self._value = value
         self.text.value = self.labels.get(value, str(value))
+        if self.icon is not None:
+            self.button.tooltip = f'{self.label} · {self.text.value}'

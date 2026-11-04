@@ -9,6 +9,8 @@ from koma.exports.subtitles import render_subtitle
 from koma.editor.frame_format import FrameFormat
 from koma.exports.drawings import paint_image
 from koma.media_filters import filter_media
+from koma.editor.media_geometry import inverse_affine
+from koma.editor.media_animation import MediaPose
 
 
 def frame_counts(frames, fps, *, durations=None):
@@ -63,12 +65,16 @@ class FrameComposer:
             self.overlay.alpha_composite(render_subtitle(frame.subtitle, size,
                 preferences['subtitles'] if preferences else None))
 
-    def compose(self, original):
+    def compose(self, original, seconds=0):
         frame, size = self.frame, self.size
         target = Image.new('RGB', size, self.preferences['appearance']['preview'] if self.preferences else self.colors['surface_container_low'])
         if original is not None:
             image = ImageOps.exif_transpose(original).convert('RGBA')
-            if frame.image_fit == 'cover':
+            transform = frame.active_media.transform if frame.active_media else frame.image_defaults
+            if transform.at(seconds) != MediaPose():
+                image = image.transform(size, Image.Transform.AFFINE,
+                    inverse_affine(image.size, size, transform, seconds), Image.Resampling.BICUBIC)
+            elif frame.image_fit == 'cover':
                 image = ImageOps.fit(image, size, Image.Resampling.LANCZOS,
                     centering=((frame.crop_x + 1) / 2, (frame.crop_y + 1) / 2))
             else:

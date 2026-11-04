@@ -8,6 +8,7 @@ import 'package:koma_drop/spatial_view.dart';
 import 'package:flet/src/controls/container.dart';
 import 'package:koma_drop/secondary_pan.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:koma_drop/navigation_view.dart';
 
 class RecordingNavigationBackend extends FletBackend {
@@ -21,6 +22,35 @@ class RecordingNavigationBackend extends FletBackend {
 }
 
 void main() {
+  testWidgets('wheel camera is reported and survives a mode remount', (tester) async {
+    final backend = RecordingNavigationBackend();
+    final control = Control(id: 80, type: 'koma_spatial_view', backend: backend,
+        properties: {'camera_zoom': 1.0, 'camera_x': -1000.0,
+          'camera_y': -800.0, 'camera_revision': 0});
+    Widget build(bool visible) => ChangeNotifierProvider<FletBackend>.value(value: backend,
+        child: MaterialApp(home: SizedBox(width: 600, height: 400,
+            child: visible ? SpatialView(control: control) : const SizedBox())));
+    await tester.pumpWidget(build(true));
+    await tester.pumpAndSettle();
+    backend.events.clear();
+    await tester.sendEventToBinding(const PointerScrollEvent(position: Offset(200, 150),
+        scrollDelta: Offset(0, -120)));
+    await tester.pumpAndSettle();
+    final pose = backend.events.lastWhere((event) => event['name'] == 'pose')['data'] as Map;
+    expect(pose['zoom'], greaterThan(1));
+    // Mirror the server's camera-pose contract, then leave and return to Refs.
+    control.properties.addAll({'camera_zoom': pose['zoom'],
+      'camera_x': pose['x'], 'camera_y': pose['y']});
+    await tester.pumpWidget(build(false));
+    await tester.pumpWidget(build(true));
+    await tester.pumpAndSettle();
+    final matrix = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!.value;
+    expect(matrix.getMaxScaleOnAxis(), closeTo(pose['zoom'] as double, .0001));
+    expect(matrix.storage[12], pose['x']);
+    expect(matrix.storage[13], pose['y']);
+    expect(tester.takeException(), isNull);
+  });
   for (final mode in ['preview', 'timeline']) {
     testWidgets('animatic $mode supports anchored modifier drag zoom', (tester) async {
       final backend = RecordingNavigationBackend();

@@ -31,6 +31,7 @@ from koma.editor.time_display import clock_text
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.retained_container import retain_children
 from koma.ui.reference_presentation import ReferencePresentation
+from koma.editor.media_transform_editor import MediaTransformEditor
 
 
 class AnimaticPlayer:
@@ -57,6 +58,7 @@ class AnimaticPlayer:
         self.drawing_surface = DrawingSurface(self)
         self.strip = TimelineStrip(self, self.duration_editor)
         self.preview = ImageViewport(view, height=400, show_drawing=False)
+        self.media_transform = MediaTransformEditor(self)
         self.reference_presentation = ReferencePresentation(self)
         self.subtitles = SubtitlePreview(self)
         from koma.ui.guide_presentation import GuidePresentation
@@ -76,10 +78,11 @@ class AnimaticPlayer:
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
         self.next_button = ft.IconButton(icon=ft.Icons.SKIP_NEXT, on_click=self.next,
             width=COMPACT_CONTROL_HEIGHT, height=COMPACT_CONTROL_HEIGHT, icon_size=ICON_SIZE)
-        transport = ft.Row([self.previous_button, self.play, self.next_button], spacing=0, tight=True)
+        transport = ft.Row([self.previous_button, self.media_transform.ui.previous, self.play,
+            self.media_transform.ui.next, self.next_button], spacing=0, tight=True)
         self.toolbar = PlayerToolbar(self.strip.duration_input.field, transport, self.clock,
             self.strip.fps, self.strip.history_tools, self.strip.zoom_tools,
-            [self.show_subtitles, self.loop], self.strip.audio_controls.tools)
+            [self.loop, self.show_subtitles], self.strip.audio_controls.tools, animation=self.media_transform.ui.animation)
         # Reuse the audio footer for frame context instead of adding another band.
         self.strip.footer_context.content = self.caption
         self.controls = self.toolbar.commands
@@ -306,6 +309,9 @@ class AnimaticPlayer:
         return bool(self.duration_editor.drag or self.duration_editor.committing
             or self.marker_editor.drag or self.marker_editor.committing
             or self.drawing.drag or self.drawing.committing
+            or self.media_transform.drag or self.media_transform.committing
+            or self.media_transform.ui.value_drag
+            or self.strip.keyframe_lane.editor.drag
             or self.strip.audio_lane.drag.snapshot or self.strip.audio_controls.gain.snapshot)
 
     def render(self, update=True):
@@ -351,6 +357,7 @@ class AnimaticPlayer:
         self.sync_inspector(update=update)
         self.guides.sync()
         self.drawing_surface.sync()
+        self.media_transform.sync()
         self.sync_video()
         self.audio_transport.update(self.timeline, self.view.store, self.playing and self.opened, self.position)
         if self.audio_transport.error:
@@ -375,7 +382,7 @@ class AnimaticPlayer:
 
     def set_gesture_locked(self, locked):
         """Publish a logical gesture lock without touching preview or tracks."""
-        self.controls.disabled = locked
+        self.controls.ignore_interactions = locked
         self.preview_navigation.lock(locked)
         self.scene_choice.disabled = locked or not self.view.editable()
         self.export_button.disabled = locked or not self.view.editable() or not self.timeline.frames
@@ -384,8 +391,14 @@ class AnimaticPlayer:
             self.view.page.update(self.controls, self.scene_choice, self.export_button)
 
     def pause_for_edit(self):
+        was_playing = self.playing
         self.playing = False
         self.audio_transport.stop()
+        if was_playing and self.preview.pose_control and self.preview.pose_control.playing:
+            control = self.media_transform.seek_preview()
+            if control and self.presenting:
+                with retain_children(control.content):
+                    self.view.page.update(control)
 
     def render_position(self):
         """Seek/playback update only transport and the frames that actually change."""
@@ -395,11 +408,13 @@ class AnimaticPlayer:
             self.render()
             return
         old_index = self.current
+        old_keyframe_height = self.strip.keyframe_lane.height
         index = self.timeline.index_at(self.position)
         if index != old_index:
             self.render(update=False)
             controls = [self.preview.content, self.guides.content, self.subtitles.content, self.caption,
                 self.drawing_surface.content, self.drawing_surface.visibility,
+                self.strip.keyframe_lane.content, self.strip.keyframe_label, self.media_transform.ui.panel,
                 self.strip.duration_input.field,
                 *[self.strip.blocks[self.timeline.frames[i].id].box
                     for i in {old_index, index} if 0 <= i < len(self.timeline.frames)]]
@@ -413,7 +428,22 @@ class AnimaticPlayer:
             controls = []
         reference_controls = self.reference_presentation.sync_current()
         scene_controls = self.layout.sidebar.take_updates()
-        self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls, *reference_controls, *scene_controls)
+        if not self.media_transform.drag:
+            pose_control = self.media_transform.seek_preview()
+            if pose_control:
+                controls.append(pose_control)
+            if not self.playing:
+                controls.extend((self.media_transform.ui.animation, self.media_transform.ui.previous, self.media_transform.ui.next))
+                if self.media_transform.panel_open:
+                    controls.extend((*self.media_transform.ui.fields.values(),
+                        *(scrub.text for scrub in self.media_transform.ui.scrubs.values())))
+        retained = [self.preview.pose_control.content] if self.preview.pose_control and old_index == index else []
+        if old_keyframe_height != self.strip.keyframe_lane.height:
+            controls.append(self.layout.timeline)
+            retained.extend(block.thumbnail.canvas for block in self.strip.blocks.values())
+            retained.append(self.strip.audio_lane.canvas)
+        with retain_children(*retained):
+            self.view.page.update(self.clock, self.play, self.strip.playhead, self.strip.needle, *controls, *reference_controls, *scene_controls)
 
     def sync_video(self):
         if self.timeline and 0 <= self.current < len(self.timeline.frames):
@@ -526,6 +556,29 @@ class AnimaticPlayer:
                 self.strip.marker_lane.cancel_rename()
                 self.focus_timeline()
             return
+        if self.media_transform.ui.focused:
+            if action == Action.CANCEL:
+                self.media_transform.ui.cancel_fields()
+                self.focus_timeline()
+            return
+        if action == Action.DELETE_SELECTION and self.strip.keyframe_lane.editor.selected is not None and not self.editing:
+            await self.strip.keyframe_lane.editor.remove_selected()
+            return
+        if (self.media_transform.enabled or self.navigation_target == 'preview') and not self.editing:
+            media_action = self.view.keymap.resolve(e.key, modifiers, 'media')
+            if media_action in (Action.MEDIA_MOVE, Action.MEDIA_SCALE, Action.MEDIA_ROTATE):
+                self.media_transform.choose_tool({Action.MEDIA_MOVE: 'move', Action.MEDIA_SCALE: 'scale', Action.MEDIA_ROTATE: 'rotate'}[media_action])
+                return
+            if media_action == Action.MEDIA_KEY:
+                await self.media_transform.set_key()
+                return
+            if media_action == Action.MEDIA_DELETE_KEY:
+                await self.media_transform.set_key(remove_only=True)
+                return
+            reset = {Action.MEDIA_RESET_MOVE: 'move', Action.MEDIA_RESET_ROTATE: 'rotate', Action.MEDIA_RESET_SCALE: 'scale'}
+            if media_action in reset:
+                await self.media_transform.reset(reset[media_action])
+                return
         if self.strip.audio_controls.focused:
             if action == Action.CANCEL:
                 self.strip.audio_controls.blur()
@@ -541,6 +594,23 @@ class AnimaticPlayer:
                 self.drawing_surface.tool_menu.close()
             return
         if action == Action.CANCEL:
+            if self.media_transform.ui.value_drag:
+                self.media_transform.ui.cancel_value()
+                return
+            if self.strip.keyframe_lane.editor.drag:
+                self.strip.keyframe_lane.editor.cancel()
+                return
+            if self.media_transform.drag:
+                self.media_transform.cancel()
+                return
+            if self.media_transform.enabled:
+                self.media_transform.use_drawing()
+                self.drawing_surface.refresh()
+                self.view.page.update(self.drawing_surface.content)
+                return
+            if self.media_transform.panel_open:
+                self.media_transform.activate(False)
+                return
             if not self.editing and self.drawing.selected_index() is not None:
                 self.drawing.clear_selection()
                 self.render()
@@ -586,7 +656,10 @@ class AnimaticPlayer:
         elif action == Action.RENAME_MARKER:
             self.strip.marker_lane.rename()
         elif action == Action.DELETE_SELECTION:
-            await self.delete_selection()
+            if self.strip.keyframe_lane.editor.selected is not None:
+                await self.strip.keyframe_lane.editor.remove_selected()
+            else:
+                await self.delete_selection()
         elif action == Action.IMPORT_AUDIO:
             await self.media.pick_audio()
         elif action == Action.UNDO:
@@ -612,6 +685,10 @@ class AnimaticPlayer:
         self.focus_timeline()
 
     def dismissed(self, e=None):
+        self.media_transform.temporary = None
+        self.strip.keyframe_lane.editor.cancel(update=False)
+        self.controls.ignore_interactions = False
+        self.media_transform.cancel(update=False)
         self.opened = False
         self.modifiers.clear()
         self.video_preview.clear()

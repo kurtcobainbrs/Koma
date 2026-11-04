@@ -100,7 +100,9 @@ class KomaApplication:
 
     def set_transition(self, value):
         self.transitioning = value
-        self.editor_host.disabled = self.menu_host.disabled = value
+        # Pointer gating must not change inherited widget enabled states.
+        # Retained descendants do not rebuild when only an ancestor unlocks.
+        self.editor_host.ignore_interactions = self.menu_host.ignore_interactions = value
         self.tabs.sync()
         self.project_drop.sync()
         controls = [self.editor_host, self.menu_host, self.tabs.content]

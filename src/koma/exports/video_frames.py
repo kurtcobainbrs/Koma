@@ -27,6 +27,36 @@ def validate_counts(items, counts):
         raise ValueError('Durações de vídeo inválidas.')
 
 
+def media_pictures(frame, store, composer, reader, size, fps, count, offset, cancelled):
+    """Decode stills once; animate at local shot time without retaining a movie."""
+    def seconds(index):
+        return min(offset + index / fps, max(0, frame.duration - 1 / fps))
+    if frame.active_media and frame.active_media.kind == 'video':
+        for index in range(count):
+            if cancelled():
+                return
+            original = reader.read(store.videos / frame.active_media.asset, seconds(index),
+                maximum_side=max(size), cancelled=cancelled)
+            if original is None:
+                return
+            yield composer.compose(original, seconds(index))
+        return
+    if frame.image:
+        with Image.open(store.images / frame.image) as original:
+            animated = bool(frame.active_media.transform.keyframes)
+            picture = None if animated else composer.compose(original, seconds(0))
+            for index in range(count):
+                if cancelled():
+                    return
+                yield composer.compose(original, seconds(index)) if animated else picture
+    else:
+        picture = composer.compose(None)
+        for _ in range(count):
+            if cancelled():
+                return
+            yield picture
+
+
 @dataclass(frozen=True)
 class StoryboardFrames:
     frames: tuple
@@ -78,24 +108,8 @@ class StoryboardFrames:
             for i, (frame, count) in enumerate(zip(self.frames, self.counts)):
                 composer = FrameComposer(frame, size, include_subtitles=self.include_subtitles,
                     preferences=self.preferences, media_filter=self.media_filter)
-                video = frame.active_media and frame.active_media.kind == 'video'
-                if not video:
-                    if frame.image:
-                        with Image.open(self.store.images / frame.image) as original:
-                            picture = composer.compose(original)
-                    else:
-                        picture = composer.compose(None)
-                for index in range(count):
-                    if cancelled():
-                        return
-                    if video:
-                        offset = self.offsets[i] if self.offsets else 0
-                        seconds = min(offset + index / fps, max(0, frame.duration - 1 / fps))
-                        original = reader.read(self.store.videos / frame.active_media.asset, seconds,
-                            maximum_side=max(size), cancelled=cancelled)
-                        if original is None:
-                            return
-                        picture = composer.compose(original)
+                offset = self.offsets[i] if self.offsets else 0
+                for index, picture in enumerate(media_pictures(frame, self.store, composer, reader, size, fps, count, offset, cancelled)):
                     done += 1
                     if overlay:
                         reference = self.references[i] if self.references else FrameReference(number=i + 1)

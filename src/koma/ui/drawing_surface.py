@@ -154,7 +154,7 @@ class DrawingSurface:
         if self.editor.drag and (frame is None or frame.id != self.editor.drag.frame.id):
             self.editor.cancel(update=False)
         locked = not frame or not self.player.view.editable() or self.player.editing
-        self.content.ignore_interactions = bool(locked and not self.editor.drag)
+        self.content.ignore_interactions = bool((locked and not self.editor.drag) or self.player.media_transform.enabled)
         for control in (self.select, self.pencil, self.eraser, self.shapes, self.color, self.width, self.width_slider, self.visibility):
             control.disabled = bool(locked)
         self.select.selected = self.editor.tool == SELECT
@@ -175,6 +175,7 @@ class DrawingSurface:
     def choose_tool(self, tool):
         if not self.player.opened or not self.player.view.editable() or self.player.editing:
             return
+        self.player.media_transform.use_drawing()
         self.editor.set_tool(tool)
         settings = self.player.view.settings
         if settings.configuration.values['drawing']['remember']:
@@ -183,6 +184,7 @@ class DrawingSurface:
         self.player.pause_for_edit()
         self.player.set_gesture_locked(False)
         self.refresh()
+        self.player.view.page.update(self.content)
         self.tool_menu.close()
         self.player.focus_timeline()
 

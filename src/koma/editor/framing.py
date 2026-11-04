@@ -15,6 +15,11 @@ from koma.ui.image_source import thumbnail_source
 from koma.ui.node_layout import NODE_LAYOUT
 from koma.ui.retained_container import RetainedContainer
 from koma.ui.media_filter import media_filter
+from koma.editor.media_geometry import placement
+from koma.editor.media_geometry import image_geometry
+from koma.ui import drop_runtime
+from koma.ui.media_pose import MediaPoseControl
+from koma.editor.media_animation import MIN_SCALE, MAX_SCALE, MAX_TRANSLATION, MAX_ROTATION
 
 
 def png_size(data):
@@ -23,23 +28,12 @@ def png_size(data):
     return FrameFormat().size
 
 
-def placement(source, viewport, fit, x=0, y=0):
-    """Mesma escala nos dois eixos: recorta o excedente sem esticar a imagem."""
-    sw, sh = source
-    vw, vh = viewport
-    if fit == 'contain':
-        x = y = 0
-    scale = (max if fit == 'cover' else min)(vw / max(1, sw), vh / max(1, sh))
-    width, height = sw * scale, sh * scale
-    return width, height, (vw-width)*(x+1)/2, (vh-height)*(y+1)/2
-
-
 class ImageViewport:
     @property
     def presentation_key(self):
         frame = self.frame
         return (self.format, self.width, self.height, id(self.image_data),
-            (frame.image, frame.image_fit, frame.crop_x, frame.crop_y, id(frame.drawing)) if frame else None)
+            (frame.active_media, id(frame.drawing)) if frame else None)
 
     def __init__(self, view, identifier=None, height=180, *, show_drawing=True):
         self.view, self.identifier = view, identifier
@@ -50,6 +44,11 @@ class ImageViewport:
         self.drag = None
         self.image = None
         self.image_data = None
+        self.pose_control = None
+        self.seconds = 0
+        self.pose = None
+        self.override_pose = None
+        self.generation = 0
         self.drawing = DrawingOverlay() if show_drawing else None
         self.stack = ft.Stack(expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE)
         self.gesture = ft.GestureDetector(content=self.stack, drag_interval=DRAG_INTERVAL_MS,
@@ -71,13 +70,22 @@ class ImageViewport:
                 self.content.width, self.content.height = self.width, self.height
         data = self.view.thumbnails.get(frame.image)
         changed_image = self.frame is None or self.frame.image != frame.image or self.image_data is not data
+        changed_transform = self.frame is None or self.frame.active_media != frame.active_media
+        if changed_transform:
+            self.generation += 1
         self.frame = frame
         if changed_image:
             self.image_data = data
             self.source = png_size(data)
             self.image = ft.Image(src=thumbnail_source(self.view, frame.image),
                 fit=ft.BoxFit.FILL, gapless_playback=True) if data else None
-            self.stack.controls = [media_filter(self.view,
+            if data and drop_runtime.supports('media_pose_v1'):
+                self.pose_control = MediaPoseControl(content=RetainedContainer(content=media_filter(self.view, self.image), hold_updates=lambda: False),
+                    left=0, right=0, top=0, bottom=0, generation=self.generation,
+                    min_scale=MIN_SCALE, max_scale=MAX_SCALE, max_translation=MAX_TRANSLATION, max_rotation=MAX_ROTATION)
+            else:
+                self.pose_control = None
+            self.stack.controls = [self.pose_control] if self.pose_control else [media_filter(self.view,
                 ft.Stack(controls=[self.image], clip_behavior=ft.ClipBehavior.HARD_EDGE),
                 left=0, right=0, top=0, bottom=0)] if data else [ft.Container(left=0, top=0,
                 width=self.width, height=self.height, alignment=ft.Alignment.CENTER,
@@ -96,10 +104,28 @@ class ImageViewport:
         if self.image is None and self.stack.controls:
             self.stack.controls[0].width, self.stack.controls[0].height = self.width, self.height
         if self.image and self.frame:
-            self.image.width, self.image.height, self.image.left, self.image.top = placement(
-                self.source, (self.width, self.height), self.frame.image_fit, self.frame.crop_x, self.frame.crop_y)
+            transform = self.frame.active_media.transform
+            if self.pose_control:
+                w, h, left, top = placement(self.source, (self.width, self.height), transform.fit, transform.crop_x, transform.crop_y)
+                self.pose_control.rect = [left / self.width, top / self.height, w / self.width, h / self.height]
+                self.pose_control.generation = self.generation
+                self.pose_control.set_pose(self.override_pose or transform.at(self.seconds))
+            else:
+                w, h, left, top, angle = image_geometry(self.source, (self.width, self.height), transform, self.seconds, pose=self.override_pose)
+                self.image.width, self.image.height, self.image.left, self.image.top = w, h, left, top
+                self.image.rotate = ft.Rotate(angle=angle)
         self.gesture.mouse_cursor = ft.MouseCursor.MOVE if self.can_adjust() else ft.MouseCursor.CLICK
         self.gesture.tooltip = self.view.keymap.describe('Arraste para enquadrar; cancelar', Action.CANCEL) if self.can_adjust() else 'Selecionar quadro'
+
+    def set_time(self, seconds, *, pose=None):
+        self.seconds = max(0, seconds)
+        self.override_pose = pose
+        pose = pose or (self.frame.active_media.transform.at(self.seconds) if self.frame and self.frame.active_media else None)
+        if pose == self.pose:
+            return None
+        self.pose = pose
+        self.layout()
+        return self.pose_control or self.image
 
     def can_adjust(self):
         return bool(self.identifier and self.image and self.frame

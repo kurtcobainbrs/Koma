@@ -43,7 +43,7 @@ class AudioLane:
         if track and self.drag.start is not None:
             track = replace(track, start=self.drag.start)
         waveform = strip.player.media.waveform(track) if track else None
-        self.content.top = strip.frames_top + strip.style.track_height
+        self.content.top = strip.audio_top
         self.content.width = strip.track.width
         key = (track, id(waveform), strip.scale, strip.offset, strip.width)
         if key == self.key:
@@ -81,7 +81,7 @@ class AudioLane:
         if key == self.key:
             return
         self.key = key
-        self.content.top, self.content.width = strip.frames_top + strip.style.track_height, strip.track.width
+        self.content.top, self.content.width = strip.audio_top, strip.track.width
         self.viewport.left, self.viewport.width = strip.offset, width
         self.label.visible = False
         middle = strip.style.audio_height / 2

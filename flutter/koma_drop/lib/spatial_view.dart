@@ -19,6 +19,19 @@ class _SpatialViewState extends State<SpatialView> {
   final camera = TransformationController();
   int revision = -1;
   bool pending = false;
+  bool applying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Wheel zoom and external pan also change this controller without invoking
+    // InteractiveViewer's gesture callbacks. Keep one coalesced pose source.
+    camera.addListener(cameraChanged);
+  }
+
+  void cameraChanged() {
+    if (!applying) scheduleReport();
+  }
 
   void report() {
     final matrix = camera.value;
@@ -42,8 +55,10 @@ class _SpatialViewState extends State<SpatialView> {
     if (revision != next) {
       revision = next;
       final zoom = control.getDouble('camera_zoom', 1)!;
+      applying = true;
       camera.value = Matrix4.diagonal3Values(zoom, zoom, 1)
         ..setTranslationRaw(control.getDouble('camera_x', 0)!, control.getDouble('camera_y', 0)!, 0);
+      applying = false;
     }
     return LayoutControl(control: control, child: InteractiveViewer(
       transformationController: camera,
@@ -55,7 +70,6 @@ class _SpatialViewState extends State<SpatialView> {
       maxScale: control.getDouble('max_scale', 16)!,
       scaleFactor: control.getDouble('scale_factor', 240)!,
       onInteractionStart: (_) => control.triggerEvent('camera_start'),
-      onInteractionUpdate: (_) => scheduleReport(),
       onInteractionEnd: (_) => report(),
       child: control.buildWidget('content') ?? const SizedBox(),
     ));
@@ -63,6 +77,7 @@ class _SpatialViewState extends State<SpatialView> {
 
   @override
   void dispose() {
+    camera.removeListener(cameraChanged);
     camera.dispose();
     super.dispose();
   }

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field, replace
 from uuid import uuid4
 import math
 import re
+from koma.editor.media_animation import MediaPose, MediaKeyframe, validate_animation, evaluate_pose, animation_from_document
 
 VIDEO_EXTENSIONS = ('mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v')
 MAX_MEDIA_ITEMS = 4096
@@ -16,8 +17,18 @@ class MediaTransform:
     fit: str = 'cover'
     crop_x: float = 0
     crop_y: float = 0
+    pose: MediaPose = field(default_factory=MediaPose)
+    keyframes: tuple[MediaKeyframe, ...] = ()
+
+    @property
+    def base_signature(self):
+        return self.fit, self.crop_x, self.crop_y, self.pose
+
+    def at(self, seconds=0):
+        return evaluate_pose(self.pose, self.keyframes, seconds)
 
     def validate(self):
+        validate_animation(self.pose, self.keyframes)
         if self.fit not in ('cover', 'contain'):
             raise ValueError('Enquadramento de mídia inválido.')
         if any(type(n) not in (int, float) or not math.isfinite(n) or not -1 <= n <= 1
@@ -79,7 +90,7 @@ class NodeMedia:
         if not isinstance(value, dict):
             raise ValueError('Mídia de node inválida.')
         values = dict(value)
-        values['transform'] = MediaTransform(**values.get('transform', {}))
+        values['transform'] = MediaTransform(**animation_from_document(values.get('transform', {})))
         return cls(**values)
 
 

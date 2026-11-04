@@ -7,6 +7,7 @@ from koma.ui.drawing_overlay import DrawingOverlay
 from koma.editor.frame_format import FrameFormat
 from koma.ui.retained_container import RetainedStack
 from koma.ui.media_filter import media_filter
+from koma.editor.media_geometry import image_geometry
 
 
 class TimelineThumbnail:
@@ -36,15 +37,15 @@ class TimelineThumbnail:
         self.presentation.top = (height - logical_height * scale) / 2
         self.drawing.sync(frame.drawing, logical_width, logical_height)
         key = (frame.image, id(data), image_source if isinstance(image_source, str) else None,
-            frame.image_fit, frame.crop_x, frame.crop_y, logical_width, logical_height)
+            frame.active_media.transform if frame.active_media else None, logical_width, logical_height)
         if key == self.key:
             return
         self.key = key
         if data:
-            image_width, image_height, left, top = placement(png_size(data), (logical_width, logical_height),
-                frame.image_fit, frame.crop_x, frame.crop_y)
+            image_width, image_height, left, top, angle = image_geometry(png_size(data),
+                (logical_width, logical_height), frame.active_media.transform)
             self.canvas.controls = [ft.Image(src=data if image_source is None else image_source, width=image_width, height=image_height,
-                left=left, top=top, fit=ft.BoxFit.FILL, gapless_playback=True)]
+                left=left, top=top, rotate=ft.Rotate(angle=angle), fit=ft.BoxFit.FILL, gapless_playback=True)]
             if view is not None:
                 self.canvas.controls = [media_filter(view, ft.Stack(controls=self.canvas.controls,
                     clip_behavior=ft.ClipBehavior.HARD_EDGE), left=0, right=0, top=0, bottom=0)]

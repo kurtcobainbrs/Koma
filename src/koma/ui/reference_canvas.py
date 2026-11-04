@@ -479,6 +479,7 @@ class ReferenceCanvas:
             return
         self.zoom = self.gesture_zoom = e.zoom
         self.translation = (e.x, e.y)
+        self.camera_used = True
         self.viewer.camera_zoom, self.viewer.camera_x, self.viewer.camera_y = e.zoom, e.x, e.y
         self.overlays.refresh_grid(publish=True)
 

@@ -23,6 +23,7 @@ from koma.ui.timeline_thumbnail import TimelineThumbnail
 from koma.ui.image_source import thumbnail_source
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.sequence_lane import SequenceLane
+from koma.ui.keyframe_lane import KeyframeLane
 from koma.ui.navigation_view import NativeNavigation
 from koma.ui import drop_runtime
 from koma.ui.retained_container import RetainedStack, retain_children
@@ -40,6 +41,7 @@ class TimelineStyle:
     wheel_zoom_distance: float = 240
     marker_height: float = WORKSPACE_STYLE.marker_height
     sequence_height: float = WORKSPACE_STYLE.sequence_height
+    keyframe_height: float = WORKSPACE_STYLE.sequence_height
     audio_height: float = WORKSPACE_STYLE.audio_height
     snap_distance: float = PAGE_PADDING
     marker_label_width: float = CONTROL_HEIGHT * 4
@@ -164,6 +166,7 @@ class TimelineStrip:
         self.duration_input = DurationInput(player)
         self.style = style or TimelineStyle()
         self.sequence_lane = SequenceLane(self)
+        self.keyframe_lane = KeyframeLane(self)
         self.width = None
         self.scale = None
         self.fit_requested = True
@@ -229,10 +232,12 @@ class TimelineStrip:
             content=self.scroller if self.native_navigation else
                 ft.GestureDetector(content=self.scroller, on_scroll=self.wheel_zoom))
         self.sequence_label = self.track_label('Sequências', 0)
+        self.keyframe_label = self.track_label('Keyframes', 0)
+        self.keyframe_label.visible = False
         self.sequence_label.visible = False
         self.track_labels = ft.Column([self.track_label('', self.style.ruler_height),
             self.track_label('Marcas', self.style.marker_height), self.sequence_label, self.track_label('Quadros', self.style.track_height),
-            self.track_label('Áudio', self.style.audio_height)], spacing=0)
+            self.keyframe_label, self.track_label('Áudio', self.style.audio_height)], spacing=0)
         self.content = ft.Container(
             content=ft.Column([ft.Row([self.track_labels, self.track_host], spacing=0,
                 vertical_alignment=ft.CrossAxisAlignment.START), footer],
@@ -248,6 +253,10 @@ class TimelineStrip:
     @property
     def frames_top(self):
         return self.style.frames_top + self.sequence_lane.height
+
+    @property
+    def audio_top(self):
+        return self.frames_top + self.style.track_height + self.keyframe_lane.height
 
     def reset(self):
         self.generation += 1
@@ -463,7 +472,9 @@ class TimelineStrip:
         self.sequence_lane.sync(identifiers)
         self.sequence_label.height = self.sequence_lane.height
         self.sequence_label.visible = bool(self.sequence_lane.height)
-        height = self.frames_top + self.style.track_height + self.style.audio_height
+        self.keyframe_lane.sync()
+        self.keyframe_label.height, self.keyframe_label.visible = self.keyframe_lane.height, bool(self.keyframe_lane.height)
+        height = self.audio_top + self.style.audio_height
         if self.track.height != height:
             self.track.height = height
             if hasattr(player, 'layout'):
@@ -471,7 +482,7 @@ class TimelineStrip:
         if tuple(self.blocks) != identifiers or not self.track.controls:
             self.blocks = {key: self.blocks.get(key) or TimelineBlock(self, key) for key in identifiers}
             self.track.controls = [self.marker_layer, self.ruler, self.sequence_lane.content, *(block.box for block in self.blocks.values()),
-                self.audio_lane.content, self.marker_lane.guides, self.playhead, self.needle]
+                self.keyframe_lane.content, self.audio_lane.content, self.marker_lane.guides, self.playhead, self.needle]
             self.geometry_key = None
         fps = view.board.fps
         self.fps.value = f'{fps} FPS'
@@ -498,6 +509,7 @@ class TimelineStrip:
             self.ruler.width = self.track.width
             self.geometry_key = key
         self.sequence_lane.content.width = self.track.width
+        self.keyframe_lane.content.width = self.track.width
         if self.native_navigation:
             self.native_navigation.width, self.native_navigation.height = self.track.width, self.track.height
             self.native_navigation.navigation_enabled = not player.editing

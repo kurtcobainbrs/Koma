@@ -64,9 +64,25 @@ class Action(StrEnum):
     IMPORT_AUDIO = 'timeline.audio.import'
     DRAWING_TOOLS = 'timeline.drawing.tools'
     RIPPLE_DURATION = 'timeline.duration.ripple'
+    MEDIA_MOVE = 'media.transform.move'
+    MEDIA_SCALE = 'media.transform.scale'
+    MEDIA_ROTATE = 'media.transform.rotate'
+    MEDIA_KEY = 'media.keyframe.toggle'
+    MEDIA_DELETE_KEY = 'media.keyframe.delete'
+    MEDIA_RESET_MOVE = 'media.transform.reset_move'
+    MEDIA_RESET_ROTATE = 'media.transform.reset_rotate'
+    MEDIA_RESET_SCALE = 'media.transform.reset_scale'
 
 
 ACTIONS = (
+    ShortcutAction(Action.MEDIA_RESET_MOVE, 'Resetar posição da mídia', ('Alt+G',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_RESET_ROTATE, 'Resetar rotação da mídia', ('Alt+R',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_RESET_SCALE, 'Resetar escala da mídia', ('Alt+S',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_MOVE, 'Mover mídia', ('G',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_SCALE, 'Escalonar mídia', ('S',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_ROTATE, 'Girar mídia', ('R',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_KEY, 'Adicionar/remover keyframe', ('I',), contexts=('media',)),
+    ShortcutAction(Action.MEDIA_DELETE_KEY, 'Remover keyframe atual', ('Delete', 'Alt+I'), contexts=('media',)),
     ShortcutAction(Action.MODE_CANVAS, 'Modo Canvas', ('1',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.MODE_ANIMATIC, 'Modo Animatic', ('2',), contexts=('canvas', 'timeline')),
     ShortcutAction(Action.MODE_REFS, 'Modo Refs', ('3',), contexts=('canvas', 'timeline')),

@@ -14,7 +14,7 @@ from koma.editor.drawing_models import DrawingLayer
 from koma.editor.sequence_models import SequenceState
 from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
 
-DOCUMENT_VERSION = 10
+DOCUMENT_VERSION = 11
 
 
 def document(board, document_id):
@@ -52,7 +52,8 @@ def parse_document(raw):
                 raise ValueError('Lista de mídias inválida.')
             if entries:
                 values['media'] = tuple(NodeMedia.from_document(entry) for entry in entries)
-            values['image_defaults'] = MediaTransform(**values.pop('image_defaults', {}))
+            from koma.editor.media_animation import animation_from_document
+            values['image_defaults'] = MediaTransform(**animation_from_document(values.pop('image_defaults', {})))
             values['drawing'] = DrawingLayer.from_document(values.pop('drawing', {}))
             from koma.editor.camera_models import CameraMotion
             values['camera'] = CameraMotion.from_document(values.pop('camera', {}) if raw['version'] >= 9 else {})

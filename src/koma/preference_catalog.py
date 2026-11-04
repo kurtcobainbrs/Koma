@@ -4,6 +4,7 @@ import math
 import re
 from koma.editor.animatic_settings import SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM
 from koma.exports.pdf_options import PAPERS, ORIENTATIONS, ROW_MODES, MAX_COLUMNS, PDF_DEFAULTS
+from koma.editor.media_animation import INTERPOLATIONS
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,8 @@ CATEGORIES = (
         number('max_zoom', 'Zoom máximo (%)', 1600, 100, 6400),
         number('wheel_sensitivity', 'Sensibilidade do zoom', 1, .1, 5, decimal=True))),
     Category('animatic', 'Animatic', (
+        *group('Transformações da mídia', Field('media_auto_key', 'Keyframe automático inicial', False, 'bool'),
+            Field('media_interpolation', 'Interpolação inicial', 'linear', 'choice', choices=tuple(INTERPOLATIONS), choice_labels=tuple(INTERPOLATIONS.items()))),
         Field('scenes_visible', 'Mostrar lista de cenas', True, 'bool'),
         number('scenes_width', 'Largura da lista (px)', SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM),
         choice('initial_scope', 'Abrir sem seleção', 'Última visualização',

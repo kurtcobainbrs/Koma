@@ -60,6 +60,25 @@ class ProjectTabsTests(unittest.TestCase):
         finish(self.app.new_document())
         return self.app.view
 
+    def test_transition_blocks_pointer_without_disabling_retained_editor_descendants(self):
+        view = self.view
+        finish(view.add_frame())
+        view.workspace.navigation.apply_selection(set())
+        self.app.set_transition(True)
+        self.assertTrue(self.app.editor_host.ignore_interactions)
+        self.assertFalse(self.app.editor_host.disabled)
+        self.assertFalse(self.app.menu_host.disabled)
+        self.app.set_transition(False)
+        self.assertFalse(self.app.editor_host.ignore_interactions)
+        self.assertFalse(self.app.menu_host.ignore_interactions)
+        self.assertFalse(view.chrome.play.disabled)
+        self.assertFalse(view.chrome.reference_mode.disabled)
+        view.work_modes.show_references()
+        self.assertTrue(view.references.active)
+        view.work_modes.show_canvas()
+        view.player.open()
+        self.assertTrue(view.player.opened)
+
     def test_plus_follows_last_tab_in_the_same_scroll_row(self):
         second = self.second()
         self.assertEqual(self.app.tabs.row.controls,

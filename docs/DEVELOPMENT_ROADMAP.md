@@ -16,9 +16,10 @@ entram no catálogo e no painel existente; não ficam espalhadas nas telas.
    timeline, ancoragem no cursor e enquadramento com F na área em uso.
    Padrões em Preferências. Gestos locais e pedidos de zoom agrupados evitam
    acumular eventos; as câmeras não alteram nodes, histórico ou exportação.
-4. **Transformação da mídia:** mover, escalar e girar a mídia ativa; gesto
-   temporário, confirmação única e Esc. Contrato preparado para propriedades
-   animáveis e tempo local do quadro, sem introduzir keyframes incompletos.
+4. **Transformação e keyframes — implementado:** mover, escalar e girar a mídia
+   ativa com gesto local, confirmação única e Esc. Poses e keyframes pertencem
+   à mídia no node; interpolação linear ou constante no tempo local do quadro,
+   com a mesma avaliação na prévia e no MP4. Consulte `MEDIA_ANIMATION.md`.
 5. **Guias e câmera — implementado:** terços, centro, grade, áreas seguras e
    guias personalizadas; exibição e exportação independentes. Indicações de
    pan, tilt, zoom, dolly, deslocamento e órbita pertencem ao node; preferências

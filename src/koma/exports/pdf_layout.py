@@ -126,7 +126,11 @@ class StoryboardSheet(Flowable):
             path = c.beginPath()
             path.rect(vx, vy, vw, vh)
             c.clipPath(path, stroke=0)
-            c.drawImage(reader, vx + dx, vy + vh - dh - dy, dw, dh, mask='auto')
+            pose = frame.active_media.transform.at(0)
+            c.translate(vx + vw * (.5 + pose.x), vy + vh * (.5 - pose.y))
+            c.rotate(-pose.rotation)
+            c.scale(pose.scale, pose.scale)
+            c.drawImage(reader, dx - vw / 2, vh / 2 - dh - dy, dw, dh, mask='auto')
             c.restoreState()
         else:
             c.setFillColor(p['muted'])

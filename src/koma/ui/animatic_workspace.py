@@ -1,6 +1,6 @@
 """Resizable presentation of the existing player; contains no document state."""
 import flet as ft
-from koma.ui.design import APP_PADDING
+from koma.ui.design import APP_PADDING, COMPACT_CONTROL_HEIGHT
 from koma.ui.splitter import Splitter
 from koma.ui.workspace_style import WORKSPACE_STYLE
 from koma.ui.focus_requests import FocusListener
@@ -22,7 +22,14 @@ class AnimaticWorkspace:
             minimum=WORKSPACE_STYLE.scenes_minimum, maximum=WORKSPACE_STYLE.scenes_maximum,
             stable=(self.sidebar.list,))
         self.scene_splitter.content.visible = self.sidebar.content.visible
-        preview = ft.Column([header, player.preview_slot], expand=True,
+        self.media_splitter = Splitter(player.view.page, player.media_transform.ui.panel,
+            minimum=WORKSPACE_STYLE.media_panel_minimum, maximum=WORKSPACE_STYLE.media_panel_maximum, reverse=True)
+        self.media_splitter.content.visible = False
+        self.media_reopen = ft.Container(width=COMPACT_CONTROL_HEIGHT,
+            content=ft.Column([player.media_transform.ui.toggle], spacing=0))
+        preview_body = ft.Row([player.preview_slot, self.media_reopen, self.media_splitter.content, player.media_transform.ui.panel],
+            expand=True, spacing=0, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        preview = ft.Column([header, preview_body], expand=True,
             spacing=0, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self.body = ft.Row([self.sidebar.reopen, self.sidebar.content,
             self.scene_splitter.content, preview], expand=True, spacing=0,

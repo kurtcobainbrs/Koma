@@ -2,8 +2,11 @@
 import flet as ft
 
 from koma.ui.design import APP_PADDING, BORDER
-from koma.ui.typography import TEXT_SMALL
+from koma.ui.typography import TEXT_SMALL, FONT_HEADING
 from koma.ui.node_path import path_text
+
+SPAN_COLORS = (ft.Colors.PRIMARY_CONTAINER, ft.Colors.SURFACE_CONTAINER_HIGHEST)
+SPAN_DIVIDER_WIDTH = 2
 
 
 class SequenceLane:
@@ -40,10 +43,13 @@ class SequenceLane:
                 border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
                 content=ft.Text(size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
                 for key, start, _ in spans}
-            for (key, _), box in self.boxes.items():
+            for position, ((key, _), box) in enumerate(self.boxes.items()):
                 node = index.nodes[key]
+                box.bgcolor = SPAN_COLORS[position % len(SPAN_COLORS)]
+                box.border = ft.Border(left=ft.BorderSide(SPAN_DIVIDER_WIDTH, ft.Colors.OUTLINE),
+                    bottom=ft.BorderSide(1, BORDER))
                 text = ft.Text(index.production.label(key) if node.node_type.starts_scene else node.title or node.node_type.label,
-                    size=TEXT_SMALL, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                    size=TEXT_SMALL, font_family=FONT_HEADING, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
                 box.content = ft.GestureDetector(content=text,
                     on_double_tap=lambda e, identifier=key: strip.player.select_scene(identifier)) if node.node_type.starts_scene else text
                 box.tooltip = path_text(index, key)

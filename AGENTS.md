@@ -6,6 +6,7 @@
 - Evitar hardcode de regras de negócio e soluções especiais por tela. Centralizar constantes de interface e limites do modelo nos módulos responsáveis, seguindo os padrões existentes.
 - Preservar a integridade dos documentos, o histórico e a compatibilidade ao alterar contratos ou formatos de salvamento.
 - Manter a interface compacta, sem animações, priorizando a visualização do conteúdo.
+- Usar o Blender como referência de organização visual e interação: controles compactos agrupados por função, painéis independentes, valores ajustáveis por arraste e atalhos consistentes. Adaptar esses padrões ao fluxo do Koma, preservando as decisões já aprovadas pelo usuário.
 - Usar textos de interface claros, curtos e diretos. Nomear ações pelo que fazem, manter os termos consistentes e incluir explicações apenas quando ajudarem no uso, evitando jargão, redundância e abreviações ambíguas.
 - Não executar testes manuais sem solicitação do usuário. Usar apenas verificações automatizadas pontuais e relevantes; evitar suítes exaustivas sem necessidade.
 - Cada node é a fonte única de verdade dos seus dados. Todas as suas propriedades, camadas e alterações devem pertencer à sua própria estrutura, sem armazenamento paralelo baseado em referências ao node. A interface apenas apresenta e modifica esses dados. Estado temporário de interface, como foco, ferramenta ativa ou gesto em andamento, deve ficar separado e não se tornar outra fonte dos dados do node.
