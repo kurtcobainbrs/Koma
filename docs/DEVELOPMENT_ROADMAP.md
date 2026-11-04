@@ -37,3 +37,30 @@ entram no catálogo e no painel existente; não ficam espalhadas nas telas.
 Mudanças de formato exigem migração explícita e proteção dos arquivos antigos.
 Verificações automatizadas devem focar salvar/abrir, copiar, desfazer/refazer e
 exportar. Não executar testes manuais sem solicitação.
+
+## Pendências — precisão da timeline (registradas em 04/11/2026)
+
+Revisar antes de ampliar a edição da montagem. A waveform é uma referência
+crucial para sincronizar os cortes com música e áudio.
+
+1. **Editar durações na montagem:** atualmente, arrastar a borda final dos
+   blocos não permite ajustar os tempos nesse modo. Habilitar esse fluxo
+   usando os mesmos nodes e histórico, preservando o ajuste entre quadros
+   e Shift + arraste para empurrar os seguintes.
+2. **Sincronização exata entre cena e montagem:** ao alternar os modos,
+   a waveform aparenta mudar de alinhamento e a timeline é reenquadrada.
+   Investigar a origem; zoom e enquadramento não podem alterar a relação
+   temporal entre áudio, marcadores e quadros. Usar uma referência temporal
+   comum e conversões explícitas entre o tempo local e o tempo da montagem,
+   sem deslocamentos ou diferenças de duração. Preservar o zoom e a posição
+   da vista ao alternar, sem reenquadramento automático inesperado.
+3. **Cena isolada na posição da montagem:** ao isolar uma cena posterior,
+   mostrar seu início após o fim da anterior, na posição temporal que ocupa
+   no projeto, em vez de deslocá-la para zero. Manter a referência da música
+   e da waveform para ajustar as trocas de cena com precisão.
+
+Reprodução relatada: abrir uma cena com áudio e marcadores, alternar para
+Montagem, tentar ajustar a borda de um quadro e depois isolar a cena seguinte.
+Conferir a mesma correspondência entre cortes, marcadores e waveform nos dois
+contextos. Relato registrado para revisão posterior; sem correção ou validação
+manual nesta etapa.
