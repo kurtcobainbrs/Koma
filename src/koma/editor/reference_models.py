@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 import math
 import re
+from koma.web_links import web_link
 
 MAX_REFERENCES = 500
 MIN_REFERENCE_SIZE = 16
@@ -20,6 +21,14 @@ class ReferenceImage:
     y: float = 0
     width: float = 320
     height: float = 180
+    url: str = ''
+
+    @classmethod
+    def from_document(cls, values, version):
+        values = dict(values)
+        if version < 14:
+            values['url'] = ''
+        return cls(**values)
 
     def validate(self):
         if not isinstance(self.id, str) or not re.fullmatch(r'[a-f0-9]{32}', self.id):
@@ -28,6 +37,8 @@ class ReferenceImage:
             raise ValueError('Imagem de referência inválida.')
         if not isinstance(self.title, str) or len(self.title) > 200:
             raise ValueError('Nome de referência inválido.')
+        if web_link(self.url) != self.url:
+            raise ValueError('Link de referência inválido.')
         for value, low, high in ((self.x, -MAX_REFERENCE_POSITION, MAX_REFERENCE_POSITION),
                 (self.y, -MAX_REFERENCE_POSITION, MAX_REFERENCE_POSITION),
                 (self.width, MIN_REFERENCE_SIZE, MAX_REFERENCE_SIZE),

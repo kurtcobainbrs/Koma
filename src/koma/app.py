@@ -28,6 +28,8 @@ class KomaApplication:
         self.page = page
         self.page.title = 'Koma App'
         self.settings = AppPreferences(directory)
+        self.page.theme = app_theme(accent=self.settings.configuration.values['appearance']['accent'])
+        self.page.theme_animation_style = ft.AnimationStyle.no_animation()
         self.recent = RecentDocuments(directory, limit=self.settings.configuration.values['files']['recent'])
         self.settings.configuration.listeners.append(self.preferences_changed)
         self.node_clipboard = NodeClipboard()
@@ -69,6 +71,12 @@ class KomaApplication:
         return view
 
     def preferences_changed(self, previous, current):
+        if previous['appearance']['accent'] != current['appearance']['accent']:
+            self.page.theme = app_theme(accent=current['appearance']['accent'])
+            # Inherited theme colors repaint natively; no Python traversal of
+            # stable cards, image sources, waveform or timeline is needed.
+            with retain_children(self.host):
+                self.page.update()
         self.recent.limit = current['files']['recent']
         self.recent.paths = self.recent.paths[:self.recent.limit]
 
@@ -315,7 +323,6 @@ def mount(page, document=None):
     page.title = 'Koma App'
     register_fonts(page)
     page.theme_mode = ft.ThemeMode.DARK
-    page.theme = app_theme()
     page.bgcolor = BACKGROUND
     page.padding = APP_PADDING
     page.window.width, page.window.height = 1180, 800

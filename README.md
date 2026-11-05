@@ -1,125 +1,30 @@
-# Koma App
+# Koma
 
-Aplicativo desktop independente para storyboard e animatic, extraído do Storyboard do AppAkira. Mantém o editor de nodes, conexões, cenas, molduras, enquadramento, atalhos, histórico, PDF e MP4.
+O Koma é um aplicativo para criar storyboards e animatics no Windows. Organize cenas e planos, teste o ritmo com áudio na timeline e compartilhe o resultado em PDF ou MP4.
 
-## Executar com Python
+## Baixar e abrir
 
-Requer Python 3.11 ou superior. No PowerShell, dentro desta pasta:
+Na página de [versões para Windows](https://github.com/kurtcobainbrs/Koma/releases), abra a versão desejada e escolha um dos arquivos em **Assets**.
 
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe -m koma
-```
+- **Instalador (`setup.exe`)** — execute o arquivo e siga as instruções.
+- **Portátil (`portable.zip`)** — extraia o ZIP inteiro e abra `Koma.exe` na pasta extraída.
 
-Depois da instalação, também é possível usar `koma` ou `python -m koma caminho\documento.koma`. O arraste externo usa o cliente Flet com a extensão local do Koma. Compile-o com `python scripts/build_flet_client.py` antes de iniciar. Sem esse cliente, a interface mantém Importar imagens e colagem, com aviso de indisponibilidade do arraste. A distribuição Windows inclui o cliente compilado.
+Os dois pacotes são para Windows x64 e já incluem o necessário para rodar o Koma. As notas de cada versão indicam os recursos disponíveis naquele pacote.
 
-## Documentos
+## Do storyboard ao animatic
 
-- **Novo**, **Abrir**, **Salvar** e **Salvar como** ficam no menu Arquivo.
-- Arraste um arquivo **.koma** do Explorador para a janela para abri-lo em uma aba. Se já estiver aberto, a aba existente é selecionada. Solte um projeto por vez; arquivos inválidos são recusados sem substituir o projeto atual.
-- Atalhos: Ctrl+N, Ctrl+O, Ctrl+S e Ctrl+Shift+S, com foco no canvas. Campos de texto mantêm seus atalhos de edição.
-- Os projetos ficam em abas no topo, logo abaixo dos menus. Use **+** ou **Arquivo → Novo** para criar outra aba; **Abrir** também abre em uma nova aba.
-- Cada aba mantém documento, histórico, seleção, câmera e imagens próprios. O asterisco na aba indica alterações ainda não salvas no `.koma`.
-- Clique no nome para alternar; dê dois cliques para renomear ou use **Arquivo → Renomear**. O **×** fecha a aba, com Salvar/Descartar/Cancelar quando necessário.
-- O painel de propriedades mantém título e duração visíveis, com seções **Mídias** e **Roteiro** recolhíveis sem animação. Ao recolher o painel inteiro, use a seta na borda direita para reabri-lo; o atalho de Propriedades continua disponível.
-- Abrir um arquivo já presente seleciona sua aba, preservando as alterações em memória. Salvar como não pode sobrescrever um arquivo aberto em outra aba.
-- Ao fechar a janela, todos os projetos com alterações são verificados antes de descartar qualquer sessão. Fechar a última aba cria um projeto vazio.
-- Salvar mantém uma cópia da versão anterior em `<nome>.koma.bak`. Para abrir esse backup, copie-o para um nome terminado em `.koma`.
-- Se outro programa ou outra janela modificar o arquivo, o salvamento é recusado. Use Salvar como para preservar ambas as versões.
-- Um documento novo permanece sem caminho até o primeiro salvamento.
+1. **Canvas** — arraste uma imagem do Explorador para um espaço vazio para criar um quadro. Conecte os quadros na ordem desejada a partir de um início de cena. Selecione um quadro para ajustar a duração, o enquadramento e o roteiro no painel de propriedades.
+2. **Animatic** — abra o modo para ver a **Montagem** do projeto ou escolha uma cena na lista lateral. Pressione **Espaço** para reproduzir ou pausar. Arraste a borda de um quadro na timeline para ajustar sua duração. Use a roda do mouse ou o slider para mudar o zoom. Você pode adicionar áudio, marcadores, desenhos e keyframes.
+3. **Refs** — reúna imagens de inspiração numa área separada do storyboard. Selecione e envie as imagens que quiser usar para criar quadros no Canvas.
 
-O `.koma` é um ZIP com `manifest.json` (formato `koma`, versão 7), imagens e prévias em `images/`, vídeos em `videos/` e áudio em `audio/`. Inclui os dados dos nodes, alternativas de mídia, escolha ativa, sequências com Entrada/Saída próprias, desenhos, conexões, roteiro, duração, formato, trilhas e marcadores. Projetos das versões 1 a 6 continuam abrindo por migração explícita; clientes antigos rejeitam a versão 7 para preservar os novos dados. As imagens importadas são cópias normalizadas de até 2560 × 2560; os originais não são modificados. Miniaturas e waveforms são regeneráveis e não entram no pacote. Veja [Mídias por quadro](docs/NODE_MEDIA.md) e [Sequências](docs/SEQUENCES.md).
+Canvas e Animatic mostram os mesmos quadros. Alterações feitas em um modo aparecem no outro.
 
-Não há compatibilidade com `.akira-storyboard`.
+## Salvar e compartilhar
 
-## Canvas e mute
+- **Projeto `.koma`** — use **Arquivo → Salvar** ou **Ctrl+S** para guardar um projeto editável com suas mídias. Para abrir um existente, use **Arquivo → Abrir** ou arraste o `.koma` para a janela. Você pode trabalhar com vários projetos em abas.
+- **Storyboard em PDF** — em **Arquivo → Exportar → PDF**, ajuste a folha e os campos incluídos. Use a prévia para conferir a distribuição dos quadros antes de exportar.
+- **Animatic em MP4** — use **Exportar MP4** no Animatic. Escolha a cena, o conjunto de cenas ou o projeto completo e ajuste o intervalo e as opções de exportação.
 
-O arraste externo é integrado aos widgets Flutter do próprio Flet; veja a [arquitetura e validação](docs/EXTERNAL_IMAGE_DROP.md). `KOMA_EXTERNAL_DROP=0` desativa o recurso nesta instância, mantendo importação pelo botão e colagem.
+Use **Arquivo → Projeto** para ajustar a proporção da imagem e o FPS. Os atalhos e a aparência ficam em **Editar → Preferências**. Se o aplicativo fechar inesperadamente, procure sua sessão em **Arquivo → Recuperar sessão**.
 
-No Windows, arraste uma imagem do Explorador para o canvas: sobre um quadro, substitui apenas a imagem e reinicia o enquadramento; no espaço vazio, cria um quadro no ponto da soltura, respeitando zoom e grade. Inícios de cena não aceitam imagens. Solte uma imagem por vez (PNG, JPEG, WebP, BMP ou TIFF). O arquivo precisa ser decodificado e respeitar o limite de 40 megapixels antes de alterar o documento; arquivos inválidos são recusados com uma mensagem. A operação participa de Desfazer/Refazer, preserva os originais e não muda as conexões. O destino é escolhido pelo hit-test real do Flutter, inclusive com zoom, pan, sobreposição e redimensionamento. Não depende da seleção ativa, do foco do Windows nem de áreas invisíveis sobrepostas à janela.
-
-Botão direito no canvas abre opções de inserção no ponto clicado, importação e enquadramento. Sobre um node, também oferece mutar/desmutar, duplicar e excluir. No modo Zoom, o botão direito continua reduzindo o zoom; Ctrl + arraste direito continua cortando conexões.
-
-Use **M** para mutar/desmutar os nodes selecionados ou a opção no menu do node. Nodes mutados ficam esmaecidos e são pulados no animatic e no MP4, sem remover suas conexões. Mutar um início de cena desativa os quadros dessa cena na reprodução. A duração dos nodes mutados não entra na timeline. O estado é salvo no `.koma` e participa do desfazer/refazer. O PDF mantém os quadros do documento.
-
-## Recuperação e preferências
-
-Edições confirmadas atualizam uma recuperação local, sem sobrescrever o `.koma`. Após interrupção, use **Arquivo → Recuperar sessão**. A recuperação permanece disponível até a resolução explícita da sessão. Sessões em uso em outra janela não são oferecidas para recuperação.
-
-Dados locais ficam no diretório do usuário definido por `platformdirs` para `Koma`. A variável `KOMA_DATA_DIR` permite substituí-lo. Atalhos ficam em `settings.json`; opções de legendas em `options.json`; câmera em `viewports/`; recuperação em `recovery/`; logs em `logs/`.
-
-Seleção e câmera não alteram o documento. Imagens antigas são mantidas durante a sessão para permitir desfazer. O histórico possui até 100 snapshots e não é gravado no `.koma`.
-
-## Sequências
-
-Selecione quadros e use **Inserir → Sequência** ou `Ctrl+Shift+G` para criar um bloco recolhível com duração total. **Acessar conteúdo** expande e enquadra seus membros; **Dissolver sequência** mantém os quadros. O conteúdo continua participando normalmente do animatic e das exportações. Consulte [Sequências](docs/SEQUENCES.md) para os comandos, a estrutura dos dados e a compatibilidade do formato 5.
-
-## Modos de trabalho
-
-Use **Canvas** e **Animatic** na barra superior. São duas visualizações do mesmo projeto, com os mesmos nodes e histórico. O animatic ocupa a área principal; o divisor horizontal ajusta o espaço da prévia e da timeline, e o inspetor lateral pode ser redimensionado ou recolhido. Clicar em um bloco seleciona o node para editar suas propriedades. A reprodução e a agulha mudam a prévia sem trocar essa seleção. Câmera, painéis e seleção são preservados ao alternar os modos na sessão. Veja [Modo Animatic](docs/ANIMATIC_WORKSPACE.md).
-
-## Exportações
-
-Em **Arquivo → Projeto…**, escolha um formato pronto ou edite **Proporção** (por exemplo, `9:16`, `1:1`, `5:4` ou `2.39:1`). Enter recalcula as dimensões; **Aplicar** confirma. Largura e altura também podem ser editadas diretamente, com dimensões pares de 64 a 8192 px e até 32 megapixels. A configuração é salva no `.koma`, aceita desfazer e orienta os quadros, a prévia, as legendas e as exportações. O PDF mantém a folha e acomoda a imagem na proporção do projeto.
-
-Em **Arquivo → Projeto…**, **FPS** define a taxa de 24, 25, 30 ou 60 FPS, salva no `.koma` e usada pelo MP4. Documentos antigos usam 24 FPS. A duração de cada quadro pode ser editada em **segundos** ou **frames**; o outro valor é atualizado automaticamente, inclusive com vírgula decimal. Por exemplo, a 24 FPS, 48 frames equivalem a 2 segundos. Alterar o FPS mantém os segundos e recalcula os frames. Frações de frame são permitidas; a exportação arredonda os limites acumulados para frames inteiros, com pelo menos um frame por quadro. Durações de um frame a 60 FPS são aceitas. Desfazer/refazer inclui durações e FPS.
-
-**PDF:** ReportLab, fontes Archivo incluídas, folhas de seis quadros e continuação de textos longos. Funciona sem Blender.
-
-**Timeline e áudio:** a prévia permite importar WAV, MP3, FLAC ou OGG por cena, visualizar a waveform, ajustar o início em frames, mutar e substituir/remover áudio. Marcadores têm nome e posição; clique para navegar e duplo clique para editar. Zoom, régua e agulha são compartilhados. Veja [arquitetura, limites e validação](docs/TIMELINE_AUDIO.md).
-
-**MP4:** use **Arquivo → Exportar → MP4** ou o botão no animatic. O PyAV incluído no aplicativo codifica H.264/AAC, sem instalar programas adicionais. A exportação preserva as mídias ativas, desenhos, enquadramentos, áudio e legendas habilitadas; suporta 24/25/30/60 FPS e o formato definido no projeto. Veja [Exportação MP4](docs/MP4_EXPORT.md).
-
-A exportação usa a mesma composição de desenhos, enquadramentos e legendas do restante do projeto. Trabalha em segundo plano, com memória limitada, cancelamento e publicação atômica.
-
-O runner usa um worker cancelável e um arquivo temporário. Falhas e cancelamento preservam o MP4 anterior. A codificação, a composição das imagens e o PDF trabalham fora do loop da interface.
-
-## Testes e validação real
-
-```powershell
-.venv\Scripts\python.exe -m unittest discover -s tests -q
-.venv\Scripts\python.exe scripts\validate_exports.py
-.venv\Scripts\python.exe scripts\check_video.py build\validation\validation.mp4
-```
-
-Os testes verificam grafo, gestos, controles Flet, histórico, documentos, falhas de gravação, conflitos externos, recuperação e fechamento cancelável. A validação real gera `.koma`, PDF e MP4 em `build/validation`. O segundo script verifica resolução, duração em frames e FPS do vídeo por leitura no PyAV.
-
-## Distribuição Windows
-
-Para gerar instalador, portátil, notas e checksums a partir de um commit limpo e publicar no remote `origin`:
-
-```powershell
-.venv\Scripts\python.exe scripts\release.py --notes docs\releases\v0.2.0.md --publish
-```
-
-Atualize a versão em `pyproject.toml` e registre as mudanças antes de executar. Sem `--publish`, os artefatos ficam apenas em `dist/releases/v<versão>`. O comando reutiliza o cliente Flutter validado em cache e não executa suítes de testes por padrão; `--full-tests` as habilita. Uma publicação interrompida pode ser retomada com o mesmo comando e commit.
-
-```powershell
-.venv\Scripts\python.exe -m pip install -e '.[build]'
-.\scripts\build_windows.ps1
-```
-
-O build produz o wheel/sdist Python e `dist/Koma/Koma.exe`. Distribua **a pasta `dist/Koma` inteira**: ela inclui Python, bibliotecas, codecs de vídeo, fontes, estilos e cliente Flet. Não é necessário instalar Python ou Blender na máquina de destino.
-
-A compilação requer Flutter 3.44.8 e Visual Studio Build Tools 2022 com ferramentas C++ para desktop. `scripts/build_flet_client.py` executa análise, testes Flutter e build Release, usando as versões dos arquivos `pubspec.lock`. O build Windows inclui esse cliente para inicialização offline. O executável portátil ainda requer uma conferência em uma máquina Windows limpa antes de publicação; não há instalador assinado nem associação automática de extensão nesta etapa.
-
-O build verifica arquitetura x64, imports e delay-imports de cada binário. Ele falha se houver DLL ausente, runtime de depuração ou dependência do runtime Visual C++ que só exista no host. O cliente próprio usa Flet 1.0.5 e desktop_drop 0.7.1, com manifesto de protocolo e hashes de seus arquivos. Um hook local do PyInstaller impede a inclusão automática do cliente Flet padrão. O cache Flet instalado não é modificado.
-
-O arquivo `dist/Koma-windows-x64-validation.zip` contém a distribuição, hashes, auditorias e o [roteiro Windows limpo](docs/CLEAN_WINDOWS.md). O diagnóstico funciona sem Python:
-
-```powershell
-Start-Process .\dist\Koma\Koma.exe -ArgumentList '--diagnostics', 'C:\Testes\diagnostics.json' -PassThru -Wait
-```
-
-Use `--video` junto de `--diagnostics` para incluir a exportação MP4 no ensaio. A conferência da interface e a homologação em Windows limpo continuam necessárias.
-
-## Organização e origem
-
-- `src/koma/editor`: módulos do editor reaproveitados.
-- `src/koma/documents`: sessão, recuperação, manifesto, pacote e imagens.
-- `src/koma/exports`: PDF, composição e processo de vídeo.
-- `src/koma/ui`: componentes visuais extraídos.
-- `src/koma/app.py`: janela e transição entre sessões.
-
-Origem: `kurtcobainbrs/AppAkira`, referência `a06edd15f2bd38a25d2d8b6311a09d584d7b233c`. O repositório AppAkira é apenas referência de extração e não é necessário em execução, nos testes ou no build. A licença das fontes está em `src/koma/assets/fonts/OFL.txt`.
+Para instruções de desenvolvimento, testes e publicação, consulte o [AGENTS.md](AGENTS.md).

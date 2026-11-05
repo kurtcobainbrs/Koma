@@ -8,12 +8,31 @@ import flet as ft
 from flet.controls.exceptions import FletException
 from koma.documents.images import import_image, IMAGE_EXTENSIONS
 from koma.image_clipboard import copy_image
+from koma.web_links import web_link
 from koma.editor.reference_models import ReferenceImage, MAX_REFERENCES, MIN_REFERENCE_SIZE, MAX_REFERENCE_POSITION, REFERENCE_GAP
 
 
 class ReferenceActions:
     def __init__(self, canvas):
         self.canvas, self.view = canvas, canvas.view
+
+    async def set_link(self, identifier, value, *, expected):
+        url = web_link(value)
+        if self.view.board is not expected or not any(item.id == identifier for item in expected.references):
+            raise ValueError('A referência mudou. Abra o link novamente.')
+        items = tuple(replace(item, url=url) if item.id == identifier else item for item in expected.references)
+        if items == expected.references:
+            return True
+        return await self.commit(items, 'Editar link da referência', expected=expected)
+
+    async def open_link(self, identifier):
+        item = next((item for item in self.view.board.references if item.id == identifier), None)
+        if item is None or not item.url or not self.canvas.active:
+            return
+        try:
+            await ft.UrlLauncher().launch_url(web_link(item.url), mode=ft.LaunchMode.EXTERNAL_APPLICATION)
+        except (OSError, ValueError, RuntimeError, FletException):
+            self.view.notify('Não foi possível abrir o link.', 'warning')
 
     async def copy_image(self, e=None):
         if not self.canvas.active or not self.view.editable():

@@ -26,6 +26,9 @@ class MediaAnimationTests(TestCase):
 
     def editor(self):
         view = self.view()
+        values = view.settings.configuration.editable()
+        values['animatic']['initial_scope'] = 'Primeira cena'
+        fixtures.finish(view.settings.configuration.commit(values))
         fixtures.finish(view.import_paths([self.source]))
         view.player.open()
         editor = view.player.media_transform
@@ -79,6 +82,30 @@ class MediaAnimationTests(TestCase):
             self.assertEqual(view.board, before)
             fixtures.finish(view.graph.redo())
             self.assertTrue(view.cards[second.id].viewport.pose_control.flip_x)
+
+    def test_keyframe_buttons_seek_exactly_in_a_shot_with_fractional_start_and_duration(self):
+        view, editor = self.editor()
+        fps = view.board.fps
+        first = replace(view.board.frames[0], duration=2.6 / fps)
+        key = MediaKeyframe(2 / fps, MediaPose(.25))
+        media = first.active_media
+        animated = replace(media, transform=replace(media.transform,
+            keyframes=(MediaKeyframe(0, MediaPose()), key)))
+        second = replace(first, id=uuid4().hex, media=(animated,))
+        view.changed(replace(view.board, frames=(first, second)))
+        view.refresh()
+        player = view.player
+        player.render()
+        player.select_node(second.id, seek=True)
+        self.assertFalse(editor.ui.next.disabled)
+        fixtures.finish(editor.ui.next.on_click(None))
+        self.assertAlmostEqual(player.position, first.duration + key.time)
+        self.assertAlmostEqual(editor.effective_pose().x, .25)
+        self.assertTrue(editor.ui.next.disabled)
+        fixtures.finish(editor.ui.previous.on_click(None))
+        self.assertAlmostEqual(player.position, first.duration)
+        self.assertEqual(editor.frame().id, second.id)
+        self.assertTrue(editor.ui.previous.disabled)
 
     def test_playback_clock_restarts_for_new_shot_with_same_image_but_not_periodic_updates(self):
         with patch('koma.ui.drop_runtime.supports', side_effect=lambda capability: capability == 'media_pose_v1'):

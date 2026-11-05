@@ -20,6 +20,39 @@ class GlobalPreferencesTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_global_accent_updates_theme_without_rebuilding_projects_and_survives_restart(self):
+        import flet as ft
+        from koma.app import KomaApplication
+        from koma.ui.theme import load_theme, accent_theme
+        app = KomaApplication(Mock(), self.root / 'accent-app')
+        try:
+            fixtures.finish(app.view.activate())
+            fixtures.finish(app.new_document())
+            snapshots = [(view.board, tuple(view.history.past)) for view in app.views]
+            values = app.settings.configuration.editable()
+            values['appearance']['accent'] = '#DB8C49'
+            with patch.object(app.view, 'refresh', side_effect=AssertionError('Canvas rebuilt')), \
+                    patch.object(app.view.player, 'render', side_effect=AssertionError('Timeline rebuilt')), \
+                    patch.object(app.view.references, 'configure', side_effect=AssertionError('Refs rebuilt')):
+                fixtures.finish(app.settings.configuration.commit(values))
+            scheme = app.page.theme.color_scheme
+            self.assertEqual(scheme.primary, '#DB8C49')
+            self.assertEqual(scheme.secondary, '#DB8C49')
+            self.assertNotEqual(scheme.primary_container, load_theme().colors['primary_container'])
+            for view, (board, history) in zip(app.views, snapshots):
+                self.assertIs(view.board, board)
+                self.assertEqual(tuple(view.history.past), history)
+            self.assertEqual(AppPreferences(app.settings.directory).configuration.values['appearance']['accent'], '#DB8C49')
+            base = load_theme()
+            for key in ('surface', 'error', 'tertiary'):
+                self.assertEqual(getattr(scheme, key), base.colors[key])
+            self.assertEqual(accent_theme(base, '#FFFFFF').colors['on_primary'], base.colors['surface_dim'])
+            self.assertEqual(accent_theme(base, '#000000').colors['on_primary'], base.colors['on_surface'])
+            self.assertEqual(app.page.theme_animation_style, ft.AnimationStyle.no_animation())
+        finally:
+            for view in app.views:
+                view.session.close()
+
     def test_selection_color_updates_selected_controls_without_changing_theme_or_canvas(self):
         view = self.view()
         fixtures.finish(view.add_frame())

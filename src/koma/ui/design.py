@@ -2,7 +2,7 @@
 
 import flet as ft
 
-from koma.ui.theme import ThemeConfig, load_theme
+from koma.ui.theme import ThemeConfig, load_theme, accent_theme
 from koma.ui.typography import FONT_BODY, TEXT_BODY, body_style, heading_style, text_theme, TEXT_SMALL, FONT_HEADING, TEXT_TITLE
 
 
@@ -53,8 +53,10 @@ def progress_bar(**kwargs) -> ft.ProgressBar:
     return ft.ProgressBar(**(defaults | kwargs))
 
 
-def app_theme(config: ThemeConfig | None = None) -> ft.Theme:
+def app_theme(config: ThemeConfig | None = None, *, accent=None) -> ft.Theme:
     config = config or load_theme()
+    if accent is not None:
+        config = accent_theme(config, accent)
     button = ft.ButtonStyle(
         animation_duration=0,
         shape=ft.RoundedRectangleBorder(radius=RADIUS),

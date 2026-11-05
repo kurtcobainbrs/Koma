@@ -353,7 +353,7 @@ class TimelineStrip:
                     self.fit()
                 else:
                     self.sync()
-                    self.player.view.page.update(self.content)
+                    self.player.view.page.update(self.content, self.zoom_tools)
 
     def fit(self, e=None):
         if self.player.editing or self.navigator.gesture or self.duration_input.focused:
@@ -420,7 +420,7 @@ class TimelineStrip:
 
     def publish_geometry(self):
         with retain_children(*(block.thumbnail.canvas for block in self.blocks.values())):
-            self.player.view.page.update(self.content)
+            self.player.view.page.update(self.content, self.zoom_tools)
         if self.native_navigation is None:
             self.scroll_requests.request(self.offset)
 
@@ -540,6 +540,7 @@ class TimelineStrip:
         self.undo.tooltip = view.keymap.describe(view.history.undo_description, Action.UNDO)
         self.redo.tooltip = view.keymap.describe(view.history.redo_description, Action.REDO)
         limits = self.zoom_limits()
+        self.zoom_slider.value = 0
         if limits and self.scale and limits[1] > limits[0]:
             self.zoom_slider.value = max(0, min(1, math.log(self.scale.pixels_per_second / limits[0]) /
                 math.log(limits[1] / limits[0])))

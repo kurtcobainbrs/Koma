@@ -76,6 +76,9 @@ class TimelineEditingTests(TestCase):
 
     def editor(self):
         view = self.view()
+        values = view.settings.configuration.editable()
+        values['animatic']['initial_scope'] = 'Primeira cena'
+        fixtures.finish(view.settings.configuration.commit(values))
         fixtures.finish(view.add_frame())
         fixtures.finish(view.add_frame())
         player = view.player
@@ -94,6 +97,16 @@ class TimelineEditingTests(TestCase):
         strip.wheel_zoom(event)
         self.assertGreater(strip.scale.pixels_per_second, 200)
         self.assertAlmostEqual(strip.scale.seconds(strip.offset + 200), anchor_time)
+        view.page.update.assert_any_call(strip.content, strip.zoom_tools)
+        wheel_scale, wheel_slider = strip.scale.pixels_per_second, strip.zoom_slider.value
+        strip.zoom_slider.value = 1
+        strip.slide_zoom(Data(control=strip.zoom_slider))
+        self.assertAlmostEqual(strip.scale.pixels_per_second, strip.zoom_limits()[1])
+        strip.zoom_slider.value = wheel_slider
+        strip.slide_zoom(Data(control=strip.zoom_slider))
+        self.assertAlmostEqual(strip.scale.pixels_per_second, wheel_scale)
+        strip.fit()
+        strip.wheel_zoom(event)
         strip.wheel_zoom(Data(scroll_delta=Data(y=120), local_position=Data(x=200)))
         self.assertAlmostEqual(strip.scale.pixels_per_second, 200)
         strip.zoom(4)

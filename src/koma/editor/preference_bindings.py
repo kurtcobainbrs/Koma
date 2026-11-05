@@ -25,6 +25,12 @@ class PreferenceBindings:
             return
         values = config.values
         changed = {key for key in values if self.previous is None or self.previous[key] != values[key]}
+        if changed == {'appearance'} and self.previous is not None:
+            differences = {key for key in values['appearance']
+                if self.previous['appearance'][key] != values['appearance'][key]}
+            if differences == {'accent'}:
+                self.revision, self.previous = config.revision, values
+                return
         from koma.preview_cache import PREVIEW_BUDGET_SHARES
         view.settings.preview_cache.resize(values['system']['cache'] / PREVIEW_BUDGET_SHARES)
         ws, player = view.workspace, view.player
@@ -45,7 +51,7 @@ class PreferenceBindings:
         if changed == {'appearance'} and self.previous is not None:
             differences = {key for key in values['appearance']
                 if self.previous['appearance'][key] != values['appearance'][key]}
-            if differences == {'selection'}:
+            if differences - {'accent'} == {'selection'}:
                 color = values['appearance']['selection']
                 ws.box_selection.overlay.bgcolor = ft.Colors.with_opacity(.14, color)
                 ws.box_selection.overlay.border = ft.Border.all(1, color)

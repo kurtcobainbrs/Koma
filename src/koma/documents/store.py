@@ -14,7 +14,7 @@ from koma.editor.drawing_models import DrawingLayer
 from koma.editor.sequence_models import SequenceState
 from koma.editor.node_media import NodeMedia, MediaTransform, MAX_MEDIA_ITEMS
 
-DOCUMENT_VERSION = 13
+DOCUMENT_VERSION = 14
 
 
 def document(board, document_id):
@@ -69,7 +69,7 @@ def parse_document(raw):
             fps=raw.get('fps', 24), audio_tracks=tuple(AudioTrack(**track) for track in tracks),
             markers=tuple(TimelineMarker(**marker) for marker in markers),
             frame_format=FrameFormat(**raw.get('frame_format', {})),
-            references=tuple(ReferenceImage(**item) for item in references),
+            references=tuple(ReferenceImage.from_document(item, raw['version']) for item in references),
             media_filter=raw['media_filter'] if raw['version'] >= 10 else 'none')
         if raw['version'] < 7:
             from koma.documents.sequence_migration import migrate_sequences

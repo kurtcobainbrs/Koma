@@ -295,7 +295,7 @@ class AnimaticPlayer:
             self.strip.prepare_scroll()
             self.strip.publish_geometry()
         else:
-            self.view.page.update(self.strip.keyframe_lane.content, self.strip.keyframe_label)
+            self.view.page.update(self.strip.keyframe_lane.content, self.strip.keyframe_label, self.strip.zoom_tools)
         self.focus_timeline()
 
     def sync_inspector(self, *, update=True):

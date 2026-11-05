@@ -186,7 +186,9 @@ class PreferencesPanel:
             example = f'{values["width"]} × {values["height"]} · {values["fps"]} FPS'
         elif key == 'appearance':
             self.preview.bgcolor = values['preview']
-            example = 'Fundo da prévia'
+            self.preview.content = ft.Row([ft.Icon(ft.Icons.TUNE, color=values['accent']),
+                ft.Text('Cor de destaque', color=values['accent'], size=TEXT_BODY)], spacing=APP_PADDING)
+            return
         else:
             from koma.editor.production_numbers import scene_code, shot_code
             identity = self.values['identity']

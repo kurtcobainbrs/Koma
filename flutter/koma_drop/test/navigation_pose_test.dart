@@ -23,6 +23,24 @@ void main() {
     expect(moved.y, -80);
   });
 
+  test('preview zoom follows the cursor in and centers progressively on the way out', () {
+    const centered = NavigationPose();
+    final enlarged = centered.zoomPreview(3, 600, 400, .25, 4, 400, 300);
+    expect(enlarged.x + 600 * enlarged.zoom, 600);
+    expect(enlarged.y + 400 * enlarged.zoom, 400);
+
+    final half = enlarged.zoomPreview(2 / 3, 10, 20, .25, 4, 400, 300);
+    expect(half.x + 400 * half.zoom, 200);
+    expect(half.y + 300 * half.zoom, 200);
+    final fit = half.zoomPreview(.5, 10, 20, .25, 4, 400, 300);
+    expect(fit.zoom, 1);
+    expect(fit.x, 0);
+    expect(fit.y, 0);
+    final smaller = fit.zoomPreview(.5, 10, 20, .25, 4, 400, 300);
+    expect(smaller.x + 400 * smaller.zoom, 400);
+    expect(smaller.y + 300 * smaller.zoom, 300);
+  });
+
   test('zoom batches keep one in flight and combine pending input without a queue', () {
     final batch = ZoomBatch()..add(2, 100);
     expect(batch.take(), (factor: 2.0, anchor: 100.0));

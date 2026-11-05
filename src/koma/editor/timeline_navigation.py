@@ -61,7 +61,7 @@ class TimelineNavigator:
         return (player.opened and bool(player.timeline and player.timeline.frames)
             and not player.editing)
 
-    def seek(self, seconds, *, snap=False, targets=None, scale=None):
+    def seek(self, seconds, *, snap=False, targets=None, scale=None, exact=False):
         if not self.available or not math.isfinite(seconds):
             return
         player = self.player
@@ -69,7 +69,7 @@ class TimelineNavigator:
             targets = targets or player.snapping.capture(player.timeline)
             seconds = player.snapping.resolve(seconds, scale or player.strip.scale, targets,
                 minimum=player.timeline.playback_start, maximum=player.timeline.playback_end)
-        position = frame_position(seconds, player.timeline.total, player.view.board.fps)
+        position = seconds if exact else frame_position(seconds, player.timeline.total, player.view.board.fps)
         position = max(player.timeline.playback_start, min(player.timeline.playback_end, position))
         if position == player.position and not player.playing:
             return

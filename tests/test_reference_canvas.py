@@ -21,6 +21,121 @@ class ReferenceCanvasTests(TestCase):
     setUp = fixtures.StoryboardTests.setUp
     view = fixtures.StoryboardTests.view
 
+    def test_selection_can_end_before_first_move_without_reading_overlay_geometry(self):
+        view, canvas = self.editor()
+        fixtures.finish(canvas.actions.import_paths([self.source], (30, 40)))
+        item, board = view.board.references[0], view.board
+        history = tuple(view.history.past)
+        point = Data(local_position=Data(x=item.x + canvas.extent.x + 5, y=item.y + canvas.extent.y + 5))
+        canvas.box_press(point)
+        canvas.box_begin(point)
+        # Presentation may be unmeasured or stale; gesture coordinates own selection.
+        canvas.box.left = canvas.box.top = None
+        canvas.box.width = canvas.box.height = None
+        canvas.box_end()
+        self.assertEqual(canvas.selection.ids, {item.id})
+        self.assertIsNone(canvas.gesture)
+        self.assertFalse(canvas.box.visible)
+        self.assertIs(view.board, board)
+        self.assertEqual(tuple(view.history.past), history)
+
+    def test_background_events_cannot_replace_or_cancel_an_image_drag(self):
+        view, canvas = self.editor()
+        fixtures.finish(canvas.actions.import_paths([self.source], (200, 200)))
+        original = view.board.references[0]
+        fixtures.finish(canvas.actions.set_link(original.id, 'https://example.org/ref', expected=view.board))
+        board, count = view.board, len(view.history.past)
+        canvas.begin(original.id, Data(global_position=Data(x=10, y=10)))
+        gesture = canvas.gesture
+        canvas.box_begin(Data(local_position=Data(x=0, y=0)))
+        canvas.cancel_box()
+        canvas.box_end()
+        self.assertIs(canvas.gesture, gesture)
+        canvas.move(Data(global_position=Data(x=70, y=50)))
+        fixtures.finish(canvas.finish())
+        moved = view.board.references[0]
+        self.assertEqual((moved.x, moved.y), (original.x + 60, original.y + 40))
+        self.assertEqual(moved.url, 'https://example.org/ref')
+        self.assertEqual(len(view.history.past), count + 1)
+        fixtures.finish(view.graph.undo())
+        self.assertEqual(view.board, board)
+        fixtures.finish(view.graph.redo())
+        self.assertEqual(view.board.references[0], moved)
+        point = Data(local_position=Data(x=moved.x + canvas.extent.x, y=moved.y + canvas.extent.y))
+        canvas.box_begin(point)
+        selection = canvas.gesture
+        canvas.cancel_object()
+        self.assertIs(canvas.gesture, selection)
+        canvas.box_end()
+
+    def test_reference_link_editor_history_duplicate_and_portable_save(self):
+        view, canvas = self.editor()
+        fixtures.finish(canvas.actions.import_paths([self.source], (30, 40)))
+        item, before = view.board.references[0], view.board
+        self.assertFalse(canvas.link_badges[item.id].visible)
+        self.assertFalse(canvas.link_button.disabled)
+        image = canvas.images[item.id]
+        canvas.link_editor.open()
+        editor = canvas.link_editor
+        editor.popup.open = True
+        editor.field.value = 'https://www.youtube.com/watch?v=example&t=93s'
+        count = len(view.history.past)
+        fixtures.finish(editor.popup.actions[-1].on_click(None))
+        linked = view.board
+        self.assertEqual(linked.references[0].url, editor.field.value)
+        self.assertTrue(canvas.link_badges[item.id].visible)
+        self.assertIs(canvas.images[item.id], image)
+        self.assertEqual(len(view.history.past), count + 1)
+        self.assertEqual(self.store.load(), linked)
+        fixtures.finish(view.graph.undo())
+        self.assertEqual(view.board, before)
+        self.assertFalse(canvas.link_badges[item.id].visible)
+        fixtures.finish(view.graph.redo())
+        self.assertEqual(view.board, linked)
+        fixtures.finish(canvas.actions.duplicate())
+        self.assertEqual([ref.url for ref in view.board.references], [editor.field.value] * 2)
+        destination = export_bundle(view.board, view.store, self.root / 'linked.koma')
+        restored = restore_bundle(destination, StoryboardStore(self.root / 'restored-links'))
+        self.assertEqual(restored.references, view.board.references)
+        selected = next(ref for ref in view.board.references if ref.id == canvas.selection.active)
+        canvas.link_editor.open()
+        canvas.link_editor.popup.open = True
+        count = len(view.history.past)
+        fixtures.finish(canvas.link_editor.popup.actions[0].on_click(None))
+        self.assertEqual(next(ref.url for ref in view.board.references if ref.id == selected.id), '')
+        self.assertFalse(canvas.link_badges[selected.id].visible)
+        self.assertEqual(len(view.history.past), count + 1)
+
+    def test_links_validate_cancel_and_reject_stale_edits_without_opening_browser(self):
+        import flet as ft
+        view, canvas = self.editor()
+        fixtures.finish(canvas.actions.import_paths([self.source]))
+        item, before = view.board.references[0], view.board
+        for value in ('javascript:alert(1)', 'file:///C:/private', 'https://', 'https://example.com:invalid', 'https://example.com/has space'):
+            with self.assertRaises(ValueError):
+                fixtures.finish(canvas.actions.set_link(item.id, value, expected=before))
+        self.assertIs(view.board, before)
+        canvas.link_editor.open()
+        canvas.link_editor.popup.open = True
+        canvas.link_editor.field.value = 'https://example.org/reference?q=1#part'
+        fixtures.finish(canvas.link_editor.popup.actions[-2].on_click(None))
+        self.assertIs(view.board, before)
+        fixtures.finish(canvas.actions.set_link(item.id, 'https://example.org/reference?q=1#part', expected=before))
+        with self.assertRaises(ValueError):
+            fixtures.finish(canvas.actions.set_link(item.id, '', expected=before))
+        with patch.object(ft.UrlLauncher, 'launch_url', new=AsyncMock()) as launch:
+            fixtures.finish(canvas.actions.open_link(item.id))
+            launch.assert_awaited_once_with('https://example.org/reference?q=1#part', mode=ft.LaunchMode.EXTERNAL_APPLICATION)
+        raw = json.loads(json.dumps(document(view.board, view.store.document_id)))
+        raw['version'] = 13
+        raw['references'][0].pop('url')
+        migrated, _ = parse_document(raw)
+        self.assertEqual(migrated.references[0].url, '')
+        raw['version'] = 14
+        raw['references'][0]['url'] = 'javascript:alert(1)'
+        with self.assertRaises(ValueError):
+            parse_document(raw)
+
     def editor(self):
         view = self.view()
         view.work_modes.show_references()

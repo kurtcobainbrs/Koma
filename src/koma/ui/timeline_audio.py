@@ -205,5 +205,4 @@ class AudioControls:
         self.snap.tooltip = player.view.keymap.describe('Snap ligado' if player.marker_editor.snap_enabled else 'Snap desligado', Action.SNAP)
         self.snap.tooltip += '\nQuadros, cenas, keyframes e marcadores'
         self.snap.icon = self.snap_icons[player.marker_editor.snap_enabled]
-        self.snap.bgcolor = ft.Colors.PRIMARY_CONTAINER if player.marker_editor.snap_enabled else None
         self.snap.disabled = locked

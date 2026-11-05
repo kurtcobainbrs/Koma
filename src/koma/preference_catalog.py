@@ -5,6 +5,7 @@ import re
 from koma.editor.animatic_settings import SCENES_WIDTH, SCENES_MINIMUM, SCENES_MAXIMUM
 from koma.exports.pdf_options import PAPERS, ORIENTATIONS, ROW_MODES, MAX_COLUMNS, PDF_DEFAULTS
 from koma.editor.media_animation import INTERPOLATIONS
+from koma.ui.theme import load_theme
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ CATEGORIES = (
         Field('elapsed_seconds', 'Tempo decorrido', False, 'bool'),
         Field('fps', 'FPS', False, 'bool'), Field('resolution', 'Resolução', False, 'bool')), sample='reference'),
     Category('appearance', 'Aparência', (
+        Field('accent', 'Cor de destaque', load_theme().colors['primary'], 'color'),
         Field('canvas', 'Fundo do canvas', '#181818', 'color'),
         Field('preview', 'Fundo da prévia', '#101010', 'color'),
         Field('selection', 'Seleção', '#80B8E5', 'color'),

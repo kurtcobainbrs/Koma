@@ -37,8 +37,8 @@ class MediaTransformTools:
         self.delete_key = self.button(ft.Icons.DELETE_OUTLINE, 'Excluir keyframe atual · Alt+I',
             action_event(editor.set_key, remove_only=True))
         self.auto = self.button(ft.Icons.RADIO_BUTTON_UNCHECKED, 'Auto Key', self.toggle_auto)
-        self.previous = self.button(ft.Icons.FAST_REWIND, 'Keyframe anterior', lambda e: editor.jump(-1))
-        self.next = self.button(ft.Icons.FAST_FORWARD, 'Próximo keyframe', lambda e: editor.jump(1))
+        self.previous = self.button(ft.Icons.FAST_REWIND, 'Keyframe anterior', action_event(editor.jump, -1))
+        self.next = self.button(ft.Icons.FAST_FORWARD, 'Próximo keyframe', action_event(editor.jump, 1))
         self.interpolation = ChoiceInput('Interpolação', editor.interpolation, tuple(INTERPOLATIONS),
             labels=INTERPOLATIONS, on_change=self.change_interpolation, icon=ft.Icons.LINEAR_SCALE)
         self.animation = ft.Row([self.auto, self.key, self.delete_key, self.interpolation.button], tight=True, spacing=0)
@@ -166,6 +166,5 @@ class MediaTransformTools:
         self.delete_key.disabled = current is None
         self.interpolation.button.disabled = current is None
         self.interpolation.value = current.interpolation if current else editor.interpolation
-        keys = transform.keyframes if transform else ()
-        self.previous.disabled = not any(key.time < (frame.duration if editor.player.playing else time) for key in keys)
-        self.next.disabled = not any((editor.player.playing or key.time > time) and key.time < frame.duration for key in keys)
+        self.previous.disabled = editor.adjacent_keyframe(-1, during_playback=editor.player.playing) is None
+        self.next.disabled = editor.adjacent_keyframe(1, during_playback=editor.player.playing) is None

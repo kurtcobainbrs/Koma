@@ -1,5 +1,6 @@
 """Staged per-media animation commands; native pointer movement never edits data."""
 from dataclasses import dataclass, replace
+from math import ceil
 from koma.editor.media_animation import MediaPose, update_pose, key_time, remove_keyframe
 
 
@@ -43,12 +44,15 @@ class MediaTransformEditor:
         frame = self.frame()
         if frame is None:
             return 0
-        seconds = min(max(0, self.player.position - self.player.timeline.starts[self.player.current]),
-            max(0, frame.duration - 1 / self.view.board.fps))
-        return seconds if self.player.playing else key_time(seconds, self.view.board.fps)
+        return min(frame.duration, max(0, self.player.position - self.player.timeline.starts[self.player.current]))
 
     def time(self):
-        return key_time(self.local_time(), self.view.board.fps)
+        frame = self.frame()
+        if frame is None:
+            return 0
+        fps = self.view.board.fps
+        last_frame = max(0, ceil(frame.duration * fps - 1e-8) - 1) / fps
+        return min(last_frame, key_time(self.local_time(), fps))
 
     def owner(self):
         frame = self.frame()
@@ -288,12 +292,19 @@ class MediaTransformEditor:
         self.temporary = None
         await self.commit(frame, transform, label='Remover keyframe' if remove_only else 'Gravar keyframe')
 
-    def jump(self, direction):
+    def adjacent_keyframe(self, direction, *, during_playback=False):
         frame = self.frame()
-        if self.player.editing or not frame or not frame.active_media:
+        if not frame or not frame.active_media:
+            return None
+        time = self.local_time()
+        keys = frame.active_media.transform.keyframes
+        ordered = keys if direction > 0 else reversed(keys)
+        return next((key.time for key in ordered if 0 <= key.time < frame.duration
+            and (during_playback or (key.time - time) * direction > 1e-8)), None)
+
+    def jump(self, direction):
+        if self.player.editing:
             return
-        time = self.time()
-        keys = [key.time for key in frame.active_media.transform.keyframes
-            if 0 <= key.time < frame.duration and (key.time - time) * direction > 1e-8]
-        if keys:
-            self.player.strip.navigator.seek(self.player.timeline.starts[self.player.current] + (min(keys) if direction > 0 else max(keys)))
+        target = self.adjacent_keyframe(direction)
+        if target is not None:
+            self.player.strip.navigator.seek(self.player.timeline.starts[self.player.current] + target, exact=True)

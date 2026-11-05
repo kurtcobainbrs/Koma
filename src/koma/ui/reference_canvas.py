@@ -20,6 +20,7 @@ from koma.ui.reference_overlays import ReferenceOverlays
 from koma.ui.spatial_view import SpatialView
 from koma.ui.canvas_gestures import NativeSecondaryPan
 from koma.editor.reference_transform_mode import ReferenceTransformMode
+from koma.ui.reference_link import ReferenceLinkEditor, link_badge
 
 
 class ReferenceCanvas:
@@ -27,7 +28,7 @@ class ReferenceCanvas:
         self.view = view
         self.active = self.loading = False
         self.selection = NodeSelection()
-        self.cards, self.images, self.models = {}, {}, {}
+        self.cards, self.images, self.models, self.link_badges = {}, {}, {}, {}
         self.gesture = None
         self.box_pointer = None
         self.object_pointer = None
@@ -53,14 +54,14 @@ class ReferenceCanvas:
         self.transform_mode = ReferenceTransformMode(self)
         self.background = ft.GestureDetector(on_tap_down=self.clear, on_hover=self.hover,
             hover_interval=DRAG_INTERVAL_MS, on_pan_down=self.box_press, on_pan_start=self.box_begin,
-            on_pan_update=self.box_move, on_pan_end=self.box_end, on_pan_cancel=self.cancel,
+            on_pan_update=self.box_move, on_pan_end=self.box_end, on_pan_cancel=self.cancel_box,
             drag_interval=DRAG_INTERVAL_MS, content=ft.Container(bgcolor=ft.Colors.TRANSPARENT))
         self.box = ft.Container(visible=False, ignore_interactions=True)
         self.overlays = ReferenceOverlays(self)
         self.selection_border = ft.Container(left=0, right=0, top=0, bottom=0, ignore_interactions=True)
         self.selection_handle = ft.GestureDetector(on_pan_start=lambda e: self.begin(None, e, resize=True),
             on_pan_down=lambda e: self.object_press(None, e, resize=True),
-            on_pan_update=self.move, on_pan_end=self.finish, on_pan_cancel=self.cancel,
+            on_pan_update=self.move, on_pan_end=self.finish, on_pan_cancel=self.cancel_object,
             drag_interval=DRAG_INTERVAL_MS, mouse_cursor=ft.MouseCursor.RESIZE_UP_LEFT_DOWN_RIGHT,
             content=ft.Icon(ft.Icons.OPEN_IN_FULL, size=14))
         self.selection_frame = ft.Stack(visible=False, controls=[
@@ -102,6 +103,8 @@ class ReferenceCanvas:
         self.grid_button = self.button(ft.Icons.GRID_ON, 'Grade', lambda e: self.toggle_option('grid_enabled'))
         self.grid_snap_button = self.button(ft.Icons.GRID_4X4, 'Ajustar à grade', lambda e: self.toggle_option('grid_snap'))
         self.align_button = self.button(ft.Icons.ALIGN_HORIZONTAL_CENTER, 'Alinhamento inteligente', lambda e: self.toggle_option('smart_align'))
+        self.link_editor = ReferenceLinkEditor(self)
+        self.link_button = self.button(ft.Icons.LINK, 'Editar link', self.link_editor.open)
         self.tools = ft.Row([
             ft.Row([self.select_button, self.pan_button, self.scale_button], spacing=0, tight=True),
             self.tool_separator(),
@@ -113,6 +116,7 @@ class ReferenceCanvas:
             self.button(ft.Icons.CONTENT_COPY, view.keymap.describe('Copiar imagem', Action.COPY), self.actions.copy_image),
             self.button(ft.Icons.CONTROL_POINT_DUPLICATE, 'Duplicar', self.actions.duplicate),
             self.button(ft.Icons.ARROW_FORWARD, 'Enviar selecionadas ao Canvas', self.actions.send_to_canvas),
+            self.link_button,
             self.button(ft.Icons.DELETE_OUTLINE, 'Excluir', self.actions.delete)], spacing=0, tight=True),
             self.tool_separator(),
             self.button(ft.Icons.FIT_SCREEN, 'Enquadrar', self.fit)], spacing=APP_PADDING,
@@ -170,6 +174,7 @@ class ReferenceCanvas:
                 bgcolor=ft.Colors.PRIMARY_CONTAINER if button.selected else None)
         self.align_button.tooltip = 'Alinhar aos objetos não selecionados · ' + ('Ligado' if self.smart_align else 'Desligado')
         self.scale_button.disabled = not self.selection.ids
+        self.link_button.disabled = len(self.selection.ids) != 1
 
     def toggle_option(self, name):
         if self.gesture:
@@ -201,7 +206,7 @@ class ReferenceCanvas:
         items = self.view.board.references
         keys = {item.id for item in items}
         self.selection.replace(self.selection.ids & keys)
-        for mapping in (self.cards, self.images, self.models):
+        for mapping in (self.cards, self.images, self.models, self.link_badges):
             for key in tuple(mapping):
                 if key not in keys:
                     del mapping[key]
@@ -215,15 +220,18 @@ class ReferenceCanvas:
                     on_tap=lambda e, key=item.id: self.tap(key),
                     on_pan_down=lambda e, key=item.id: self.object_press(key, e),
                     on_pan_start=lambda e, key=item.id: self.begin(key, e),
-                    on_pan_update=self.move, on_pan_end=self.finish, on_pan_cancel=self.cancel,
+                    on_pan_update=self.move, on_pan_end=self.finish, on_pan_cancel=self.cancel_object,
                     drag_interval=DRAG_INTERVAL_MS, mouse_cursor=ft.MouseCursor.MOVE)
+                self.link_badges[item.id] = link_badge(self.actions, item.id)
                 self.cards[item.id] = ft.Container(content=RetainedStack(hold_updates=lambda: False,
-                    controls=[ft.Container(left=0, right=0, top=0, bottom=0, content=move)]),
+                    controls=[ft.Container(left=0, right=0, top=0, bottom=0, content=move), self.link_badges[item.id]]),
                     tooltip=item.title)
             if self.models.get(item.id) != item:
                 card = self.cards[item.id]
                 card.left, card.top, card.width, card.height = item.x + self.extent.x, item.y + self.extent.y, item.width, item.height
                 self.images[item.id].src = str(self.view.store.images / item.asset)
+                self.link_badges[item.id].visible = bool(item.url)
+                self.link_badges[item.id].content.tooltip = f'Abrir link\n{item.url}' if item.url else 'Abrir link'
                 self.models[item.id] = item
         self.scene.controls = [self.background, self.overlays.grid_box,
             *(self.cards[item.id] for item in items), self.overlays.guide_box, self.selection_frame, self.box]
@@ -300,7 +308,7 @@ class ReferenceCanvas:
 
     @explicit_updates
     def begin(self, key, e, resize=False):
-        if not self.active or self.pan_mode or not self.view.editable() or self.loading:
+        if not self.active or self.pan_mode or not self.view.editable() or self.loading or self.gesture:
             return
         if key is not None and key not in self.selection.ids:
             self.select(key)
@@ -309,6 +317,7 @@ class ReferenceCanvas:
         if not originals:
             return
         pressed, self.object_pointer = self.object_pointer, None
+        self.box_pointer = None
         local = getattr(e, 'local_position', None)
         point = e.global_position
         if pressed is not None and pressed[:2] == (key, resize):
@@ -392,21 +401,42 @@ class ReferenceCanvas:
             self.view.page.update(self.scene)
 
     @explicit_updates
+    def cancel_box(self, e=None):
+        self.box_pointer = None
+        if self.gesture and 'start' in self.gesture:
+            self.cancel()
+
+    @explicit_updates
+    def cancel_object(self, e=None):
+        self.object_pointer = None
+        if self.gesture and 'originals' in self.gesture:
+            self.cancel()
+
+    @explicit_updates
     def box_press(self, e):
-        self.box_pointer = (e.local_position.x, e.local_position.y)
+        if self.active and not self.pan_mode and self.view.editable() and not self.gesture:
+            self.object_pointer = None
+            self.box_pointer = (e.local_position.x, e.local_position.y)
 
     @explicit_updates
     def box_begin(self, e):
-        if not self.pan_mode and self.active and self.view.editable():
+        if not self.pan_mode and self.active and self.view.editable() and not self.loading and not self.gesture:
             self.camera_revision += 1
-            self.gesture = dict(start=self.box_pointer or (e.local_position.x, e.local_position.y), base=set(self.selection.ids))
+            current = (e.local_position.x, e.local_position.y)
+            self.gesture = dict(start=self.box_pointer or current, current=current,
+                board=self.view.board, base=set(self.selection.ids))
             self.box_pointer = None
+            self.box_move(e)
 
     @explicit_updates
     def box_move(self, e):
         if not self.gesture or 'start' not in self.gesture:
             return
-        bounds = rectangle(self.gesture['start'], (e.local_position.x, e.local_position.y))
+        if not self.active or self.view.board is not self.gesture['board']:
+            self.cancel_box()
+            return
+        self.gesture['current'] = (e.local_position.x, e.local_position.y)
+        bounds = rectangle(self.gesture['start'], self.gesture['current'])
         self.box.left, self.box.top = bounds[:2]
         self.box.width, self.box.height = bounds[2] - bounds[0], bounds[3] - bounds[1]
         self.box.visible = True
@@ -416,8 +446,14 @@ class ReferenceCanvas:
     def box_end(self, e=None):
         if not self.gesture or 'start' not in self.gesture:
             return
-        bounds = (self.box.left - self.extent.x, self.box.top - self.extent.y,
-            self.box.left + (self.box.width or 0) - self.extent.x, self.box.top + (self.box.height or 0) - self.extent.y)
+        if not self.active or self.view.board is not self.gesture['board']:
+            self.cancel_box()
+            return
+        point = getattr(e, 'local_position', None)
+        if point is not None:
+            self.gesture['current'] = (point.x, point.y)
+        left, top, right, bottom = rectangle(self.gesture['start'], self.gesture['current'])
+        bounds = (left - self.extent.x, top - self.extent.y, right - self.extent.x, bottom - self.extent.y)
         previous = set(self.selection.ids)
         chosen = {item.id for item in self.view.board.references if intersects(bounds, (item.x, item.y, item.x + item.width, item.y + item.height))}
         self.selection.replace(chosen | self.gesture['base'] if 'Shift' in self.modifiers else chosen)

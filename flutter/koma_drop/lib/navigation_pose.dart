@@ -13,6 +13,22 @@ class NavigationPose {
     return NavigationPose(zoom: next, x: ax - (ax - x) * ratio, y: ay - (ay - y) * ratio);
   }
 
+  NavigationPose zoomPreview(double factor, double ax, double ay, double minimum,
+      double maximum, double centerX, double centerY) {
+    final target = zoomAt(factor, ax, ay, minimum, maximum);
+    if (target.zoom >= zoom) return target;
+
+    // Reduce the pan offset relative to the centered image until it reaches fit.
+    final fit = 1.0.clamp(minimum, maximum).toDouble();
+    final restingZoom = zoom > fit ? fit : minimum;
+    final remaining = ((target.zoom - restingZoom) / (zoom - restingZoom)).clamp(0.0, 1.0);
+    return NavigationPose(
+      zoom: target.zoom,
+      x: centerX * (1 - target.zoom) + (x - centerX * (1 - zoom)) * remaining,
+      y: centerY * (1 - target.zoom) + (y - centerY * (1 - zoom)) * remaining,
+    );
+  }
+
   NavigationPose pan(double dx, double dy) {
     if (!dx.isFinite || !dy.isFinite) return this;
     return NavigationPose(zoom: zoom, x: (x + dx).clamp(-1e7, 1e7).toDouble(),

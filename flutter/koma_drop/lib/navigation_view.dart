@@ -95,8 +95,13 @@ class _NavigationViewState extends State<NavigationView> {
   void _zoom(double factor, Offset anchor) {
     if (!_enabled || !factor.isFinite || factor <= 0) return;
     if (_spatial) {
-      _camera.value = _camera.value.zoomAt(factor, anchor.dx, anchor.dy,
-        widget.control.getDouble('minimum_zoom', .25)!, widget.control.getDouble('maximum_zoom', 16)!);
+      final minimum = widget.control.getDouble('minimum_zoom', .25)!;
+      final maximum = widget.control.getDouble('maximum_zoom', 16)!;
+      final size = context.size;
+      _camera.value = size == null
+          ? _camera.value.zoomAt(factor, anchor.dx, anchor.dy, minimum, maximum)
+          : _camera.value.zoomPreview(factor, anchor.dx, anchor.dy, minimum,
+              maximum, size.width / 2, size.height / 2);
     } else {
       _batch.add(factor, anchor.dx - (widget.control.getBool('content_coordinates', false)! ? (_position()?.pixels ?? 0) : 0));
       _schedule();
