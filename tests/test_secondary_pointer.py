@@ -48,6 +48,18 @@ class SecondaryPointerTests(TestCase):
         ws.context_menu.open.assert_not_awaited()
         self.assertTrue(ws.viewer.scale_enabled)
 
+    def test_cut_tool_keeps_unmodified_right_drag_for_pan(self):
+        view, ws = self.workspace()
+        ws.navigation.set_mode('cut')
+        ws.secondary_pointer.begin(self.event(100, 100))
+        fixtures.finish(ws.secondary_pointer.end(self.event(140, 130)))
+        self.assertEqual((ws.translation_x, ws.translation_y), (40, 30))
+        self.assertFalse(ws.links.cut_points)
+        ws.secondary_pointer.native = NativeSecondaryPan(content=ws.viewer)
+        ws.secondary_pointer.sync()
+        self.assertTrue(ws.secondary_pointer.native.pan_enabled)
+        self.assertIn('Ctrl', ws.secondary_pointer.native.reserved_modifiers)
+
     def test_native_snapshot_updates_camera_without_sending_pan_back_to_client(self):
         view, ws = self.workspace()
         ws.secondary_pointer.native = NativeSecondaryPan(content=ws.viewer)

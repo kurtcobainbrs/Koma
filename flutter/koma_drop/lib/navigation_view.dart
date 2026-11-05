@@ -1,4 +1,4 @@
-/// Local preview camera and middle-button timeline pan, with bounded zoom requests.
+/// Local preview camera and timeline pan, with bounded zoom requests.
 library;
 import 'dart:math' as math;
 import 'dart:async';
@@ -38,6 +38,9 @@ class _NavigationViewState extends State<NavigationView> {
   double _trackpadZoom = 1;
   bool get _spatial => widget.control.getString('mode', 'preview') == 'preview';
   bool get _enabled => !widget.control.disabled && widget.control.getBool('navigation_enabled', true)!;
+
+  bool _panButton(int buttons) => buttons == kMiddleMouseButton ||
+      buttons == kSecondaryMouseButton;
 
   @override
   void initState() {
@@ -128,7 +131,7 @@ class _NavigationViewState extends State<NavigationView> {
   void _down(PointerDownEvent event) {
     if (!_enabled) return;
     final zoom = event.buttons == kPrimaryMouseButton && matchesGestureModifiers(widget.control, 'zoom_modifiers');
-    if (!zoom && event.buttons != kMiddleMouseButton) { _reportPose(); return; }
+    if (!zoom && !_panButton(event.buttons)) { _reportPose(); return; }
     _dragZoom = zoom;
     _zoomAnchor = event.localPosition;
     if (!_spatial && widget.control.getBool('content_coordinates', false)!) {
@@ -215,7 +218,7 @@ class _NavigationViewState extends State<NavigationView> {
       child: RawGestureDetector(gestures: {
         EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
           () => EagerGestureRecognizer(allowedButtonsFilter: (buttons) => _enabled &&
-              (buttons == kMiddleMouseButton || buttons == kPrimaryMouseButton &&
+              (_panButton(buttons) || buttons == kPrimaryMouseButton &&
                   matchesGestureModifiers(widget.control, 'zoom_modifiers'))), (_) {}),
       }, child: Listener(behavior: HitTestBehavior.translucent,
         onPointerSignal: _signal, onPointerDown: _down, onPointerMove: _move,

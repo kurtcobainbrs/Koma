@@ -48,6 +48,7 @@ class Action(StrEnum):
     SUBTRACT_SELECTION = 'storyboard.selection.subtract'
     CUT_DRAG = 'storyboard.wire.cut_drag'
     DRAG_ZOOM = 'workspace.zoom.drag'
+    DRAG_ERASE = 'timeline.drawing.erase.drag'
     PLAY = 'timeline.play'
     ADD_MARKER = 'timeline.marker.add'
     SNAP = 'timeline.marker.snap'
@@ -126,6 +127,8 @@ ACTIONS = (
     ShortcutAction(Action.SUBTRACT_SELECTION, 'Remover da seleção', ('Ctrl',), contexts=('selection',), trigger='modifier'),
     ShortcutAction(Action.CUT_DRAG, 'Cortar com botão direito', ('Ctrl',), contexts=('wire_drag',), trigger='modifier'),
     ShortcutAction(Action.DRAG_ZOOM, 'Zoom suave ao arrastar', ('Alt+Shift',), contexts=('view_drag',), trigger='modifier'),
+    ShortcutAction(Action.DRAG_ERASE, 'Apagar traço ao arrastar com o botão esquerdo', ('Alt',),
+        contexts=('view_drag',), trigger='modifier'),
     ShortcutAction(Action.PLAY, 'Reproduzir / pausar', ('Space',), contexts=('timeline',)),
     ShortcutAction(Action.ADD_MARKER, 'Criar marcador na agulha', ('M',), contexts=('timeline',)),
     ShortcutAction(Action.SNAP, 'Snap da timeline', ('S',), contexts=('timeline',)),

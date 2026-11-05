@@ -32,7 +32,7 @@ class SecondaryPointer:
         if self.native is not None:
             ws = self.workspace
             self.native.pan_enabled = (ws.view.editable() and not ws.grab.active
-                and ws.navigation.effective_mode != 'cut' and not ws.drag
+                and not ws.drag
                 and not ws.box_selection.active and not ws.box_zoom.active and not ws.focusing_region)
             self.native.reserved_modifiers = list(ws.view.keymap.bindings(Action.CUT_DRAG))
             self.native.zoom_modifiers = list(ws.view.keymap.bindings(Action.DRAG_ZOOM))
@@ -63,8 +63,7 @@ class SecondaryPointer:
         if (not ws.view.editable() or ws.drag or ws.box_selection.active
                 or ws.box_zoom.active or ws.focusing_region):
             return
-        self.cutting = (ws.navigation.effective_mode == 'cut'
-            or ws.navigation.modifier(Action.CUT_DRAG))
+        self.cutting = ws.navigation.modifier(Action.CUT_DRAG)
         if self.native is not None and not self.cutting:
             ws.cancel_camera_transition()
             return

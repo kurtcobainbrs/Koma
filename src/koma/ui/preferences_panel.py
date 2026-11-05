@@ -146,6 +146,7 @@ class PreferencesPanel:
             self.group_examples = {field.key: examples[field.group] for field in category.fields if field.group}
         if category.presentation == 'shortcuts':
             rows = [ft.Text('Separe combinações com ponto e vírgula.', size=TEXT_SMALL, color=MUTED)]
+            rows.append(form_row('Mover a vista', ft.Text('Arraste com o botão direito', size=TEXT_SMALL)))
             for action in self.view.keymap.actions.values():
                 control = ft.TextField(value=self.shortcut_values[action.id],
                     width=FORM_LAYOUT.text_width, on_submit=self.save, **input_style(FORM_LAYOUT.row_height))

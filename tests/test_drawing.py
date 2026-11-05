@@ -459,7 +459,7 @@ class DrawingTests(unittest.TestCase):
         self.assertFalse(view.history.past)
 
     @inline
-    async def test_right_button_erases_with_one_commit_without_changing_active_tool(self):
+    async def test_alt_left_drag_erases_with_one_commit_without_changing_active_tool(self):
         first = DrawingStroke(((.3, .2), (.3, .8)))
         second = DrawingStroke(((.7, .2), (.7, .8)))
         view = await self.view((StoryFrame(x=0, y=0, drawing=DrawingLayer((first, second))),))
@@ -468,21 +468,20 @@ class DrawingTests(unittest.TestCase):
         surface.choose_tool('rectangle')
         before = view.board
         start, end = Data(local_position=Data(x=80, y=225)), Data(local_position=Data(x=400, y=225))
-        with patch.object(view.store, 'save', wraps=view.store.save) as saved:
-            surface.gesture.on_right_pan_start(start)
+        self.assertIsNone(surface.gesture.on_right_pan_start)
+        with patch.object(view.store, 'save', wraps=view.store.save) as saved, \
+                patch('koma.ui.drawing_surface.pressed_modifiers', return_value={'Alt'}) as modifiers:
+            surface.gesture.on_pan_down(start)
+            modifiers.return_value = set()
+            surface.gesture.on_pan_start(start)
             token = editor.drag
             self.assertEqual(token.tool, ERASER)
             self.assertEqual(editor.tool, 'rectangle')
-            surface.gesture.on_pan_down(start)
-            surface.gesture.on_pan_start(start)
-            surface.gesture.on_pan_cancel(None)
-            await surface.gesture.on_pan_end(None)
-            self.assertIs(editor.drag, token)
-            surface.gesture.on_right_pan_update(end)
+            surface.gesture.on_pan_update(end)
             self.assertEqual(editor.preview_layer().strokes, (second,))
             self.assertIs(view.board, before)
             saved.assert_not_called()
-            await surface.gesture.on_right_pan_end(end)
+            await surface.gesture.on_pan_end(end)
             saved.assert_called_once()
         self.assertEqual(view.board.frames[0].drawing.strokes, (second,))
         self.assertEqual(editor.tool, 'rectangle')
@@ -492,9 +491,14 @@ class DrawingTests(unittest.TestCase):
         self.assertEqual(view.board, before)
         await player.strip.redo_edit()
         self.assertEqual(view.board.frames[0].drawing.strokes, (second,))
+        with patch('koma.ui.drawing_surface.pressed_modifiers', return_value={'Alt', 'Shift'}):
+            self.assertIsNone(surface.temporary_tool())
+        view.keymap.rebind(Action.DRAG_ERASE, ('Ctrl',))
+        with patch('koma.ui.drawing_surface.pressed_modifiers', return_value={'Ctrl'}):
+            self.assertEqual(surface.temporary_tool(), ERASER)
 
     @inline
-    async def test_right_click_and_escape_do_not_leave_an_unfinished_eraser(self):
+    async def test_alt_click_and_escape_do_not_leave_an_unfinished_eraser(self):
         stroke = DrawingStroke(((.3, .2), (.3, .8)))
         view = await self.view((StoryFrame(x=0, y=0, drawing=DrawingLayer((stroke,))),))
         player, editor = view.player, view.player.drawing
@@ -502,20 +506,20 @@ class DrawingTests(unittest.TestCase):
         surface.choose_tool(PENCIL)
         point = Data(local_position=Data(x=240, y=225))
         before = view.board
-        surface.gesture.on_right_pan_start(point)
-        self.assertFalse(editor.preview_layer().strokes)
-        await player.key_down(Data(key='Escape'))
-        self.assertTrue(player.opened)
-        self.assertIsNone(editor.drag)
-        self.assertIsNone(surface.secondary_input.token)
-        await surface.gesture.on_right_pan_end(point)
-        self.assertIs(view.board, before)
-        self.assertFalse(view.history.past)
-        surface.gesture.on_right_pan_start(point)
-        await surface.gesture.on_right_pan_end(point)
-        self.assertFalse(view.board.frames[0].drawing.strokes)
-        self.assertEqual(editor.tool, PENCIL)
-        self.assertEqual(len(view.history.past), 1)
+        with patch('koma.ui.drawing_surface.pressed_modifiers', return_value={'Alt'}):
+            await surface.gesture.on_tap_up(point)
+            self.assertIsNone(editor.drag)
+            self.assertIs(view.board, before)
+            surface.gesture.on_pan_down(point)
+            surface.gesture.on_pan_start(point)
+            self.assertFalse(editor.preview_layer().strokes)
+            await player.key_down(Data(key='Escape'))
+            self.assertTrue(player.opened)
+            self.assertIsNone(editor.drag)
+            self.assertIsNone(surface.primary_input.token)
+            await surface.gesture.on_pan_end(point)
+            self.assertIs(view.board, before)
+            self.assertFalse(view.history.past)
 
     @inline
     async def test_tab_opens_icon_list_without_moving_toolbar(self):

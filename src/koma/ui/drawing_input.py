@@ -3,12 +3,13 @@ from koma.ui.event_updates import explicit_updates
 
 
 class DrawingInput:
-    def __init__(self, editor, point, radius, *, tool=None):
-        self.editor, self.point, self.radius, self.tool = editor, point, radius, tool
-        self.origin = self.token = None
+    def __init__(self, editor, point, radius, *, temporary_tool):
+        self.editor, self.point, self.radius = editor, point, radius
+        self.temporary_tool = temporary_tool
+        self.reset()
 
     def reset(self):
-        self.origin = self.token = None
+        self.origin = self.token = self.tool = None
 
     def sync(self):
         if self.token is not None and self.token is not self.editor.drag:
@@ -17,15 +18,17 @@ class DrawingInput:
     @explicit_updates
     def down(self, e):
         self.origin = self.point(e)
+        self.tool = self.temporary_tool()
 
     @explicit_updates
     def begin(self, e):
         if self.token is not None and self.token is self.editor.drag:
             return
         point = self.origin if self.origin is not None else self.point(e)
+        tool = self.tool if self.origin is not None else self.temporary_tool()
         self.reset()
         if point is not None:
-            self.token = self.editor.begin(point, hit_radius=self.radius(), tool=self.tool)
+            self.token = self.editor.begin(point, hit_radius=self.radius(), tool=tool)
             self.move(e)
 
     @explicit_updates
@@ -51,6 +54,9 @@ class DrawingInput:
 
     @explicit_updates
     async def tap(self, e):
+        if self.tool is not None or self.temporary_tool() is not None:
+            self.reset()
+            return
         self.begin(e)
         await self.finish(e)
 

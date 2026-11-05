@@ -12,6 +12,8 @@ from koma.ui.vector_icons import eraser_icon
 from koma.editor.drawing_geometry import PENCIL, ERASER, SELECT, SHAPE_TOOLS
 from koma.editor.drawing_models import MIN_BRUSH_WIDTH, MAX_BRUSH_WIDTH
 from koma.editor.drawing_hit_test import stroke_bounds
+from koma.editor.modifier_state import pressed_modifiers
+from koma.editor.shortcuts import Action
 
 SELECTION_HIT_RADIUS = APP_PADDING * 1.5
 
@@ -30,14 +32,11 @@ class DrawingSurface:
         self.overlay = DrawingOverlay()
         self.selection_box = ft.Container(visible=False, ignore_interactions=True,
             border=ft.Border.all(1, ft.Colors.PRIMARY), border_radius=RADIUS)
-        self.primary_input = DrawingInput(self.editor, self.point, self.hit_radius)
-        self.secondary_input = DrawingInput(self.editor, self.point, self.hit_radius, tool=ERASER)
-        self.inputs = (self.primary_input, self.secondary_input)
+        self.primary_input = DrawingInput(self.editor, self.point, self.hit_radius,
+            temporary_tool=self.temporary_tool)
         self.gesture = ft.GestureDetector(on_pan_down=self.primary_input.down, on_pan_start=self.primary_input.begin,
             on_pan_update=self.primary_input.move, on_pan_end=self.primary_input.finish, on_pan_cancel=self.primary_input.cancel,
             on_tap_up=self.primary_input.tap, drag_interval=DRAG_INTERVAL_MS, mouse_cursor=ft.MouseCursor.PRECISE,
-            on_right_pan_start=self.secondary_input.begin, on_right_pan_update=self.secondary_input.move,
-            on_right_pan_end=self.secondary_input.finish,
             content=ft.Container(bgcolor=ft.Colors.TRANSPARENT))
         # Flet's size observer adds a render object outside Positioned. Measure
         # a non-positioned child so Flutter keeps Stack parent data intact.
@@ -50,7 +49,7 @@ class DrawingSurface:
         self.pencil = self.button(ft.Icons.EDIT_OUTLINED, 'Lápis', lambda e: self.choose_tool(PENCIL), toggle=True)
         self.eraser = toggle_icon(eraser_icon(ICON_SIZE, MUTED),
             eraser_icon(ICON_SIZE, ft.Colors.PRIMARY), lambda e: self.choose_tool(ERASER))
-        self.eraser.tooltip = 'Borracha · botão direito'
+        self.eraser.tooltip = 'Borracha'
         self.shapes = icon_menu([(shape.key, shape.label, SHAPE_ICONS[shape.key])
             for shape in SHAPE_TOOLS.values()], self.choose_tool,
             icon=ft.Icons.CATEGORY_OUTLINED, tooltip='Formas', icon_size=ICON_SIZE)
@@ -108,12 +107,18 @@ class DrawingSurface:
         return SELECTION_HIT_RADIUS / (min(self.bounds) * zoom) if self.bounds else 0
 
     def reset_inputs(self):
-        for pointer in self.inputs:
-            pointer.reset()
+        self.primary_input.reset()
 
     def sync_inputs(self):
-        for pointer in self.inputs:
-            pointer.sync()
+        self.primary_input.sync()
+
+    def temporary_tool(self):
+        physical = pressed_modifiers()
+        modifiers = self.player.modifiers if physical is None else physical
+        keymap = self.player.view.keymap
+        if keymap.modifier_active(Action.DRAG_ERASE, modifiers) and not keymap.modifier_active(Action.DRAG_ZOOM, modifiers):
+            return ERASER
+        return None
 
     @explicit_updates
     def resized(self, e):
@@ -160,6 +165,8 @@ class DrawingSurface:
         self.select.selected = self.editor.tool == SELECT
         self.pencil.selected = self.editor.tool == PENCIL
         self.eraser.selected = self.editor.tool == ERASER
+        shortcut = self.player.view.keymap.label(Action.DRAG_ERASE)
+        self.eraser.tooltip = f'Borracha · {shortcut} + arraste com o botão esquerdo' if shortcut else 'Borracha'
         shape = SHAPE_TOOLS.get(self.editor.tool)
         self.shapes.icon = SHAPE_ICONS[shape.key] if shape else ft.Icons.CATEGORY_OUTLINED
         self.shapes.tooltip = f'Formas · {shape.label}' if shape else 'Formas'
