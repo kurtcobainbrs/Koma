@@ -80,13 +80,38 @@ class DrawingTests(unittest.TestCase):
         session = DocumentSession(self.directory)
         self.sessions.append(session)
         session.board = Storyboard(frames=frames)
-        view = StoryboardView(Mock(), session, AppPreferences(self.directory))
+        settings = AppPreferences(self.directory)
+        preferences = settings.configuration.editable()
+        preferences['animatic']['initial_scope'] = 'Primeira cena'
+        await settings.configuration.commit(preferences)
+        view = StoryboardView(Mock(), session, settings)
         view.page.show_dialog.side_effect = lambda popup: setattr(popup, 'open', True)
         await view.activate()
         view.player.open()
         view.player.strip.resized(Data(width=800))
         view.player.drawing_surface.resized(Data(width=800, height=450))
         return view
+
+    @inline
+    async def test_drawing_releases_native_zoom_after_commit_and_silent_cancel(self):
+        with patch('koma.ui.drop_runtime.supports', side_effect=lambda feature: feature == 'navigation_v1'):
+            view = await self.view((StoryFrame(x=0, y=0),))
+        player, editor = view.player, view.player.drawing
+        navigation = player.preview_navigation.content
+        for tool in (PENCIL, ERASER, 'rectangle'):
+            editor.set_tool(tool)
+            self.assertIsNotNone(editor.begin((.2, .3)))
+            self.assertFalse(navigation.navigation_enabled)
+            editor.move((.5, .7))
+            await editor.finish()
+            self.assertTrue(navigation.navigation_enabled)
+            self.assertFalse(player.controls.ignore_interactions)
+        self.assertIsNotNone(editor.begin((.2, .3)))
+        view.page.update.reset_mock()
+        editor.cancel(update=False)
+        self.assertTrue(navigation.navigation_enabled)
+        self.assertFalse(player.controls.ignore_interactions)
+        view.page.update.assert_not_called()
 
     @inline
     async def test_draw_commit_visibility_undo_and_redo(self):

@@ -101,12 +101,12 @@ class PreviewNavigation:
         if e.generation == self.content.generation and e.zoom > 0 and all(math.isfinite(value) for value in (e.zoom, e.x, e.y)):
             self.content.initial_zoom, self.content.initial_x, self.content.initial_y = e.zoom, e.x, e.y
 
-    def lock(self, locked):
+    def lock(self, locked, *, update=True):
         if self.native:
             self.content.navigation_enabled = not locked
         else:
             self.content.scale_enabled = not locked
-        if self.player.presenting:
+        if update and self.player.presenting:
             with retain_children(self.body):
                 self.player.view.page.update(self.content)
 

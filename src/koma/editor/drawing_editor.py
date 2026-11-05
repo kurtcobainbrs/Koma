@@ -188,7 +188,7 @@ class FrameDrawingEditor:
             view.notify(str(exc), 'warning')
         finally:
             self.committing = False
-            self.player.controls.disabled = False
+            self.player.set_gesture_locked(False)
             if self.player.opened:
                 self.player.rebuild_timeline()
                 self.player.render()
@@ -198,9 +198,8 @@ class FrameDrawingEditor:
         if self.drag is None:
             return
         self.drag = None
-        self.player.controls.disabled = False
+        self.player.set_gesture_locked(False, update=update)
         if update and self.player.opened:
-            self.player.set_gesture_locked(False)
             self.player.drawing_surface.refresh()
 
     async def delete_selected(self):

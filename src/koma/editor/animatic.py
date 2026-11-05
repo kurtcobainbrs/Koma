@@ -404,14 +404,14 @@ class AnimaticPlayer:
                 self.view.page.update(self.strip.content, self.controls, self.caption, self.export_button,
                     self.reference_presentation.preview.content)
 
-    def set_gesture_locked(self, locked):
+    def set_gesture_locked(self, locked, *, update=True):
         """Publish a logical gesture lock without touching preview or tracks."""
         self.controls.ignore_interactions = locked
-        self.preview_navigation.lock(locked)
+        self.preview_navigation.lock(locked, update=update)
         self.scene_choice.disabled = locked or not self.view.editable()
         self.export_button.disabled = locked or not self.view.editable() or not self.timeline.frames
         self.play.icon = ft.Icons.PAUSE if self.playing else ft.Icons.PLAY_ARROW
-        if self.presenting:
+        if update and self.presenting:
             self.view.page.update(self.controls, self.scene_choice, self.export_button)
 
     def pause_for_edit(self):
